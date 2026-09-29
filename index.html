@@ -45,7 +45,15 @@ body { background: var(--page); color: var(--ink); font: 13px/1.45 var(--sans); 
 .status.busy { background: var(--status-busy); } .status.ok { background: var(--status-ok); } .status.error { background: var(--status-error); }
 .steps { overflow: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
 .step { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; box-shadow: var(--shadow); }
-.step h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; text-wrap: balance; }
+.step h2, .report h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; text-wrap: balance; cursor: pointer; user-select: none; }
+.step h2::after, .report h2::after { content: ""; margin-left: auto; width: 7px; height: 7px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg) translate(-2px, -2px); flex: 0 0 auto; }
+.collapsed h2 { margin-bottom: 0; }
+.collapsed h2::after { transform: rotate(-45deg) translate(-2px, 2px); }
+.collapsed .stepbody { display: none; }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
+.segbtn { flex: 1; background: var(--panel); color: var(--muted); border-radius: 0; border: none; padding: 6px 8px; font-weight: 500; }
+.segbtn + .segbtn { border-left: 1px solid var(--line); }
+.segbtn.on { background: var(--ink); color: var(--panel); }
 .badge { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;
   background: var(--group); color: var(--ink); flex: 0 0 20px; font-variant-numeric: tabular-nums; }
 .badge.done { background: var(--ink); color: var(--panel); }
@@ -75,7 +83,6 @@ td.clause { font-family: var(--mono); color: var(--muted); white-space: nowrap; 
 td.status-cell { font-variant-numeric: tabular-nums; }
 tr.group td { background: var(--group); font-weight: 600; padding: 5px 6px; }
 .report { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
-.report h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
 pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono); background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 8px; white-space: pre; }
 
 .stage { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -138,83 +145,93 @@ tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--group); } tr.p
       <div id="status" class="status info">Ready.</div>
     </header>
     <div class="steps">
-      <section class="step" aria-labelledby="h1s">
-        <h2 id="h1s"><span class="badge">1</span> Site</h2>
-        <div class="row"><label for="address">Address</label><input type="text" id="address" placeholder="e.g. 3567 W 27th Ave" autocomplete="street-address" list="presetList"></div>
-        <datalist id="presetList"></datalist>
-        <p id="sourceNote" class="muted" style="margin:-2px 0 8px" hidden></p>
-        <div class="row"><label for="cutSide">Site cut</label><select id="cutSide" aria-label="Site cut size"></select></div>
-        <div class="row"><label>Show</label>
-          <div class="checks">
-            <label><input type="checkbox" id="chkRoads" checked> Roads &amp; lanes</label>
-            <label><input type="checkbox" id="chkParcels" checked> Parcels</label>
-            <label><input type="checkbox" id="chkBuildings" checked> Buildings</label>
+      <section class="step" id="stepSite" aria-labelledby="h1s">
+        <h2 id="h1s" title="Click to collapse or expand"><span class="badge">1</span> Site</h2>
+        <div class="stepbody">
+          <div class="row"><label for="address">Address</label><input type="text" id="address" placeholder="e.g. 3567 W 27th Ave" autocomplete="street-address" list="presetList"></div>
+          <datalist id="presetList"></datalist>
+          <p id="sourceNote" class="muted" style="margin:-2px 0 8px" hidden></p>
+          <div class="row"><label for="cutSide">Site cut</label><select id="cutSide" aria-label="Site cut size"></select></div>
+          <div class="row"><label>Show</label>
+            <div class="checks">
+              <label><input type="checkbox" id="chkRoads" checked> Roads &amp; lanes</label>
+              <label><input type="checkbox" id="chkParcels" checked> Parcels</label>
+              <label><input type="checkbox" id="chkBuildings" checked> Buildings</label>
+            </div>
+          </div>
+          <div class="actions">
+            <button id="btnFetch">Fetch site data</button>
+            <button id="btnPickSite" class="secondary" title="Drag the map to any lot and click it">Pick a site on the map</button>
+            <button id="btnSaveSite" class="secondary" disabled title="Save the fetched data as a site file that the shared copy of this app can open">Save site file</button>
+            <label class="filebtn" for="siteFile" title="Open a site file saved by this app">Open site file…<input type="file" id="siteFile" accept=".json,application/json"></label>
+          </div>
+          <p class="muted">Site parcel (nearest first; the envelope follows the selection):</p>
+          <select id="parcelList" size="5" aria-label="Site parcel"></select>
+          <p id="zoning" class="zoning"></p>
+          <div id="edgeFallback" hidden>
+            <p id="edgeNote" class="muted"></p>
+            <div class="row"><label for="edgeSelect">Street edge</label><select id="edgeSelect" aria-label="Street edge"></select></div>
+            <div class="actions"><button id="btnPick" class="secondary">Pick a point on the map</button></div>
           </div>
         </div>
-        <div class="actions">
-          <button id="btnFetch">Fetch site data</button>
-          <button id="btnPickSite" class="secondary" title="Drag the map to any lot and click it">Pick a site on the map</button>
-          <button id="btnSaveSite" class="secondary" disabled title="Save the fetched data as a site file that the shared copy of this app can open">Save site file</button>
-          <label class="filebtn" for="siteFile" title="Open a site file saved by this app">Open site file…<input type="file" id="siteFile" accept=".json,application/json"></label>
+      </section>
+
+      <section class="step" id="stepRules" aria-labelledby="h2s">
+        <h2 id="h2s" title="Click to collapse or expand"><span class="badge">2</span> R1-1 District Schedule, s.3.1.2</h2>
+        <div class="stepbody">
+          <table id="rules"></table>
+          <p id="assumptions" class="muted"></p>
         </div>
-        <p class="muted">Site parcel (nearest first):</p>
-        <select id="parcelList" size="5" aria-label="Site parcel"></select>
-        <p id="zoning" class="zoning"></p>
-        <div class="actions"><button id="btnImport" disabled>Import site</button></div>
       </section>
 
-      <section class="step" aria-labelledby="h2s">
-        <h2 id="h2s"><span class="badge">2</span> Street edge</h2>
-        <select id="edgeSelect" aria-label="Street edge" disabled></select>
-        <p id="edgeNote" class="muted">Import a site to list its edges. The probe reads the gaps between parcels: about 20 m is a street, about 6 m a lane.</p>
-        <div class="actions"><button id="btnPick" class="secondary" disabled>Pick a point on the map</button></div>
-      </section>
-
-      <section class="step" aria-labelledby="h3s">
-        <h2 id="h3s"><span class="badge">3</span> R1-1 District Schedule, s.3.1.2</h2>
-        <table id="rules"></table>
-        <p id="assumptions" class="muted"></p>
-      </section>
-
-      <section class="step" aria-labelledby="h4s">
-        <h2 id="h4s"><span class="badge">4</span> Permitted envelope</h2>
-        <p class="muted" style="margin-top:0">Draws the yard lines with dimension strings outside the lot, the envelope outline and the envelope itself.</p>
-        <label><input type="checkbox" id="chkHide" checked> Hide the existing building on the site</label>
-        <div class="actions"><button id="btnGenerate" disabled>Generate envelope</button></div>
-        <table id="results"></table>
-      </section>
-
-      <section class="step" id="formSection" aria-labelledby="h5s" hidden>
-        <h2 id="h5s"><span class="badge">5</span> Form options</h2>
-        <p class="muted" style="margin-top:0">Toggle a form: it replaces the previous one, drawn in amber; the blue envelope is hidden while a form is shown.</p>
-        <div class="actions">
-          <button id="rbSingle" class="toggle" aria-pressed="false" disabled>Single building</button>
-          <button id="rbCourtyard" class="toggle" aria-pressed="false" disabled>Courtyard: front + rear</button>
-          <button id="rbSide" class="toggle" aria-pressed="false" disabled>Side by side</button>
+      <section class="step" id="stepEnvelope" aria-labelledby="h3s">
+        <h2 id="h3s" title="Click to collapse or expand"><span class="badge">3</span> Permitted envelope</h2>
+        <div class="stepbody">
+          <p class="muted" style="margin-top:0">Drawn as soon as the site is in: the yard lines with dimension strings outside the lot, the envelope outline and the envelope itself, from the detected street edge.</p>
+          <label><input type="checkbox" id="chkHide" checked> Hide the existing building on the site</label>
+          <table id="results"></table>
         </div>
-        <p id="formDesc" class="muted"></p>
-        <div id="courtyardParams" hidden>
-          <div class="row"><label for="courtyardSel">Courtyard width</label><select id="courtyardSel"></select></div>
-          <div class="row"><label for="rearDepthSel">Rear building depth</label><select id="rearDepthSel"></select></div>
-        </div>
-        <div class="actions"><button id="btnFormApply" class="secondary" disabled>Redraw form</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
-        <table id="formTable"></table>
-        <p id="formNote" class="muted"></p>
       </section>
 
-      <section class="step" id="cmhcSection" aria-labelledby="h6s" hidden>
-        <h2 id="h6s"><span class="badge">6</span> CMHC catalogue fit</h2>
-        <p class="muted" style="margin-top:0">Tests the British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a> against this envelope: width, depth, storeys and height, the unit count this site's band allows, floor area, and the courtyard rules when a design is paired with an accessory dwelling unit behind it. A fitting option is drawn in teal as the massing, with its unit configuration.</p>
-        <div class="actions"><button id="btnCmhc" disabled>Check catalogue fits</button><button id="btnCmhcPlans" class="secondary" disabled title="Schematic floor plans of the drawn option, shown on the map">Floor plans</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
-        <table id="cmhcTable"></table>
-        <p id="cmhcNote" class="muted"></p>
-        <div id="cmhcUnits"></div>
+      <section class="step" id="formSection" aria-labelledby="h4s">
+        <h2 id="h4s" title="Click to collapse or expand"><span class="badge">4</span> Massing options</h2>
+        <div class="stepbody">
+          <div class="seg" role="tablist" aria-label="Massing source">
+            <button id="modeForms" class="segbtn on" role="tab" aria-selected="true">By-law forms</button>
+            <button id="modeCmhc" class="segbtn" role="tab" aria-selected="false">CMHC catalogue</button>
+          </div>
+          <div id="panelForms">
+            <p class="muted" style="margin-top:0">Toggle a form: it replaces the previous one, drawn in amber; the blue envelope is hidden while a form is shown.</p>
+            <div class="actions">
+              <button id="rbSingle" class="toggle" aria-pressed="false" disabled>Single building</button>
+              <button id="rbCourtyard" class="toggle" aria-pressed="false" disabled>Courtyard: front + rear</button>
+              <button id="rbSide" class="toggle" aria-pressed="false" disabled>Side by side</button>
+            </div>
+            <p id="formDesc" class="muted"></p>
+            <div id="courtyardParams" hidden>
+              <div class="row"><label for="courtyardSel">Courtyard width</label><select id="courtyardSel"></select></div>
+              <div class="row"><label for="rearDepthSel">Rear building depth</label><select id="rearDepthSel"></select></div>
+            </div>
+            <div class="actions"><button id="btnFormApply" class="secondary" disabled>Redraw form</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
+            <table id="formTable"></table>
+            <p id="formNote" class="muted"></p>
+          </div>
+          <div id="panelCmhc" hidden>
+            <p class="muted" style="margin-top:0">The British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a>, tested against this envelope: width, depth, storeys and height, the unit count this site's band allows, floor area, and the courtyard rules when a design is paired with an accessory dwelling unit behind it. Click a fitting option to draw it (units in colour) and open its floor plans.</p>
+            <div class="actions"><button id="btnCmhcPlans" class="secondary" disabled title="Schematic floor plans of the drawn option, shown on the map">Floor plans</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
+            <table id="cmhcTable"></table>
+            <p id="cmhcNote" class="muted"></p>
+            <div id="cmhcUnits"></div>
+          </div>
+        </div>
       </section>
 
       <section class="report" aria-labelledby="hrep">
-        <h2 id="hrep">Report (every number with its clause)</h2>
-        <pre id="report"></pre>
-        <div class="actions"><button id="btnCopy" class="secondary">Copy report</button><button id="btnClear" class="secondary">Clear massing</button></div>
+        <h2 id="hrep" title="Click to collapse or expand">Report (every number with its clause)</h2>
+        <div class="stepbody">
+          <pre id="report"></pre>
+          <div class="actions"><button id="btnCopy" class="secondary">Copy report</button><button id="btnClear" class="secondary">Clear massing</button></div>
+        </div>
       </section>
     </div>
   </aside>

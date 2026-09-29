@@ -326,38 +326,106 @@ var R1Cmhc = (function () {
     });
     return '<svg xmlns="http://www.w3.org/2000/svg" width="' + x + '" height="' + (height + pad) + '" viewBox="0 0 ' + x + " " + (height + pad) + '" role="img" aria-label="Unit configuration by floor">' + parts.join("") + "</svg>";
   }
-  /* floorPlansSvg: schematic plans of every floor of every block, the street (or courtyard) at the bottom, one
-     coloured cell per unit with its key, bedrooms and approximate area. Room layouts are the catalogue's. */
+  // ------------------------------------------------------------------ rooms: a schematic programme per unit level
+  /* A unit's levels get roles: a one-level unit is a "flat"; a two-level unit has a "living" level (entry, stair,
+     living, dining, kitchen, powder room) under a "bedroom" level; a three-level unit adds an "entry" level with
+     the den below (townhouse) or, for the duplex whose third level is in the roof, an "attic" level above. Each
+     role is a list of bands from the street side back, each band split across the width. Fractions of the unit. */
+  function levelRoles(nLevels, design) {
+    if (nLevels >= 3) return design.key === "duplex" ? ["living", "bedroom", "attic"] : ["entry", "living", "bedroom"];
+    return nLevels === 2 ? ["living", "bedroom"] : ["flat"];
+  }
+  function programme(role, u) {
+    var beds = u ? u.beds : 1, baths = u ? u.baths : 1, den = !!(u && u.den);
+    if (role === "flat") return beds >= 2
+      ? [[0, 0.36, [["Entry", 0.22], ["Living", 0.78]]], [0.36, 0.6, [["Kitchen", 0.42], ["Dining", 0.34], ["Bath", 0.24]]], [0.6, 1, [["Bedroom 1", 0.5], ["Bedroom 2", 0.32], ["Laundry", 0.18]]]]
+      : [[0, 0.38, [["Entry", 0.28], ["Living", 0.72]]], [0.38, 0.62, [["Kitchen", 0.5], ["Dining", 0.5]]], [0.62, 1, [["Bedroom", 0.56], ["Bath", 0.26], ["Laundry", 0.18]]]];
+    if (role === "living") return [[0, 0.42, [["Entry", 0.2], ["Stair", 0.16], ["Living", 0.64]]], [0.42, 0.68, [["Dining", 0.58], ["WC", 0.18], ["Storage", 0.24]]], [0.68, 1, [["Kitchen", 1]]]];
+    if (role === "entry") return [[0, 0.45, [["Entry", 0.28], ["Stair", 0.18], [den ? "Den" : "Flex room", 0.54]]], [0.45, 0.72, [["Bath", 0.34], ["Storage", 0.36], ["Mechanical", 0.3]]], [0.72, 1, [["Patio", 1]]]];
+    if (role === "bedroom") {
+      var back = beds >= 3 ? [["Bedroom 2", 0.5], ["Bedroom 3", 0.5]] : (beds === 2 ? [["Bedroom 2", 0.62], ["Storage", 0.38]] : [["Study", 0.62], ["Storage", 0.38]]);
+      var mid = baths >= 2 ? [["Stair", 0.26], ["Hall", 0.22], ["Laundry", 0.22], ["Bath", 0.3]] : [["Stair", 0.3], ["Hall", 0.32], ["Laundry", 0.38]];
+      return [[0, 0.4, [["Primary bedroom", 0.62], [baths >= 2 ? "Ensuite" : "Bath", 0.38]]], [0.4, 0.62, mid], [0.62, 1, back]];
+    }
+    if (role === "attic") return [[0, 0.48, [["Bedroom 3", 0.6], ["Bath", 0.4]]], [0.48, 0.68, [["Stair", 0.35], ["Hall", 0.65]]], [0.68, 1, [[den ? "Den" : "Study", 0.5], ["Terrace", 0.5]]]];
+    return [[0, 1, [["Unit", 1]]]];
+  }
+  // rooms of one unit level in unit metres: x across from the unit's left, y from the street side back
+  function rooms(role, u, w, d) {
+    var out = [];
+    programme(role, u).forEach(function (band) {
+      var x = 0;
+      band[2].forEach(function (r) { out.push({ name: r[0], x: x, y: band[0] * d, w: r[1] * w, h: (band[1] - band[0]) * d, area_m2: r[1] * w * (band[1] - band[0]) * d }); x += r[1] * w; });
+    });
+    return out;
+  }
+  /* unitRooms(option): every room of every unit on every floor, in unit-local metres with the cell it sits in. */
+  function unitRooms(o) {
+    var out = [];
+    o.blocks.forEach(function (b) {
+      var levelsOf = {};
+      b.floors.forEach(function (f, fi) { f.units.forEach(function (k) { (levelsOf[k] || (levelsOf[k] = [])).push(fi); }); });
+      b.floors.forEach(function (f, fi) {
+        unitCells(f.units, f.split).forEach(function (c) {
+          var u = unitOf(b, c.key), lv = levelsOf[c.key], li = lv.indexOf(fi), role = levelRoles(lv.length, b.design)[li] || "flat";
+          var cw = (c.a1 - c.a0) * b.width_m, cd = (c.b1 - c.b0) * b.depth_m;
+          out.push({ block: b.key, unit: c.key, floor: f.name, floor_index: fi, level_index: li, role: role, cell: c, width_m: cw, depth_m: cd, rooms: rooms(role, u, cw, cd) });
+        });
+      });
+    });
+    return out;
+  }
+
+  /* floorPlansSvg: schematic plans of every floor of every block, the street (or courtyard) at the bottom, each
+     unit in its colour with its rooms drawn and named, entries marked on the level a unit is entered on. */
   function floorPlansSvg(o) {
-    var k = 9, pad = 16, gapX = 34, parts = [], y = pad, width = 0, areas = unitAreas(o);
-    o.blocks.forEach(function (b, bi) {
-      var W = b.width_m * k, D = b.depth_m * k, x = pad, y0 = y + 16;
+    var k = 13, pad = 18, gapX = 30, parts = [], y = pad, width = 0, areas = unitAreas(o), byCell = {};
+    unitRooms(o).forEach(function (r) { byCell[r.block + "|" + r.floor_index + "|" + r.unit] = r; });
+    function darker(hex) { var n = parseInt(hex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255; return "rgb(" + Math.round(r * 0.6) + "," + Math.round(g * 0.6) + "," + Math.round(b * 0.6) + ")"; }
+    o.blocks.forEach(function (b) {
+      var W = b.width_m * k, D = b.depth_m * k, x = pad + 14, y0 = y + 18;
       parts.push('<text x="' + x + '" y="' + (y + 4) + '" font-size="11" font-weight="600" fill="#2c3e50">' + esc(b.name) + ": " + fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m, " + b.storeys + " storeys, " + b.units + " unit" + (b.units === 1 ? "" : "s") + "</text>");
       b.floors.forEach(function (f, fi) {
         var x0 = x + fi * (W + gapX);
         unitCells(f.units, f.split).forEach(function (c) {
-          var u = unitOf(b, c.key), cx = x0 + c.a0 * W, cw = (c.a1 - c.a0) * W, ch = (c.b1 - c.b0) * D, cy = y0 + D - c.b1 * D, col = unitColor(o, c.key, b.key);
-          parts.push('<rect x="' + cx + '" y="' + cy + '" width="' + cw + '" height="' + ch + '" fill="' + col + '" fill-opacity="0.85" stroke="#ffffff" stroke-width="1.5"/>');
-          var lines = [c.key, u ? u.beds + " bed / " + u.baths + " bath" : "", "~" + Math.round(b.footprint_m2 * (c.a1 - c.a0) * (c.b1 - c.b0)) + " m2 this floor"];
-          if (ch > 40 && cw > 44) lines.forEach(function (t, li) { parts.push('<text x="' + (cx + cw / 2) + '" y="' + (cy + ch / 2 - 8 + li * 11) + '" text-anchor="middle" font-size="' + (li ? 8 : 10) + '" font-weight="' + (li ? 400 : 700) + '" fill="#ffffff">' + esc(t) + "</text>"); });
-          else if (cw > 18) parts.push('<text x="' + (cx + cw / 2) + '" y="' + (cy + ch / 2 + 3) + '" text-anchor="middle" font-size="9" font-weight="700" fill="#ffffff">' + esc(c.key) + "</text>");
-          // entries on the front face
-          if (c.b0 === 0) parts.push('<path d="M ' + (cx + cw / 2 - 4) + " " + (y0 + D + 1) + " l 4 -6 l 4 6 z\" fill=\"#c81e1e\"/>");
+          var u = unitOf(b, c.key), cx = x0 + c.a0 * W, cw = (c.a1 - c.a0) * W, ch = (c.b1 - c.b0) * D, cy = y0 + D - c.b1 * D, col = unitColor(o, c.key, b.key), ur = byCell[b.key + "|" + fi + "|" + c.key];
+          parts.push('<rect x="' + cx + '" y="' + cy + '" width="' + cw + '" height="' + ch + '" fill="' + col + '" fill-opacity="0.3"/>');
+          if (ur) ur.rooms.forEach(function (r) {
+            var rx = cx + r.x * k, rw = r.w * k, rh = r.h * k, ry = cy + ch - (r.y + r.h) * k, stair = r.name === "Stair", outdoor = r.name === "Terrace" || r.name === "Patio";
+            parts.push('<rect x="' + rx + '" y="' + ry + '" width="' + rw + '" height="' + rh + '" fill="' + (outdoor ? "#ffffff" : "#ffffff") + '" fill-opacity="' + (outdoor ? 0.25 : 0.55) + '" stroke="' + darker(col) + '" stroke-width="0.8"' + (outdoor ? ' stroke-dasharray="3 2"' : "") + "/>");
+            if (stair) for (var s = 1; s < 6; s++) parts.push('<line x1="' + rx + '" y1="' + (ry + rh * s / 6) + '" x2="' + (rx + rw) + '" y2="' + (ry + rh * s / 6) + '" stroke="' + darker(col) + '" stroke-width="0.6"/>');
+            if (rw >= 26 && rh >= 14) {
+              var short = rw < 46 ? r.name.replace("Primary bedroom", "Primary bed").replace("Mechanical", "Mech.").replace("Flex room", "Flex") : r.name;
+              parts.push('<text x="' + (rx + rw / 2) + '" y="' + (ry + rh / 2 + (rh >= 30 ? -1 : 3)) + '" text-anchor="middle" font-size="7.5" fill="#2c3e50">' + esc(short) + "</text>");
+              if (rh >= 30 && rw >= 34) parts.push('<text x="' + (rx + rw / 2) + '" y="' + (ry + rh / 2 + 9) + '" text-anchor="middle" font-size="6.5" fill="#6b7280">' + Math.round(r.area_m2) + " m2</text>");
+            }
+          });
+          parts.push('<rect x="' + cx + '" y="' + cy + '" width="' + cw + '" height="' + ch + '" fill="none" stroke="' + darker(col) + '" stroke-width="1.6"/>');
+          parts.push('<rect x="' + (cx + 2) + '" y="' + (cy + 2) + '" width="' + Math.min(cw - 4, 34) + '" height="11" rx="2" fill="' + col + '"/>');
+          parts.push('<text x="' + (cx + 4) + '" y="' + (cy + 10.5) + '" font-size="8" font-weight="700" fill="#ffffff">' + esc(c.key) + "</text>");
+          if (u && cw > 60) parts.push('<text x="' + (cx + 40) + '" y="' + (cy + 10.5) + '" font-size="7" fill="#2c3e50">' + u.beds + " bed / " + u.baths + " bath</text>");
+          // the entry: on the unit's first level, at the street face when the unit touches it, otherwise at its side
+          if (ur && ur.level_index === 0) {
+            if (c.b0 === 0) parts.push('<path d="M ' + (cx + cw * 0.12) + " " + (y0 + D + 1) + ' l 4 -7 l 4 7 z" fill="#c81e1e"/>');
+            else parts.push('<path d="M ' + (cx - 1) + " " + (cy + ch * 0.8) + ' l -7 -4 l 0 8 z" fill="#c81e1e"/>');
+          }
         });
-        parts.push('<rect x="' + x0 + '" y="' + y0 + '" width="' + W + '" height="' + D + '" fill="none" stroke="#2c3e50" stroke-width="1.5"/>');
-        parts.push('<text x="' + (x0 + W / 2) + '" y="' + (y0 + D + 22) + '" text-anchor="middle" font-size="10" fill="#2c3e50">' + esc(f.name) + " floor</text>");
+        parts.push('<rect x="' + x0 + '" y="' + y0 + '" width="' + W + '" height="' + D + '" fill="none" stroke="#2c3e50" stroke-width="1.8"/>');
+        parts.push('<text x="' + (x0 + W / 2) + '" y="' + (y0 + D + 22) + '" text-anchor="middle" font-size="10" font-weight="600" fill="#2c3e50">' + esc(f.name) + " floor</text>");
         parts.push('<text x="' + (x0 + W / 2) + '" y="' + (y0 + D + 34) + '" text-anchor="middle" font-size="8" fill="#6b7280" letter-spacing="1">' + (b.key === "rear" ? "COURTYARD SIDE" : "STREET SIDE") + "</text>");
         width = Math.max(width, x0 + W + pad);
       });
-      // dimensions beside the first plan
-      parts.push('<text x="' + (x - 4) + '" y="' + (y0 + D / 2) + '" text-anchor="end" font-size="8" fill="#6b7280" transform="rotate(-90 ' + (x - 4) + " " + (y0 + D / 2) + ')">' + fmt(b.depth_m, 1) + " m</text>");
-      y = y0 + D + 52;
+      parts.push('<text x="' + (x - 5) + '" y="' + (y0 + D / 2) + '" text-anchor="middle" font-size="8" fill="#6b7280" transform="rotate(-90 ' + (x - 5) + " " + (y0 + D / 2) + ')">' + fmt(b.depth_m, 1) + " m</text>");
+      parts.push('<text x="' + (x + W / 2) + '" y="' + (y0 - 5) + '" text-anchor="middle" font-size="8" fill="#6b7280">' + fmt(b.width_m, 1) + " m</text>");
+      y = y0 + D + 54;
     });
-    var totalW = Math.max(width, 240), totalH = y;
-    var legend = o.blocks.map(function (b) { return b.unit_list.map(function (u) { return '<span style="display:inline-block;width:10px;height:10px;background:' + unitColor(o, u.key, b.key) + ';margin:0 4px 0 8px;vertical-align:middle"></span>' + esc(u.key) + " " + u.beds + " bed, ~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2"; }).join(""); }).join("");
+    var totalW = Math.max(width, 260), totalH = y;
+    var legend = o.blocks.map(function (b) { return b.unit_list.map(function (u) { return '<span style="display:inline-block;width:10px;height:10px;background:' + unitColor(o, u.key, b.key) + ';margin:0 4px 0 8px;vertical-align:middle"></span>' + esc(u.key) + " " + u.beds + " bed, ~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2"; }).join(""); }).join("") +
+      '<span style="margin-left:8px">&#9650; entry</span>';
     return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + " " + totalH + '" role="img" aria-label="Schematic floor plans">' + parts.join("") + "</svg>", legend: legend, width: totalW, height: totalH };
   }
 
   return { SOURCE: SOURCE, DESIGNS: DESIGNS, UNIT_COLORS: UNIT_COLORS, design: design, url: url, fits: fits, form: form, fitRows: fitRows, fitLines: fitLines,
-    unitRows: unitRows, unitSvg: unitSvg, unitMix: unitMix, optionGfa: optionGfa, unitColor: unitColor, unitVolumes: unitVolumes, unitAreas: unitAreas, floorPlansSvg: floorPlansSvg };
+    unitRows: unitRows, unitSvg: unitSvg, unitMix: unitMix, optionGfa: optionGfa, unitColor: unitColor, unitVolumes: unitVolumes, unitAreas: unitAreas,
+    levelRoles: levelRoles, programme: programme, rooms: rooms, unitRooms: unitRooms, floorPlansSvg: floorPlansSvg };
 })();

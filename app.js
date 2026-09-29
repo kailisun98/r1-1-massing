@@ -75,14 +75,13 @@ var App = (function () {
   // ------------------------------------------------------------------ enabling by state
   function setReady() {
     var haveSite = !!S.parcel, haveModel = !!S.square, haveEnv = !!(S.ev && S.ev.status === "ok" && S.placed);
-    ui.edgeSelect.disabled = !haveSite; ui.btnPick.disabled = !haveSite; ui.btnGenerate.disabled = !haveSite;
-    ui.btnImport.disabled = !S.choices.length;
+    ui.edgeSelect.disabled = !haveSite; ui.btnPick.disabled = !haveSite;
     ["single", "courtyard", "side_by_side"].forEach(function (k) { ui.schemeBtns[k].disabled = !haveEnv; });
     ui.btnFormApply.disabled = !haveEnv; ui.btnFormClear.disabled = !haveEnv;
-    ui.btnCmhc.disabled = !haveEnv; ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc");
+    ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc");
     ui.tab3d.disabled = !haveModel; ui.tabSection.disabled = !haveSite;
     ui.stepBadges.forEach(function (b, i) {
-      var done = [haveModel, !!S.click || (S.det && S.det.front), !!S.ev, haveEnv, !!(S.form && S.form.status === "ok" && S.form.scheme !== "cmhc"), !!(S.form && S.form.scheme === "cmhc")][i];
+      var done = [haveModel, !!S.ev, haveEnv, !!(S.form && S.form.status === "ok")][i];
       b.classList.toggle("done", !!done);
     });
   }
@@ -119,8 +118,8 @@ var App = (function () {
       var E = S.det ? S.det.edges : M.edges(S.parcel.ring), best = 0, bestD = Infinity;
       E.forEach(function (ed, i) { var d = site.pointToSegment(xy, ed.a, ed.b); if (d < bestD) { bestD = d; best = i; } });
       ui.edgeSelect.value = String(best); S.click = E[best].mid;
-      ui.edgeNote.textContent = "Street edge picked on the map: edge " + E[best].i + " (faces " + E[best].facing + "). Generate the envelope.";
-      status("Street edge picked. Generate the envelope (step 4).", "ok"); setReady();
+      ui.edgeNote.textContent = "Street edge picked on the map: edge " + E[best].i + " (faces " + E[best].facing + ").";
+      onGenerate();
     });
   }
   function clearLayers(keys) { keys.forEach(function (k) { layers[k].clearLayers(); }); }
@@ -550,10 +549,11 @@ var App = (function () {
       S.choices = M.parcelChoices(S.res);
       ui.parcelList.innerHTML = "";
       S.choices.forEach(function (ch, i) { var o = el("option", null, ch.label); o.value = String(i); if (ch.parcel === S.res.target) o.selected = true; ui.parcelList.appendChild(o); });
-      clearLayers(Object.keys(layers)); fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true; ui.cmhcSection.hidden = true; resetCmhc();
+      clearLayers(Object.keys(layers)); fillRules(); fillResults(); fillForm(); setScheme(null); resetCmhc(); ui.edgeFallback.hidden = true;
       map.setView([S.res.centre[0], S.res.centre[1]], 17);
       var roads = S.res.roads ? S.res.roads.segments.length : 0;
-      status(S.res.parcels.length + " parcels, " + S.res.buildings.length + " buildings, " + roads + " road segments, " + S.res.topo_points.length + " elevation points fetched. Select the site parcel and import it.", "ok");
+      status(S.res.parcels.length + " parcels, " + S.res.buildings.length + " buildings, " + roads + " road segments, " + S.res.topo_points.length + " elevation points fetched.", "ok");
+      if (S.choices.length) onImport();   // the nearest parcel is the site; the envelope follows at once
     }).catch(function (e) {
       status("Fetch failed: " + e.message, "error"); report(["STOP: data fetch failed: " + e.message]);
     }).then(function () { ui.btnFetch.disabled = false; ui.btnSaveSite.disabled = !S.siteTape; setReady(); });
@@ -568,8 +568,12 @@ var App = (function () {
     report(M.siteLines(S.parcel)); report(M.cutLines(S.square).concat([""]));
     S.det = M.detectFrontage(S.parcel.ring, S.res.parcels, S.res.radius_m, S.parcel);
     report(M.frontageLines(S.det).concat([""]));
-    fillEdges(); fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true; ui.cmhcSection.hidden = true; resetCmhc(); markDirty(); setReady();
-    status("Site shown on the map, cut to a " + S.cutSide + " m square. Confirm the street edge (step 2), then generate the envelope (step 4).", "ok");
+    fillEdges(); fillRules(); fillResults(); fillForm(); setScheme(null); resetCmhc(); markDirty(); setReady();
+    if (S.det && S.det.front) { ui.edgeFallback.hidden = true; onGenerate(); }
+    else {   // the only case that needs a hand: say which edge faces the street
+      ui.edgeFallback.hidden = false;
+      status("Site shown, cut to a " + S.cutSide + " m square, but the street edge could not be detected: choose it below or pick a point on the map; the envelope follows.", "error");
+    }
   }
   function fillEdges() {
     ui.edgeSelect.innerHTML = "";
@@ -602,9 +606,10 @@ var App = (function () {
     if (ev.status !== "ok") { S.placed = false; markDirty(); setReady(); status("No envelope: " + (ev.controlling || ev.status) + ". See the report and the by-law table.", "error"); return; }
     S.placed = true;
     drawEnvelope(); setExistingVisible(!ui.chkHide.checked); drawSectionMarker(); markDirty();
-    ui.formSection.hidden = false; ui.cmhcSection.hidden = false; resetCmhc(); setReady();
+    resetCmhc(); setReady();
+    if (massingMode === "cmhc") onCmhc(true);
     status("Envelope placed: " + fmt(ev.env_width, 2) + " x " + fmt(ev.env_depth, 2) + " m, " + ev.height + " m high, up to " + ev.band.max_units + " units" +
-      (ui.chkHide.checked && S.existingIds.length ? "; existing building hidden" : "") + ". Toggle a form in step 5, or open the 3D view or the section.", "ok");
+      (ui.chkHide.checked && S.existingIds.length ? "; existing building hidden" : "") + ". Pick a massing option in step 4, or open the 3D view or the section.", "ok");
   }
   function onHideToggle() { if (!S.placed) return; setExistingVisible(!ui.chkHide.checked); markDirty(); status("Existing building on the site " + (ui.chkHide.checked ? "hidden." : "shown again."), "ok"); }
 
@@ -645,24 +650,30 @@ var App = (function () {
     if (!(S.cmhcPick && S.form && S.form.scheme === "cmhc" && S.form.status === "ok")) { status("Draw a catalogue option first (click a fitting row in step 6).", "error"); return; }
     var o = S.cmhcPick, plans = R1Cmhc.floorPlansSvg(o), b0 = S.form.buildings[0];
     var html = '<div class="planpop-body"><h3>' + esc(o.name) + ": schematic floor plans</h3>" +
-      '<p class="muted">' + o.units + " units (" + esc(R1Cmhc.unitMix(o)) + "). Unit extents follow the catalogue's floor layout; the room plans are in CMHC's summary package: " +
+      '<p class="muted">' + o.units + " units (" + esc(R1Cmhc.unitMix(o)) + "). Unit extents follow the catalogue's floor layout; the rooms are a schematic programme (entry and living toward the street, kitchen to the rear, bedrooms upstairs) sized to each unit. CMHC's own room plans: " +
       o.blocks.map(function (b) { return '<a href="' + R1Cmhc.url(b.design) + '" target="_blank" rel="noopener">' + esc(b.design.name) + "</a>"; }).filter(function (x, i, arr) { return arr.indexOf(x) === i; }).join(", ") + ".</p>" +
       '<div class="planpop-scroll">' + plans.svg + "</div><p class=\"muted planpop-legend\">" + plans.legend + "</p></div>";
-    L.popup({ maxWidth: Math.min(640, Math.max(320, ui.panes.map.clientWidth - 80)), maxHeight: Math.max(300, ui.panes.map.clientHeight - 120), className: "planpop", autoPanPadding: [30, 30] })
-      .setLatLng(ll(b0.centroid)).setContent(html).openOn(map);
+    // the map pane must be visible and laid out before Leaflet measures the popup, or it opens at its minimum width
     showView("map");
+    setTimeout(function () {
+      map.invalidateSize();
+      var w = Math.min(680, Math.max(300, ui.panes.map.clientWidth - 70)), hgt = Math.max(260, ui.panes.map.clientHeight - 130);
+      L.popup({ minWidth: w, maxWidth: w, maxHeight: hgt, className: "planpop", autoPanPadding: [24, 24], keepInView: true })
+        .setLatLng(ll(b0.centroid)).setContent(html).openOn(map);
+    }, 80);
     status("Floor plans shown on the map for " + o.name + ". Close the popup or pick another option to dismiss it.", "ok");
   }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
   function resetCmhc() { S.cmhc = null; clearCmhcPick(); ui.cmhcTable.innerHTML = ""; ui.cmhcNote.textContent = ""; }
-  function onCmhc() {
-    if (!(S.ev && S.ev.status === "ok" && S.placed)) { status("Generate the permitted envelope first (step 4).", "error"); return; }
+  function onCmhc(quiet) {
+    if (!(S.ev && S.ev.status === "ok" && S.placed)) { if (!quiet) status("The site needs an envelope first (step 3).", "error"); return; }
     S.cmhc = R1Cmhc.fits(S.ev); clearCmhcPick(); fillCmhcTable();
     report(R1Cmhc.fitLines(S.cmhc, S.ev).concat([""]));
     var ok = S.cmhc.options.filter(function (o) { return o.ok; });
-    ui.cmhcNote.textContent = ok.length ? "Click a fitting option to draw it as the massing (teal) and see its unit configuration. Options that do not fit list the failing rule."
-      : "No catalogue design fits this envelope as drawn; the table gives the rule each one fails.";
-    status(ok.length + " of " + S.cmhc.options.length + " catalogue options fit this site. Click one to draw it.", ok.length ? "ok" : "error"); setReady();
+    ui.cmhcNote.textContent = (ok.length ? ok.length + " of " + S.cmhc.options.length + " catalogue options fit this site. Click a fitting option to draw it as the massing (units in colour) and see its unit configuration; the rest list the failing rule."
+      : "No catalogue design fits this envelope as drawn; the table gives the rule each one fails.");
+    if (!quiet) status(ok.length + " of " + S.cmhc.options.length + " catalogue options fit this site. Click one to draw it.", ok.length ? "ok" : "error");
+    setReady();
   }
   function fillCmhcTable() {
     var t = ui.cmhcTable; t.innerHTML = "";
@@ -714,8 +725,8 @@ var App = (function () {
     clearLayers(Object.keys(layers));
     var res = S.res, zone = S.zone, choices = S.choices, cut = S.cutSide, tape = S.siteTape, hit = S.hit, address = S.address;
     resetState(); S.res = res; S.zone = zone; S.choices = choices; S.cutSide = cut; S.siteTape = tape; S.hit = hit; S.address = address;
-    fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true; ui.cmhcSection.hidden = true; resetCmhc(); ui.edgeSelect.innerHTML = ""; ui.edgeNote.textContent = "Import a site to list its edges.";
-    markDirty(); setReady(); status("Cleared. The fetched site data is kept; import again or fetch another site.", "ok");
+    fillRules(); fillResults(); fillForm(); setScheme(null); resetCmhc(); ui.edgeFallback.hidden = true;
+    markDirty(); setReady(); status("Cleared. The fetched site data is kept: re-select the parcel, fetch again, or pick another site to redraw.", "ok");
   }
   function onCopy() {
     var text = ui.report.textContent;
@@ -726,11 +737,21 @@ var App = (function () {
 
   // ------------------------------------------------------------------ boot
   function bind() {
-    ["address", "cutSide", "btnFetch", "parcelList", "zoning", "btnImport", "edgeSelect", "edgeNote", "btnPick", "rules", "assumptions", "btnGenerate", "chkHide",
+    ["address", "cutSide", "btnFetch", "parcelList", "zoning", "edgeSelect", "edgeNote", "edgeFallback", "btnPick", "rules", "assumptions", "chkHide",
       "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormApply", "btnFormClear", "formTable", "formNote", "formDesc", "report", "btnCopy",
       "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "btnSaveSite", "siteFile", "presetList", "sourceNote",
-      "btnCmhc", "btnCmhcClear", "cmhcTable", "cmhcNote", "cmhcUnits", "cmhcSection", "btnCmhcPlans", "btnPickSite"].forEach(function (id) { ui[id] = $(id); });
-    ui.btnCmhc.addEventListener("click", onCmhc); ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans);
+      "btnCmhcClear", "cmhcTable", "cmhcNote", "cmhcUnits", "btnCmhcPlans", "btnPickSite", "modeForms", "modeCmhc", "panelForms", "panelCmhc"].forEach(function (id) { ui[id] = $(id); });
+    ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans);
+    ui.modeForms.addEventListener("click", function () { setMassingMode("forms"); });
+    ui.modeCmhc.addEventListener("click", function () { setMassingMode("cmhc"); });
+    // every section collapses from its heading
+    Array.prototype.forEach.call(document.querySelectorAll(".step > h2, .report > h2"), function (h) {
+      h.addEventListener("click", function () { var sec = h.parentElement, off = sec.classList.toggle("collapsed"); h.setAttribute("aria-expanded", off ? "false" : "true"); });
+      h.setAttribute("aria-expanded", "true"); h.setAttribute("role", "button"); h.tabIndex = 0;
+      h.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); h.click(); } });
+    });
+    ui.parcelList.addEventListener("change", function () { if (S.res) onImport(); });
+    ui.cutSide.addEventListener("change", function () { if (S.res) onFetch(); });
     ui.btnPickSite.addEventListener("click", function () {
       sitePickMode = !sitePickMode; pickMode = false; ui.btnPick.classList.remove("on");
       ui.btnPickSite.classList.toggle("on", sitePickMode); map.getContainer().classList.toggle("leaflet-crosshair", sitePickMode);
@@ -746,14 +767,12 @@ var App = (function () {
     M.CUT_SIDES_M.forEach(function (s) { var o = el("option", null, s + " x " + s + " m"); o.value = String(s); if (s === M.CUT_DEFAULT_SIDE_M) o.selected = true; ui.cutSide.appendChild(o); });
     M.COURTYARDS_M.forEach(function (c) { var o = el("option", null, c + " m"); o.value = String(c); ui.courtyardSel.appendChild(o); });
     M.REAR_DEPTHS_M.forEach(function (d) { var o = el("option", null, d + " m"); o.value = String(d); if (d === M.REAR_DEPTH_DEFAULT_M) o.selected = true; ui.rearDepthSel.appendChild(o); });
-    ui.assumptions.textContent = "Assumed, not checked: " + core.RULES.assumptions.join(" ") + " The multiple-building rows are used only by the form options in step 5; " + M.FORM_RULES.source.note;
+    ui.assumptions.textContent = "Assumed, not checked: " + core.RULES.assumptions.join(" ") + " The multiple-building rows are used only by the massing options in step 4; " + M.FORM_RULES.source.note;
     $("sourceLine").textContent = core.RULES.source.document + ". " + core.RULES.source.version + ", accessed " + core.RULES.source.accessed + ". By-law values in metres; drawn values in mm.";
     ui.btnFetch.addEventListener("click", onFetch);
     ui.address.addEventListener("keydown", function (e) { if (e.key === "Enter") onFetch(); });
-    ui.btnImport.addEventListener("click", onImport);
-    ui.btnPick.addEventListener("click", function () { if (!S.parcel) return; pickMode = !pickMode; ui.btnPick.classList.toggle("on", pickMode); status(pickMode ? "Click on the map near the street-facing edge of the site." : "Pick cancelled.", "info"); });
-    ui.edgeSelect.addEventListener("change", function () { S.click = null; setReady(); });
-    ui.btnGenerate.addEventListener("click", onGenerate);
+    ui.btnPick.addEventListener("click", function () { if (!S.parcel) return; pickMode = !pickMode; sitePickMode = false; ui.btnPickSite.classList.remove("on"); ui.btnPick.classList.toggle("on", pickMode); status(pickMode ? "Click on the map near the street-facing edge of the site." : "Pick cancelled.", "info"); });
+    ui.edgeSelect.addEventListener("change", function () { S.click = null; if (S.parcel) onGenerate(); else setReady(); });
     ui.chkHide.addEventListener("change", onHideToggle);
     Object.keys(ui.schemeBtns).forEach(function (k) { ui.schemeBtns[k].addEventListener("click", function () { applyForm(k); }); });
     ui.courtyardSel.addEventListener("change", function () { if (S.scheme === "courtyard") applyForm("courtyard"); });
@@ -772,17 +791,18 @@ var App = (function () {
         status(presets.length ? "Pick a preloaded site from the address list and fetch it." : "Open a site file to start.", "info"); return;
       }
       ui.address.value = EXAMPLE_ADDRESS;
-      status("Example site loading: " + EXAMPLE_ADDRESS + " (an R1-1 lot in Dunbar). Type your own address to start over.", "busy");
-      // a working state at rest: run the example through to the envelope
-      onFetch();
-      var wait = setInterval(function () {
-        if (!S.res || ui.btnFetch.disabled) return;
-        clearInterval(wait);
-        if (!S.choices.length) return;
-        onImport();
-        if (S.det && S.det.front) { onGenerate(); status("Example: " + EXAMPLE_ADDRESS + " fetched, imported and its envelope generated. Toggle a form in step 5, open 3D or Section, or " + (BUNDLED ? "pick another preloaded site." : "type another address."), "ok"); }
-      }, 300);
+      status("Example site loading: " + EXAMPLE_ADDRESS + " (an R1-1 lot in Dunbar). Type your own address or pick a site on the map to start over.", "busy");
+      onFetch();   // a working state at rest: the fetch imports the site and draws the envelope by itself
     });
+  }
+  // step 4 has two sources of massing: the by-law form options and the CMHC catalogue
+  var massingMode = "forms";
+  function setMassingMode(mode) {
+    massingMode = mode;
+    ui.panelForms.hidden = mode !== "forms"; ui.panelCmhc.hidden = mode !== "cmhc";
+    ui.modeForms.classList.toggle("on", mode === "forms"); ui.modeForms.setAttribute("aria-selected", mode === "forms" ? "true" : "false");
+    ui.modeCmhc.classList.toggle("on", mode === "cmhc"); ui.modeCmhc.setAttribute("aria-selected", mode === "cmhc" ? "true" : "false");
+    if (mode === "cmhc" && !S.cmhc && S.ev && S.ev.status === "ok" && S.placed) onCmhc(false);
   }
 
   return { start: start, state: function () { return S; }, map: function () { return map; }, three: function () { return three; }, zoomToSite: zoomToSite, showView: showView,

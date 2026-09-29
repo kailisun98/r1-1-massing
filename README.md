@@ -117,9 +117,20 @@ opens in a working state; type another address to start over.
   mixed-use residential building, 2.2.5, conditional) or a child day care (conditional, up to 10%
   of floor area excluded, 4.1.2(m)). Because a full three-storey envelope exceeds FSR 1.00 on a
   standard lot, the configurator trims the front-row buildings from the rear to the FSR-limited
-  depth and redraws the massing at that depth (the note says by how much). Bedrooms follow each
-  unit's area (3-bed from 105 m², 2-bed from 65 m²). Units are coloured on the map, in 3D and in the
-  unit table, and *Floor plans* opens the sheet for them too.
+  depth and redraws the massing at that depth (the note says by how much). *Access* chooses how
+  the upper units are reached: an exterior stair and open walkway, or a shared single exit stair
+  in an internal core (a 2.4 m band across the depth with a street vestibule, a straight stair,
+  a corridor on every floor and a bike room; the units either side open onto the corridor, the
+  street-facing ground units keep their own front doors; offered where the layout has at most two
+  units across and the building is deep enough for the stair, otherwise that building keeps the
+  exterior stair with a note). *Unit mix*: by area (3-bed from 105 m², 2-bed from 65, 1-bed from
+  38, a studio below that), each unit held to the bedrooms its rooms can actually hold, or set by
+  hand with the 3-bedroom, 2-bedroom and studio selects (1-beds are the rest): each select is
+  capped by how many units can hold that type, found by laying every unit out as a 3-bed, then a
+  2-bed, and counting the bedrooms that fit a bed with its clearances, with the area floors above;
+  studios are single-level units. The 2.2.8 family-unit minimum is still checked and shown when a
+  hand-set mix falls short. Units are coloured on the map, in 3D and in the unit table, and *Floor
+  plans* opens the sheet for them too.
 - **Standard test fits** (`web/fits.js`): the room sizes, furniture and clearances the plans are
   built from, transcribed from dimensions.com's Layouts pages (read 2026-09-29; the element slug is
   kept with each value): one-wall bathrooms (half 1.42–2.13 × 1.37–1.68 m, three-quarter
@@ -135,7 +146,9 @@ opens in a working state; type another address to start over.
 - **Room layouts** (`web/rooms.js`): every unit level is composed from those modules. A unit on
   several levels has a U-stair core 2.0 m wide (two 0.95 m flights side by side with a landing,
   3.3 m long for 3.83 m floors) in the same place on every level, or a 1.0 m straight run (5.9 m)
-  along the party wall when the unit is narrower than 6.1 m; the entry is 1.5 m deep with a coat
+  along the party wall when the unit is narrower than 6.1 m, or, when the unit is too shallow for
+  rooms behind that run, the U-stair across the back wall in a 2 m band with the powder room (and
+  upstairs the bath) beside it and a cross hall in front; the entry is 1.5 m deep with a coat
   closet, halls are 1.0 m, the bath 2.2 × 1.7 m on one wall, the powder room 1.45 × 1.4 m, the
   kitchen band 1.8 m deep (0.6 m counter, 1.2 m aisle) with a 2.4 m run or more, the laundry a
   0.95 m closet, bedrooms sized to the bed they hold with a 0.6 m closet or a 1.2 m walk-in. A flat
@@ -153,7 +166,9 @@ opens in a working state; type another address to start over.
   room under 2.6 m, a kitchen under 1.7 m or with a run under 2.1 m, a bath under 1.5 m, a stair
   that does not stack, a unit with no way in; the sheet and the unit panel show the result.
 - **Access** (`web/access.js`): how every unit is reached. Ground units are entered at grade from
-  the street, or from the side-yard path when a cell sits behind another. A unit whose entry level
+  the street, or from the side-yard path when a cell sits behind another. With the internal-core
+  option every unit not on the street opens onto the core's corridor and the core itself is
+  entered from the street (and leaves to the rear yard). Otherwise a unit whose entry level
   is an upper floor is reached by an exterior single exit stair and a 1.2 m open walkway on one
   face: the rear (lane or courtyard) face of a building on the street, the courtyard face of a rear
   building, or the front face for an upper unit that touches only the front. One stair per face
@@ -211,11 +226,16 @@ opens in a working state; type another address to start over.
   the by-law blocks and the bare envelope are labelled the same way.
 - **UI**: following the usual principles (hierarchy, progressive disclosure, consistency, contrast,
   accessibility, proximity, alignment, feedback): one title bar; a status strip under it that is
-  always visible, colour-coded, with a spinner while a fetch runs; both side bars collapse; one
-  primary action per step; segmented controls for the massing source and the form; option cards
-  with a fits / no-fit pill; disclosure sections for help text; keyboard shortcuts Alt+1 to Alt+5 for
-  the views, Alt+M and Alt+S for the bars. The stage, the steps and the massing options have fixed
-  grid positions, so hiding a bar widens the stage instead of shifting it.
+  always visible, colour-coded, with a spinner while a fetch runs or the plans are being checked;
+  both side bars collapse; one primary action per step; segmented controls for the massing source
+  and the form; option cards with a fits / no-fit pill; disclosure sections for help text; keyboard
+  shortcuts Alt+1 to Alt+5 for the views, Alt+M and Alt+S for the bars. The by-law table (step 2)
+  marks every rule: a green check where it is applied and met, a red cross where it is checked and
+  not met, an amber dash where it does not apply to what is drawn (the courtyard and side-by-side
+  rules until such a form is drawn, the 3-unit rule on a larger site), with a key under the table;
+  the marks carry an accessible label. The unit settings are grouped (count, tenure, ground floor,
+  access; then the mix). The stage, the steps and the massing options have fixed grid positions, so
+  hiding a bar widens the stage instead of shifting it.
 - **Layout**: a top bar carries the title, *City of Vancouver R1-1 Schematic Design Tool*, the
   source line, a button that hides or shows the steps on the left and one for the massing options
   on the right. The massing options (step 4) sit in the right panel, which opens as soon as the

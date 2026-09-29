@@ -21,23 +21,33 @@ var R1Rooms = (function () {
   "use strict";
   var F = R1Fits, ST = F.STAIR;
   var MIN = { hall: 0.9, bath_w: 1.5, wc_w: 1.35, bed_w: 2.5, bed_area: 7.5, kitchen: 1.7, kitchen_run: 2.1, living_w: 3.2, dining_w: 2.6, stair_w: 0.86, stair_l: 3.0, door: 0.86, entry: 1.2 };
-  var HALL = 1.0, ENTRY_D = 1.5, WET = 1.8, BATH_W = 2.2, BATH_D = 1.7, WC_W = 1.45, WC_D = 1.4, LDRY = 0.95, CLOSET = 1.2, SLIVER = 0.95;   // no room narrower than a door
+  var HALL = 0.9, ENTRY_D = 1.5, WET = 1.8, BATH_W = 2.2, BATH_D = 1.8, WC_W = 1.45, WC_D = 1.4, LDRY = 0.95, CLOSET = 1.2, SLIVER = 0.95;   // halls 0.9 (BCBC 9.5.3 hallways 860 mm); baths 1.8 deep so a 0.9 m door clears the tub; no room narrower than a door
   function r2(v) { return Math.round(v * 100) / 100; }
   function R(name, x, y, w, h, extra) { var r = { name: name, x: r2(x), y: r2(y), w: r2(w), h: r2(h), area_m2: r2(w * h) }; if (extra) Object.keys(extra).forEach(function (k) { r[k] = extra[k]; }); return r; }
   function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
 
   // the stair of a unit: U-stair core when the unit is wide enough for it plus a hall and a bedroom, else a straight run
   function stairModule(fh, w, d) {
-    var risers = Math.ceil(fh / ST.rise_max);
-    if (w >= 6.1 && d >= 7.0) { var per = Math.ceil(risers / 2); return { kind: "u", w: 2.0, l: r2(Math.max(3.0, (per - 1) * ST.run + ST.landing)), risers: risers, fh: r2(fh) }; }
-    return { kind: "straight", w: 1.0, l: r2((risers - 1) * ST.run + 1.0), risers: risers, fh: r2(fh) };
+    var risers = Math.ceil(fh / ST.rise_max), per = Math.ceil(risers / 2), uL = r2(Math.max(3.0, (per - 1) * ST.run + ST.landing)), sL = r2((risers - 1) * ST.run + 1.0);
+    if (w >= 6.1 && d >= 7.0) return { kind: "u", w: 2.0, l: uL, risers: risers, fh: r2(fh) };
+    // a narrow unit too shallow for a straight run with rooms behind it: the U-stair lies across the back wall
+    if (d - ENTRY_D - sL < 1.7 && w >= uL + 1.5 && d >= 7.0) return { kind: "u_back", w: uL, l: 2.0, risers: risers, fh: r2(fh) };
+    return { kind: "straight", w: 1.0, l: sL, risers: risers, fh: r2(fh) };
   }
   /* unitCtx(w, d, opts): what all the levels of a unit share: the stair module (from the floor-to-floor height) and
      which faces of the unit are exterior in its own frame (opts.win = {front, back, left, right}). */
   function unitCtx(w, d, opts) {
     opts = opts || {};
     var fh = opts.fh || 3.0;
-    return { stair: stairModule(fh, w, d), fh: fh, win: opts.win || { front: true, back: false, left: false, right: false } };
+    return { stair: stairModule(fh, w, d), fh: fh, win: opts.win || { front: true, back: false, left: false, right: false }, level: opts.level || 0, levels: opts.levels || 1 };
+  }
+  // a studio: one room for living and sleeping with the entry in its corner, bath, kitchen and laundry across the back
+  function studio(u, w, d) {
+    var out = [], kd = clamp(d - 4.6, 1.8, 2.2), fd = d - kd, bathW = Math.max(1.5, Math.min(BATH_W, w - 2.4)), ldry = w - bathW - LDRY >= 2.4 ? LDRY : 0;
+    out.push(R("Entry", 0, 0, HALL, ENTRY_D), R("Studio", HALL, 0, w - HALL, ENTRY_D), R("Studio", 0, ENTRY_D, w, fd - ENTRY_D));
+    out.push(R("Bath", 0, fd, bathW, kd), R("Kitchen", bathW, fd, w - bathW - ldry, kd));
+    if (ldry) out.push(R("Laundry", w - ldry, fd, ldry, kd));
+    return mergeParts(out, "Studio");
   }
   // the living room is drawn as one L-shaped area made of two rectangles; the largest carries the name
   function mergeParts(rooms, name) {
@@ -53,9 +63,13 @@ var R1Rooms = (function () {
   // the middle (bath beside the hall, laundry, kitchen run to the far wall), bedrooms at the back
   function flat(u, w, d, ctx) {
     var beds = u ? u.beds : 1;
-    if (d < 8.2 || w < 5.4) return flatShallow(u, w, d, ctx);   // 3.2 living + 1.8 wet band + 2.7 bedroom + the halls need 8.2 m
+    if (beds === 0) return studio(u, w, d);
+    // the deep template (living in front, wet band, bedroom behind) needs 3.2 + 1.8 + 2.5 m; a shallower cell puts the
+    // bedroom beside the living room, which needs 5.8 m of width
+    if (d < 7.4 || (w < 5.0)) return flatShallow(u, w, d, ctx);
+    if (d < 8.2 && w >= 5.8) return flatShallow(u, w, d, ctx);
     var out = [], twoBack = beds >= 2 && d >= 9.6 && w >= 5.8, frontBed2 = beds >= 2 && !twoBack && (w - HALL - 2.9) >= 3.4;
-    var db = clamp(d - WET - 3.4 - (twoBack ? HALL : 0), 2.7, 3.6), dl = d - WET - db - (twoBack ? HALL : 0), yWet = dl, yBack = yWet + WET + (twoBack ? HALL : 0);
+    var db = clamp(d - WET - 3.4 - (twoBack ? HALL : 0), 2.5, 3.6), dl = d - WET - db - (twoBack ? HALL : 0), yWet = dl, yBack = yWet + WET + (twoBack ? HALL : 0);
     out.push(R("Entry", 0, 0, HALL, ENTRY_D), R("Hall", 0, ENTRY_D, HALL, yWet + WET - ENTRY_D));
     var lx = HALL, lw = w - HALL;
     if (frontBed2) { out.push(R("Bedroom 2", w - 2.9, 0, 2.9, dl)); lw -= 2.9; }
@@ -77,14 +91,32 @@ var R1Rooms = (function () {
   }
   // a shallow or narrow flat: living (with the entry in its corner) and the bedroom side by side on the entry face,
   // bath, kitchen and laundry across the back; the bath opens off the living room
+  // the bedrooms stand beside the living room on the window wall (as many as the width takes: a bedroom 2.9-4.3 m
+  // wide each, the living room 3.2 m or more); the wet band across the back: bath and kitchen under the living room,
+  // the laundry, an ensuite under bedroom 1 when the unit has two baths, and a walk-in closet under the last bedroom
   function flatShallow(u, w, d, ctx) {
-    var beds = u ? u.beds : 1, out = [], kd = clamp(d - 4.4, 1.8, 2.4), fd = d - kd, bw = clamp(0.45 * w, 2.9, 3.4), lw = w - bw;
-    if (lw < 3.0) { bw = Math.max(2.6, w - 3.0); lw = w - bw; }
-    out.push(R("Entry", 0, 0, HALL, ENTRY_D), R("Living / dining", HALL, 0, lw - HALL, ENTRY_D), R("Living / dining", 0, ENTRY_D, lw, fd - ENTRY_D));
-    out.push(R(beds >= 2 ? "Bedroom 1" : "Bedroom", lw, 0, bw, fd));
-    var bathW = Math.min(BATH_W, lw), ldry = w - bathW - LDRY >= 2.4 ? LDRY : 0;
-    out.push(R("Bath", 0, fd, bathW, kd), R("Kitchen", bathW, fd, w - bathW - ldry, kd));
-    if (ldry) out.push(R("Laundry", w - ldry, fd, ldry, kd));
+    var beds = u ? u.beds : 1, baths = u ? u.baths : 1, out = [], kd = clamp(d - 4.4, 1.8, 2.4), fd = d - kd;
+    var two = beds >= 2 && w - 2 * 2.9 >= 3.2, bw = two ? clamp((w - 3.6) / 2, 2.9, 4.3) : clamp(0.45 * w, 2.9, 3.4);
+    if (!two && w - bw < 3.0) bw = Math.max(2.6, w - 3.0);
+    var lx = two ? bw : 0, lw = two ? w - 2 * bw : w - bw;   // the living room between two bedrooms, or beside one
+    out.push(R("Entry", lx, 0, HALL, ENTRY_D), R("Living / dining", lx + HALL, 0, lw - HALL, ENTRY_D), R("Living / dining", lx, ENTRY_D, lw, fd - ENTRY_D));
+    if (two) out.push(R("Bedroom 1", 0, 0, bw, fd), R("Bedroom 2", lx + lw, 0, bw, fd));
+    else out.push(R(beds >= 2 ? "Bedroom 1" : "Bedroom", lw, 0, bw, fd));
+    // the wet band: bath and kitchen under the living room, the laundry off the kitchen, an ensuite (or closet) under
+    // bedroom 1, a walk-in closet under the last bedroom
+    var x = 0;
+    if (two) {
+      if (baths >= 2 && bw >= BATH_W) { out.push(R("Ensuite", 0, fd, BATH_W, kd)); x = BATH_W; }
+      if (bw - x >= SLIVER) { out.push(R(x ? "Storage" : "Closet", x, fd, bw - x, kd)); }
+      else if (bw - x > 0.05) out[out.length - 1].w = r2(out[out.length - 1].w + bw - x);
+      x = bw;
+    }
+    var bathW = Math.min(BATH_W, lw), kw = Math.max(2.4, Math.min(3.6, w - x - bathW - LDRY - CLOSET));
+    out.push(R("Bath", x, fd, bathW, kd)); x += bathW;
+    if (w - x - kw >= LDRY) { out.push(R("Kitchen", x, fd, kw, kd)); x += kw; } else { out.push(R("Kitchen", x, fd, w - x, kd)); x = w; }
+    if (w - x >= LDRY) { out.push(R("Laundry", x, fd, LDRY, kd)); x += LDRY; }
+    if (w - x >= SLIVER) out.push(R("Closet", x, fd, w - x, kd));
+    else if (w - x > 0.05) out[out.length - 1].w = r2(out[out.length - 1].w + (w - x));
     return mergeParts(out, "Living / dining");
   }
 
@@ -122,38 +154,93 @@ var R1Rooms = (function () {
     var dp = clamp(0.38 * d, 3.2, 3.8), ens = baths >= 2 && wb >= 5.4 && !opts.attic;
     if (ens) out.push(R(primary, bx, 0, wb - BATH_W, dp), R("Ensuite", bx + wb - BATH_W, 0, BATH_W, BATH_D), R("Closet", bx + wb - BATH_W, BATH_D, BATH_W, dp - BATH_D));
     else out.push(R(primary, bx, 0, wb, dp));
-    var yb = dp, bd = BATH_D, yBack = yb + bd;
-    if (yBack < yA - 0.3) { bd = yA - yb; yBack = yA; }   // the stair column reaches further back: the bath row meets it
+    var yb = dp, bd = BATH_D, yBack = yb + bd, fill = 0;
+    if (yBack < yA - 0.3) { fill = yA - yBack; yBack = yA; }   // the stair column reaches further back: laundry and storage fill the row behind the bath
     var back = d - yBack, twoBack = (beds >= 3 || opts.attic) && back >= 2.5 + HALL && w >= 5.5;
     out.push(R("Hall", hx, 0, HALL, yBack));
     if (twoBack) out.push(R("Hall", hx, yBack, w - hx, HALL));
     if (wb - BATH_W >= SLIVER) out.push(R("Bath", bx, yb, BATH_W, bd), R("Closet", bx + BATH_W, yb, wb - BATH_W, bd));
     else out.push(R("Bath", bx, yb, wb, bd));
-    var yStart = twoBack ? yBack + HALL : yBack, db = d - yStart, la = yStart - yA;
-    if (la >= LDRY + SLIVER) out.push(R("Laundry", 0, yA, sw, LDRY), R("Storage", 0, yA + LDRY, sw, la - LDRY));
-    else if (la >= 0.6) out.push(R("Laundry", 0, yA, sw, la));
+    if (fill >= SLIVER) out.push(R("Laundry", bx, yb + bd, wb, fill));   // a laundry and utility room off the hall
+    else if (fill > 0.05) { out[out.length - 1].h = r2(out[out.length - 1].h + fill); if (out[out.length - 2].name === "Bath") out[out.length - 2].h = r2(out[out.length - 2].h + fill); }
+    var yStart = twoBack ? yBack + HALL : yBack, db = d - yStart, la = yStart - yA, hasLaundry = out.some(function (r) { return r.name === "Laundry"; });
+    if (la >= 0.6) out.push(R(!hasLaundry && la >= 1.6 ? "Laundry" : "Storage", 0, yA, sw, la));   // behind the stair, off the hall: a laundry when a washer fits past the door's approach, else storage
+    if (db < 1.0) { if (db > 0.05) { out.filter(function (r) { return r.y + r.h > yStart - 0.05 && r.y < yStart; }).forEach(function (r) { r.h = r2(r.h + db); }); } return out; }   // nothing fits behind: the row above takes the sliver
     if (opts.attic) { var tw = Math.max(2.4, w * 0.45); out.push(R(opts.den ? "Den" : "Study", 0, yStart, w - tw, db), R("Terrace", w - tw, yStart, tw, db)); }
     else if (beds >= 3 && twoBack) { var w2 = clamp(0.55 * w, 2.9, w - 2.6); out.push(R("Bedroom 2", 0, yStart, w2, db), R("Bedroom 3", w2, yStart, w - w2, db)); }
-    else if (beds >= 2) out.push(R("Bedroom 2", 0, yStart, w - CLOSET, db, beds >= 3 ? { note: "third bedroom does not fit on this level" } : null), R("Closet", w - CLOSET, yStart, CLOSET, db));
-    else out.push(R("Study", 0, yStart, w, db));
+    else if (beds >= 2 && db >= 1.7) out.push(R("Bedroom 2", 0, yStart, w - CLOSET, db), R("Closet", w - CLOSET, yStart, CLOSET, db));
+    else out.push(R(db >= 1.7 ? "Study" : "Storage", 0, yStart, w, db));
     return out;
   }
   // an entry level under a living level (three-level townhouse): entry, stair core and mechanical room in the
   // column; a short hall to the den, with the bath and storage on the street side, the den behind, the patio at the back
   function entryLevel(u, w, d, ctx) {
     var st = ctx.stair, sw = st.w, L = st.l, out = [], yA = ENTRY_D + L, den = !!(u && u.den), wb = w - sw;
+    // a three-bedroom unit whose bedroom level holds only two puts its third bedroom here, at grade, in place of the den
+    var beds = u ? u.beds : 0, upstairs = beds >= 3 ? bedroomLevel(u, w, d, ctx).filter(function (r) { return /bedroom/i.test(r.name); }).length : 0, bedHere = beds >= 3 && upstairs < beds;
     out.push(R("Entry", 0, 0, sw, ENTRY_D), R("Stair", 0, ENTRY_D, sw, L, { stair: st }));
     var pd = clamp(d - Math.max(yA, BATH_D + 3.4) - 0.3, 1.5, 3.0), yP = d - pd;
     out.push(R("Hall", sw, 0, HALL, BATH_D));
-    if (wb - HALL - BATH_W >= SLIVER) out.push(R("Bath", sw + HALL, 0, BATH_W, BATH_D), R("Storage", sw + HALL + BATH_W, 0, wb - HALL - BATH_W, BATH_D));
+    if (wb - HALL - BATH_W >= SLIVER) out.push(R("Bath", sw + HALL, 0, BATH_W, BATH_D), R(bedHere ? "Closet" : "Storage", sw + HALL + BATH_W, 0, wb - HALL - BATH_W, BATH_D));
     else out.push(R("Bath", sw + HALL, 0, wb - HALL, BATH_D));
-    out.push(R(den ? "Den" : "Flex room", sw, BATH_D, wb, yP - BATH_D));
+    out.push(R(bedHere ? "Bedroom " + beds : (den ? "Den" : "Flex room"), sw, BATH_D, wb, yP - BATH_D));
     if (yP - yA >= 0.6) out.push(R("Mechanical", 0, yA, sw, yP - yA));
     out.push(R("Patio", 0, yP, w, pd));
     return out;
   }
   // attic level (the duplex's third level within the roof): a bedroom in front, bath row, den or study and a terrace behind
   function attic(u, w, d, ctx) { return bedroomLevel(u, w, d, ctx, { attic: true, den: !!(u && u.den), primary: "Bedroom 3", beds: 1 }); }
+
+  // ------------------------------------------------------------------ narrow, shallow two-level units: the stair across the back
+  // the entry level: entry in the corner, living (and dining) in front, the kitchen band, then a 2 m band along the
+  // back holding the U-stair and the powder room beside it
+  function livingBack(u, w, d, ctx) {
+    var st = ctx.stair, L = st.w, band = st.l, yB = d - band, out = [], fd = yB - WET;
+    out.push(R("Entry", 0, 0, 1.0, ENTRY_D));
+    if (fd >= 5.9) out.push(R("Living", 1.0, 0, w - 1.0, ENTRY_D), R("Living", 0, ENTRY_D, w, 3.2 - ENTRY_D), R("Dining", 0, 3.2, w, fd - 3.2));
+    else out.push(R("Living / dining", 1.0, 0, w - 1.0, ENTRY_D), R("Living / dining", 0, ENTRY_D, w, fd - ENTRY_D));
+    var ldry = w - LDRY >= 2.4 ? LDRY : 0;
+    out.push(R("Kitchen", 0, fd, w - ldry, WET)); if (ldry) out.push(R("Laundry", w - ldry, fd, ldry, WET));
+    out.push(R("Stair", 0, yB, L, band, { stair: st }));
+    if (w - L >= WC_W) out.push(R("WC", L, yB, w - L, band)); else if (w - L >= SLIVER) out.push(R("Storage", L, yB, w - L, band)); else out[out.length - 1].w = r2(w);
+    mergeParts(out, "Living"); return mergeParts(out, "Living / dining");
+  }
+  // the bedroom level: the stair band at the back with the bath beside it, a cross hall in front of it, the
+  // bedrooms (two across when the width allows) with walk-in closets between them and the hall
+  function bedroomBack(u, w, d, ctx) {
+    var st = ctx.stair, L = st.w, band = st.l, yB = d - band, hy = yB - HALL, beds = u ? u.beds : 2, out = [];
+    var n = beds >= 2 && w >= 5.0 ? 2 : 1, bw = w / n;
+    for (var i = 0; i < n; i++) out.push(R(i === 0 ? "Primary bedroom" : "Bedroom 2", i * bw, 0, bw, hy));   // to the hall, closets as furniture
+    out.push(R("Hall", 0, hy, w, HALL), R("Stair", 0, yB, L, band, { stair: st, upper: true }));
+    if (w - L >= 1.5) out.push(R("Bath", L, yB, w - L, band)); else if (w - L >= SLIVER) out.push(R("Laundry", L, yB, w - L, band)); else out[out.length - 1].w = r2(w);
+    return out;
+  }
+  // the entry level of a three-level narrow unit: entry, hall and bath in front, the den behind, the stair band at the back
+  function entryBack(u, w, d, ctx) {
+    var st = ctx.stair, L = st.w, band = st.l, yB = d - band, den = !!(u && u.den), out = [];
+    out.push(R("Entry", 0, 0, 1.0, ENTRY_D), R("Hall", 1.0, 0, HALL, BATH_D));
+    if (w - 1.0 - HALL - BATH_W >= SLIVER) out.push(R("Bath", 1.0 + HALL, 0, BATH_W, BATH_D), R("Closet", 1.0 + HALL + BATH_W, 0, w - 1.0 - HALL - BATH_W, BATH_D));
+    else out.push(R("Bath", 1.0 + HALL, 0, w - 1.0 - HALL, BATH_D));
+    out.push(R("Storage", 0, ENTRY_D, 1.0, BATH_D - ENTRY_D > 0.05 ? BATH_D - ENTRY_D : 0.3));
+    out.push(R(den ? "Den" : "Flex room", 0, BATH_D, w, yB - BATH_D), R("Stair", 0, yB, L, band, { stair: st }));
+    if (w - L >= SLIVER) out.push(R("Mechanical", L, yB, w - L, band)); else out[out.length - 1].w = r2(w);
+    return out.filter(function (r) { return r.h > 0.2; });
+  }
+
+  // ------------------------------------------------------------------ the shared single exit stair core
+  // a 2.4 m band across the depth: a 1.1 m straight stair beside a 1.3 m corridor; the vestibule on the street at
+  // the ground floor (a landing above), a bike or storage room behind the stair
+  function core(u, w, d, ctx) {
+    var fh = ctx.fh || 3.0, L = r2((Math.ceil(fh / ST.rise_max) - 1) * ST.run + 1.0), sw = Math.min(1.1, w - 1.2), cw = w - sw, out = [], ground = !ctx.level;
+    L = Math.min(L, d - 1.8 - 0.3);
+    var st = { kind: "straight", w: sw, l: L, risers: Math.ceil(fh / ST.rise_max), fh: r2(fh) };
+    if (ground) out.push(R("Vestibule", 0, 0, w, 1.8), R("Stair", 0, 1.8, sw, L, { stair: st }), R("Corridor", sw, 1.8, cw, d - 1.8));
+    else out.push(R("Landing", 0, 0, sw, 1.8), R("Stair", 0, 1.8, sw, L, { stair: st, upper: true }), R("Corridor", sw, 0, cw, d));
+    var rest = d - 1.8 - L;
+    if (rest >= SLIVER) out.push(R(ground ? "Bike room" : "Storage", 0, 1.8 + L, sw, rest));
+    else if (rest > 0.05) out[1].h = r2(out[1].h + rest);
+    return out;
+  }
 
   // ------------------------------------------------------------------ non-dwelling ground cells
   function common(u, w, d) {
@@ -179,11 +266,13 @@ var R1Rooms = (function () {
   function layout(role, u, w, d, ctx) {
     ctx = ctx || unitCtx(w, d);
     var rooms;
+    var back = ctx.stair && ctx.stair.kind === "u_back";
     if (role === "flat") rooms = flat(u, w, d, ctx);
-    else if (role === "living") rooms = living(u, w, d, ctx);
-    else if (role === "entry") rooms = entryLevel(u, w, d, ctx);
-    else if (role === "bedroom") rooms = bedroomLevel(u, w, d, ctx);
+    else if (role === "living") rooms = back ? livingBack(u, w, d, ctx) : living(u, w, d, ctx);
+    else if (role === "entry") rooms = back ? entryBack(u, w, d, ctx) : entryLevel(u, w, d, ctx);
+    else if (role === "bedroom") rooms = back ? bedroomBack(u, w, d, ctx) : bedroomLevel(u, w, d, ctx);
     else if (role === "attic") rooms = attic(u, w, d, ctx);
+    else if (role === "core") rooms = core(u, w, d, ctx);
     else if (role === "common") rooms = common(u, w, d);
     else if (role === "shop") rooms = shop(u, w, d);
     else if (role === "daycare") rooms = daycare(u, w, d);

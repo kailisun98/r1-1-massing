@@ -603,7 +603,7 @@ var R1Massing = (function () {
     if (hasForm && option && typeof R1Cmhc !== "undefined") {
       var b0 = form.buildings[0], blk = option.blocks.filter(function (x) { return x.key === b0.key; })[0];
       if (blk && blk.floors.length) {
-        var cells = R1Cmhc.unitCells(blk.floors[0].units, blk.floors[0].split, blk.floors[0].cols), c0 = cells[0];
+        var cells = R1Cmhc.unitCells(blk.floors[0].units, blk.floors[0].split, blk.floors[0].cols, blk.floors[0].core), c0 = cells[0];
         c = R1Cmhc.bilinear(b0.pts, (c0.a0 + c0.a1) / 2, 0.5); cellOf = { block: b0.key, unit: c0.key };
       }
     }
@@ -623,7 +623,7 @@ var R1Massing = (function () {
           var span = lineSpan(c, nIn, v.pts); if (!span || span[1] - span[0] < 0.3) return;
           var z0 = bases && bases[v.block] !== undefined ? bases[v.block] : baseZ, u = R1Cmhc.unitOf(R1Cmhc.blockOf(option, v.block), v.unit) || {};
           units.push({ block: v.block, unit: v.unit, floor_index: v.floor_index, s0: span[0], s1: span[1], z0: z0 + v.z0, z1: z0 + v.z1, color: v.color, kind: v.kind || null,
-            label: v.unit, sub: v.kind ? (u.name || "").toUpperCase() : v.beds + " BED" });
+            label: v.unit, sub: v.kind === "core" ? "EXIT STAIR" : (v.kind ? (u.name || "").toUpperCase() : R1Cmhc.bedsLabel(v.beds)) });
         });
         if (typeof R1Access !== "undefined") {
           var ap = R1Access.plan(option);
@@ -677,49 +677,52 @@ var R1Massing = (function () {
   }
 
   // ------------------------------------------------------------------ tables
+  /* rulesRows(ev, form): one row per rule [regulation, R1-1 value, clause, this site, state] where state is
+     "ok" (the rule is applied and met on this site), "fail" (checked and not met) or "na" (not applicable to what
+     is drawn, or nothing to check yet). */
   function rulesRows(ev, form) {
     var R = core.RULES, rows = [], elig = {};
     if (ev && ev.eligibility) ev.eligibility.forEach(function (row) { elig[row.max_units] = row; });
     var band = ev ? ev.band : null;
     R.bands.forEach(function (b) {
-      var st = "", row = elig[b.max_units];
+      var st = "", row = elig[b.max_units], state = "na";
       if (row) {
-        if (row.ok_area && row.ok_frontage) st = "qualifies" + (band === b ? "  <- band applied" : "");
-        else st = "no (" + [["area", row.ok_area], ["frontage", row.ok_frontage]].filter(function (x) { return !x[1]; }).map(function (x) { return x[0]; }).join(" and ") + ")";
+        if (row.ok_area && row.ok_frontage) { st = "qualifies" + (band === b ? "  <- band applied" : ""); state = "ok"; }
+        else { st = "no (" + [["area", row.ok_area], ["frontage", row.ok_frontage]].filter(function (x) { return !x[1]; }).map(function (x) { return x[0]; }).join(" and ") + ")"; state = "fail"; }
       }
-      rows.push(["Up to " + b.max_units + " units: min site area / frontage", b.min_area.toFixed(0) + " m2 / " + b.min_frontage + " m", b.clause.split(" ")[0], st]);
+      rows.push(["Up to " + b.max_units + " units: min site area / frontage", b.min_area.toFixed(0) + " m2 / " + b.min_frontage + " m", b.clause.split(" ")[0], st, state]);
     });
-    var tu = R.three_unit_max, st3 = "";
-    if (ev && "three_unit_excluded" in ev) st3 = ev.three_unit_excluded ? "3-unit building excluded (site larger)" : "3-unit building possible";
-    rows.push(["3 units: max site area / frontage", tu.max_area.toFixed(0) + " m2 / " + tu.max_frontage + " m", tu.clause, st3]);
-    var md = R.min_site_depth_m, std = "";
-    if (ev && "site_depth" in ev) std = "site " + fmt(ev.site_depth, 2) + " m: " + (ev.site_depth >= md.value ? "OK" : "FAILS");
-    rows.push(["Min site depth, single building", md.value + " m", md.clause, std]);
-    var applied = (ev && ev.status === "ok") ? "applied" : "";
+    var tu = R.three_unit_max, st3 = "", s3 = "na";
+    if (ev && "three_unit_excluded" in ev) { st3 = ev.three_unit_excluded ? "3-unit building excluded (site larger)" : "3-unit building possible"; s3 = ev.three_unit_excluded ? "na" : "ok"; }
+    rows.push(["3 units: max site area / frontage", tu.max_area.toFixed(0) + " m2 / " + tu.max_frontage + " m", tu.clause, st3, s3]);
+    var md = R.min_site_depth_m, std = "", sd = "na";
+    if (ev && "site_depth" in ev) { std = "site " + fmt(ev.site_depth, 2) + " m: " + (ev.site_depth >= md.value ? "OK" : "FAILS"); sd = ev.site_depth >= md.value ? "ok" : "fail"; }
+    rows.push(["Min site depth, single building", md.value + " m", md.clause, std, sd]);
+    var placed = !!(ev && ev.status === "ok"), applied = placed ? "applied" : "", sa = placed ? "ok" : "na";
     [["front_yard_m", "Front yard, minimum"], ["side_yard_m", "Side yard, minimum (each)"], ["rear_yard_m", "Rear yard, minimum (single building)"]].forEach(function (pair) {
-      var rule = R[pair[0]]; rows.push([pair[1], rule.value + " m", rule.clause.split(" ")[0], applied]);
+      var rule = R[pair[0]]; rows.push([pair[1], rule.value + " m", rule.clause.split(" ")[0], applied, sa]);
     });
     var mdp = R.max_depth_m, stdp = "";
     if (ev && ev.depth_controlled_by) stdp = ev.depth_controlled_by === "max building depth" ? "CONTROLS: envelope depth " + fmt(ev.env_depth, 2) + " m" : "not reached; rear yard controls (" + fmt(ev.env_depth, 2) + " m)";
-    rows.push(["Max building depth", mdp.value + " m", "3.1.2.9 (4.2.3)", stdp]);
-    var mw = R.max_width_m, stw = "";
-    if (ev && "env_width" in ev) stw = "envelope width " + fmt(ev.env_width, 2) + " m: " + (ev.width_exceeds_max ? "EXCEEDS" : "within");
-    rows.push(["Max building width", mw.value + " m", mw.clause, stw]);
+    rows.push(["Max building depth", mdp.value + " m", "3.1.2.9 (4.2.3)", stdp, stdp ? "ok" : "na"]);
+    var mw = R.max_width_m, stw = "", sw = "na";
+    if (ev && "env_width" in ev) { stw = "envelope width " + fmt(ev.env_width, 2) + " m: " + (ev.width_exceeds_max ? "EXCEEDS" : "within"); sw = ev.width_exceeds_max ? "fail" : "ok"; }
+    rows.push(["Max building width", mw.value + " m", mw.clause, stw, sw]);
     var mh = R.max_height_m;
-    rows.push(["Max height, single building", mh.value + " m / " + mh.storeys + " storeys", mh.clause.split(" ")[0], applied]);
-    var FR = FORM_RULES, scheme = (form && form.status === "ok") ? (form.dims_like || form.scheme) : null;
-    var cd = FR.courtyard_min_site_depth_m, stc = "";
-    if (ev && "site_depth" in ev) stc = "site " + fmt(ev.site_depth, 2) + " m: " + (ev.site_depth >= cd.value ? "OK" : "FAILS");
-    rows.push(["Min site depth, courtyard (front + rear building)", cd.value + " m", cd.clause.split(" ")[0], stc]);
-    var cy = scheme === "courtyard" ? "applied (courtyard form)" : "";
-    rows.push(["Rear yard, rear building in a courtyard", FR.courtyard_rear_yard_m.value + " m", FR.courtyard_rear_yard_m.clause.split(" ")[0], cy]);
-    var sts = cy;
-    if (scheme === "courtyard") { var g = form.gaps.filter(function (x) { return x.kind === "courtyard"; }); if (g.length) sts = "courtyard " + fmt(g[0].value_m, 2) + " m"; }
-    rows.push(["Separation, front building to rear building", FR.courtyard_separation_m.value + " m", FR.courtyard_separation_m.clause.split(" ")[0], sts]);
+    rows.push(["Max height, single building", mh.value + " m / " + mh.storeys + " storeys", mh.clause.split(" ")[0], applied, sa]);
+    var FR = FORM_RULES, scheme = (form && form.status === "ok") ? (form.dims_like || form.scheme) : null, court = scheme === "courtyard", side = scheme === "side_by_side";
+    var cd = FR.courtyard_min_site_depth_m, stc = "", sc = "na";
+    if (ev && "site_depth" in ev) { stc = "site " + fmt(ev.site_depth, 2) + " m: " + (ev.site_depth >= cd.value ? "OK" : "FAILS") + (court ? "" : " (no courtyard drawn)"); sc = court ? (ev.site_depth >= cd.value ? "ok" : "fail") : "na"; }
+    rows.push(["Min site depth, courtyard (front + rear building)", cd.value + " m", cd.clause.split(" ")[0], stc, sc]);
+    var cy = court ? "applied (courtyard form)" : "", scy = court ? "ok" : "na";
+    rows.push(["Rear yard, rear building in a courtyard", FR.courtyard_rear_yard_m.value + " m", FR.courtyard_rear_yard_m.clause.split(" ")[0], cy, scy]);
+    var sts = cy, ssep = scy;
+    if (court) { var g = form.gaps.filter(function (x) { return x.kind === "courtyard"; }); if (g.length) { sts = "courtyard " + fmt(g[0].value_m, 2) + " m"; ssep = g[0].value_m >= FR.courtyard_separation_m.value - 1e-6 ? "ok" : "fail"; } }
+    rows.push(["Separation, front building to rear building", FR.courtyard_separation_m.value + " m", FR.courtyard_separation_m.clause.split(" ")[0], sts, ssep]);
     var rh = FR.rear_building_height_m;
-    rows.push(["Max height, rear building in a courtyard", rh.value + " m / " + rh.storeys + " storeys", rh.clause.split(" ")[0], cy]);
-    rows.push(["Separation, buildings side by side", FR.side_separation_m.value + " m", FR.side_separation_m.clause.split(" ")[0], scheme === "side_by_side" ? "applied (side-by-side form)" : ""]);
-    rows.push(["More than one principal building", FR.multiple_buildings.value, FR.multiple_buildings.clause, (scheme === "courtyard" || scheme === "side_by_side") ? "needed for this form" : ""]);
+    rows.push(["Max height, rear building in a courtyard", rh.value + " m / " + rh.storeys + " storeys", rh.clause.split(" ")[0], cy, scy]);
+    rows.push(["Separation, buildings side by side", FR.side_separation_m.value + " m", FR.side_separation_m.clause.split(" ")[0], side ? "applied (side-by-side form)" : "", side ? "ok" : "na"]);
+    rows.push(["More than one principal building", FR.multiple_buildings.value, FR.multiple_buildings.clause, (court || side) ? "needed for this form" : "", (court || side) ? "ok" : "na"]);
     return rows;
   }
   var RULE_GROUPS = [["Site area and frontage", ["3.1.2.1", "3.1.2.2", "3.1.2.3"]], ["Site depth", ["3.1.2.4"]], ["Yards", ["3.1.2.6", "3.1.2.7", "3.1.2.8"]],

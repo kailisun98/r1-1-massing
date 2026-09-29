@@ -112,7 +112,13 @@ table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 6
 th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
 td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
 td.clause { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
-td.status-cell { font-variant-numeric: tabular-nums; }
+td.status-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* the state of a rule: a coloured mark before its status */
+.st { display: inline-flex; width: 14px; height: 14px; border-radius: 50%; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 700; line-height: 1; color: #fff; margin-right: 5px; vertical-align: -2px; flex: 0 0 14px; }
+.st-ok { background: #3a9a5b; } .st-fail { background: var(--red); } .st-na { background: #d9a520; }
+.keyline { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 11px; }
+.keyline .st { margin-left: 8px; } .keyline .st:first-child { margin-left: 0; }
+.sheet .empty.busy::before { content: ""; display: inline-block; width: 10px; height: 10px; border: 2px solid var(--amber); border-top-color: transparent; border-radius: 50%; margin-right: 8px; vertical-align: -1px; animation: spin .9s linear infinite; }
 tr.group td { background: var(--group); font-weight: 600; padding: 5px 6px; }
 pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono); background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 8px; white-space: pre; }
 
@@ -154,6 +160,10 @@ details.help .actions { margin-top: 6px; }
 fieldset.units { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px 2px; margin: 8px 0 0; }
 fieldset.units legend { font-size: 11px; color: var(--muted); padding: 0 4px; letter-spacing: .04em; text-transform: uppercase; }
 fieldset.units:disabled { opacity: .5; }
+fieldset.units .sub { margin: 10px 0 4px; font-size: 12px; font-weight: 600; }
+fieldset.units .sub .muted { font-weight: 400; display: block; font-size: 11px; margin: 0; }
+fieldset.units .readout { font-size: 12.5px; font-variant-numeric: tabular-nums; }
+fieldset.units .actions { margin: 4px 0 6px; }
 .optlist { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .opt { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
 .opt.fit { cursor: pointer; }
@@ -277,6 +287,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
         <h2 id="h2s" title="Click to collapse or expand"><span class="badge">2</span> By-law: R1-1 District Schedule, s.3.1.2</h2>
         <div class="stepbody">
           <table id="rules"></table>
+          <p class="muted keyline"><span class="st st-ok" aria-hidden="true">&#10003;</span> applied and met <span class="st st-fail" aria-hidden="true">&#10005;</span> not met <span class="st st-na" aria-hidden="true">&ndash;</span> not applicable to what is drawn</p>
           <details class="help"><summary>Assumptions and source</summary><p id="assumptions" class="muted"></p></details>
         </div>
       </section>
@@ -352,6 +363,13 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
               <div class="row"><label for="unitsSel">Dwellings</label><select id="unitsSel"></select></div>
               <div class="row"><label for="tenureSel">Tenure</label><select id="tenureSel"></select></div>
               <div class="row"><label for="groundSel">Ground floor</label><select id="groundSel"></select></div>
+              <div class="row"><label for="accessSel">Access</label><select id="accessSel"></select></div>
+              <p class="sub">Unit mix <span class="muted">3-bed from 105 m², 2-bed from 65, studio on one level; 1-beds are the rest</span></p>
+              <div class="row"><label for="mix3Sel">3-bedroom</label><select id="mix3Sel"></select></div>
+              <div class="row"><label for="mix2Sel">2-bedroom</label><select id="mix2Sel"></select></div>
+              <div class="row"><label for="mix0Sel">Studios</label><select id="mix0Sel"></select></div>
+              <div class="row"><label>1-bedroom</label><span id="mix1Out" class="readout"></span></div>
+              <div class="actions"><button id="btnMixAuto" class="secondary" title="Bedrooms by each unit's area again">Mix by area</button></div>
             </fieldset>
             <div class="actions"><button id="btnFormPlans" class="primary" disabled>Floor plans</button><button id="btnFormSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
             <table id="formTable"></table>

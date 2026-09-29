@@ -120,7 +120,7 @@ var R1SitePlan = (function () {
     }
     if (opts.outdoor === "patios" && o && !isCourt && shared.length) {
       // a private patio behind each ground unit on the rear face of the buildings on the street
-      R1Cmhc.unitVolumes(o, form).filter(function (v) { return v.floor_index === 0 && v.block !== "rear"; }).forEach(function (v) {
+      R1Cmhc.unitVolumes(o, form).filter(function (v) { return v.floor_index === 0 && v.block !== "rear" && v.kind !== "core"; }).forEach(function (v) {
         var cb = bbox(v.pts.map(T)), e = bByKey[v.block]; if (!e || cb.y1 < e.box.y1 - 0.05) return;
         patios.push({ x0: cb.x0 + 0.3, x1: cb.x1 - 0.3, y0: cb.y1, y1: cb.y1 + PATIO_D, unit: v.unit, color: v.color });
       });
@@ -134,9 +134,9 @@ var R1SitePlan = (function () {
     if (o) {
       var byCell = {}; R1Cmhc.unitRooms(o).forEach(function (ur) { byCell[ur.block + "|" + ur.floor_index + "|" + ur.unit] = ur; });
       R1Cmhc.unitVolumes(o, form).filter(function (v) { return v.floor_index === 0; }).forEach(function (v) {
-        var ur = byCell[v.block + "|0|" + v.unit]; if (!ur || ur.level_index !== 0) return;
+        var ur = byCell[v.block + "|0|" + v.unit]; if (!ur || ur.level_index !== 0 || (ur.core && ur.role !== "core")) return;   // units entered from the core have no door on the outside
         var c = ur.cell, ext = { front: c.b0 < 0.02, rear: c.b1 > 0.98, left: c.a0 < 0.02, right: c.a1 > 0.98 }, e = bByKey[v.block], B = access ? access.blocks[v.block] : null;
-        var op = R1Plans.openings(ur, ext).filter(function (x) { return x.kind === "entry"; })[0]; if (!op || !e || !B) return;
+        var op = R1Plans.openings(ur, ext).filter(function (x) { return x.kind === "entry" && !x.exit; })[0]; if (!op || !e || !B) return;
         var mx = c.a0 * B.width_m + (op.side === "h" ? (op.from + op.to) / 2 : op.at), my = c.b0 * B.depth_m + (op.side === "h" ? op.at : (op.from + op.to) / 2);
         var outv = op.face === "front" ? [0, -1] : op.face === "rear" ? [0, 1] : op.face === "left" ? [-1, 0] : [1, 0];
         var pd = T(R1Access.toSite(e.b, B, mx, my)), po = T(R1Access.toSite(e.b, B, mx + outv[0] * 0.6, my + outv[1] * 0.6));
@@ -182,7 +182,7 @@ var R1SitePlan = (function () {
       parts.push('<polygon points="' + polyS(v.pts) + '" fill="' + v.color + '" fill-opacity="0.55" stroke="#ffffff" stroke-width="0.8"/>');
       if ((cb.x1 - cb.x0) * k > fs * 2.2 && (cb.y1 - cb.y0) * k > fs * 2.4) {
         parts.push(textF(c[0], c[1], v.unit, 'text-anchor="middle" font-size="' + fs + '" font-weight="700" fill="#ffffff"', -1));
-        if ((cb.x1 - cb.x0) * k > fs2 * 5) parts.push(textF(c[0], c[1], u.kind ? (u.name || "").toUpperCase() : v.beds + " BED", 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="#ffffff" letter-spacing=".5"', fs2 * 1.1));
+        if ((cb.x1 - cb.x0) * k > fs2 * 5) parts.push(textF(c[0], c[1], v.kind === "core" ? "EXIT STAIR" : (u.kind ? (u.name || "").toUpperCase() : R1Cmhc.bedsLabel(v.beds)), 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="#ffffff" letter-spacing=".5"', fs2 * 1.1));
       }
     });
     blds.forEach(function (e) { if (o) parts.push(textF(e.box.x1 - 0.35, e.box.y0 + 0.35, e.b.storeys + " STOREYS", 'text-anchor="end" font-size="' + (fs2 - 1.5) + '" fill="' + INK + '" fill-opacity=".8" letter-spacing=".5"', fs2)); });

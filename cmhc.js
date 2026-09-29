@@ -226,29 +226,41 @@ var R1Cmhc = (function () {
     o.blocks.forEach(function (b) { b.unit_list.forEach(function (u) { idx[u.key + "@" + b.key] = n++; }); });
     return idx;
   }
-  var NON_DWELLING_COLOR = "#8d949c";
+  var NON_DWELLING_COLOR = "#8d949c", CORE_COLOR = "#b7bdc5", CORE_KEY = "CORE";
   function blockOf(o, blockKey) { return o.blocks.filter(function (b) { return b.key === blockKey; })[0] || null; }
   function unitColor(o, unitKey, blockKey) {
+    if (unitKey === CORE_KEY) return CORE_COLOR;
     var b = blockOf(o, blockKey), u = b ? unitOf(b, unitKey) : null;
     if (u && u.kind) return NON_DWELLING_COLOR;   // a common room, store or day care is not a dwelling
     var i = unitIndex(o)[unitKey + "@" + blockKey]; return UNIT_COLORS[(i === undefined ? 0 : i) % UNIT_COLORS.length];
   }
   function unitOf(b, key) { return b.unit_list.filter(function (u) { return u.key === key; })[0] || null; }
+  // the across spans the columns of a floor occupy: the whole width, or either side of the stair core band
+  function spans(nc, core) {
+    if (!core) { var s = []; for (var i = 0; i < nc; i++) s.push([i / nc, (i + 1) / nc]); return s; }
+    if (nc === 1) return [[core.a1, 1]];
+    if (nc === 2) return [[0, core.a0], [core.a1, 1]];
+    var out = []; for (var j = 0; j < nc; j++) out.push([j / nc, (j + 1) / nc]); return out;   // more columns than a core allows: the core is ignored
+  }
   // cells of one floor in the unit square: a across from side 1 (0..1), b deep from the front (0..1);
-  // "grid" lays the units out row by row, `cols` across (2 unless the floor says otherwise), front row first
-  function unitCells(units, split, cols) {
+  // "grid" lays the units out row by row, `cols` across (2 unless the floor says otherwise), front row first;
+  // with a core band (floor.core = {a0, a1}) the columns sit either side of it
+  function unitCells(units, split, cols, core) {
     var n = units.length, cells = [];
     if (split === "grid") {
-      var nc = Math.max(1, cols || 2), nr = Math.ceil(n / nc);
-      units.forEach(function (u, i) { var col = i % nc, row = Math.floor(i / nc); cells.push({ key: u, a0: col / nc, a1: (col + 1) / nc, b0: row / nr, b1: (row + 1) / nr }); });
-      return cells;
+      var nc = Math.max(1, cols || 2), nr = Math.ceil(n / nc), sp = spans(nc, core);
+      units.forEach(function (u, i) { var col = i % nc, row = Math.floor(i / nc); cells.push({ key: u, a0: sp[col][0], a1: sp[col][1], b0: row / nr, b1: (row + 1) / nr }); });
+    } else {
+      var sp2 = spans(split === "deep" ? 1 : n, core);
+      units.forEach(function (u, i) {
+        if (split === "deep") cells.push({ key: u, a0: sp2[0][0], a1: sp2[0][1], b0: i / n, b1: (i + 1) / n });
+        else cells.push({ key: u, a0: sp2[i][0], a1: sp2[i][1], b0: 0, b1: 1 });
+      });
     }
-    units.forEach(function (u, i) {
-      if (split === "deep") cells.push({ key: u, a0: 0, a1: 1, b0: i / n, b1: (i + 1) / n });
-      else cells.push({ key: u, a0: i / n, a1: (i + 1) / n, b0: 0, b1: 1 });
-    });
+    if (core) cells.forEach(function (c) { if (Math.abs(c.a1 - core.a0) < 1e-6) c.core_right = true; if (Math.abs(c.a0 - core.a1) < 1e-6) c.core_left = true; });   // the cell's side on the core's corridor
     return cells;
   }
+  function coreCell(f) { return f.core ? { key: CORE_KEY, a0: f.core.a0, a1: f.core.a1, b0: 0, b1: 1 } : null; }
   function bilinear(pts, a, b) {
     var f = [pts[0][0] + (pts[3][0] - pts[0][0]) * a, pts[0][1] + (pts[3][1] - pts[0][1]) * a], r = [pts[1][0] + (pts[2][0] - pts[1][0]) * a, pts[1][1] + (pts[2][1] - pts[1][1]) * a];
     return [f[0] + (r[0] - f[0]) * b, f[1] + (r[1] - f[1]) * b];
@@ -262,9 +274,11 @@ var R1Cmhc = (function () {
       if (!bld) return;
       var nf = b.floors.length, fh = b.height_m / nf;
       b.floors.forEach(function (f, fi) {
-        unitCells(f.units, f.split, f.cols).forEach(function (c) {
-          var pts = [bilinear(bld.pts, c.a0, c.b0), bilinear(bld.pts, c.a0, c.b1), bilinear(bld.pts, c.a1, c.b1), bilinear(bld.pts, c.a1, c.b0)], u = unitOf(b, c.key);
-          out.push({ block: b.key, block_name: b.name, unit: c.key, kind: u && u.kind ? u.kind : null, beds: u ? u.beds : null, baths: u ? u.baths : null, floor: f.name, floor_index: fi, pts: pts, z0: fi * fh, z1: (fi + 1) * fh,
+        var cells = unitCells(f.units, f.split, f.cols, f.core), cc = coreCell(f);
+        if (cc) cells.push(cc);
+        cells.forEach(function (c) {
+          var pts = [bilinear(bld.pts, c.a0, c.b0), bilinear(bld.pts, c.a0, c.b1), bilinear(bld.pts, c.a1, c.b1), bilinear(bld.pts, c.a1, c.b0)], u = unitOf(b, c.key), isCore = c.key === CORE_KEY;
+          out.push({ block: b.key, block_name: b.name, unit: c.key, kind: isCore ? "core" : (u && u.kind ? u.kind : null), beds: u ? u.beds : null, baths: u ? u.baths : null, floor: f.name, floor_index: fi, pts: pts, z0: fi * fh, z1: (fi + 1) * fh,
             color: unitColor(o, c.key, b.key), area_m2: b.footprint_m2 * (c.a1 - c.a0) * (c.b1 - c.b0), centroid: site.centroid(pts) });
         });
       });
@@ -273,7 +287,7 @@ var R1Cmhc = (function () {
   }
   function unitAreas(o) {   // approximate floor area per unit: its share of the footprint on every floor it occupies
     var areas = {};
-    o.blocks.forEach(function (b) { b.floors.forEach(function (f) { unitCells(f.units, f.split, f.cols).forEach(function (c) { var k = c.key + "@" + b.key; areas[k] = (areas[k] || 0) + b.footprint_m2 * (c.a1 - c.a0) * (c.b1 - c.b0); }); }); });
+    o.blocks.forEach(function (b) { b.floors.forEach(function (f) { unitCells(f.units, f.split, f.cols, f.core).forEach(function (c) { var k = c.key + "@" + b.key; areas[k] = (areas[k] || 0) + b.footprint_m2 * (c.a1 - c.a0) * (c.b1 - c.b0); }); }); });
     return areas;
   }
 
@@ -286,7 +300,7 @@ var R1Cmhc = (function () {
   }
   function unitMix(o) {
     var beds = {}, extra = [];
-    o.blocks.forEach(function (b) { b.unit_list.forEach(function (u) { if (u.kind) { extra.push(u.name.toLowerCase()); return; } var k = u.beds + "-bed"; beds[k] = (beds[k] || 0) + 1; }); });
+    o.blocks.forEach(function (b) { b.unit_list.forEach(function (u) { if (u.kind) { extra.push(u.name.toLowerCase()); return; } var k = u.beds ? u.beds + "-bed" : "studio"; beds[k] = (beds[k] || 0) + 1; }); });
     return Object.keys(beds).sort().map(function (k) { return beds[k] + " x " + k; }).join(", ") + (extra.length ? " + " + extra.join(", ") : "");
   }
   function fitLines(res, ev) {
@@ -306,7 +320,7 @@ var R1Cmhc = (function () {
       b.unit_list.forEach(function (u) {
         var floors = b.floors.filter(function (f) { return f.units.indexOf(u.key) >= 0; }).map(function (f) { return f.name; }).join(" + ");
         rows.push({ color: unitColor(o, u.key, b.key), kind: u.kind || null, cells: [(o.blocks.length > 1 ? b.name + ": " : "") + u.key + (u.kind ? " " + u.name : ""),
-          u.kind ? "not a dwelling" : u.beds + " bed" + (u.den ? " + den" : ""), u.kind ? "" : u.baths + " bath", floors,
+          u.kind ? "not a dwelling" : (u.beds ? u.beds + " bed" : "studio") + (u.den ? " + den" : ""), u.kind ? "" : u.baths + " bath", floors,
           "~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2", u.adaptable_alt ? "adaptable version " + u.key + "a" : (u.upgraded ? "2-bed to meet 2.2.8" : "")] });
       });
     });
@@ -321,13 +335,14 @@ var R1Cmhc = (function () {
       var w = Math.max(b.width_m * k, 60), y0 = pad + 14;
       parts.push('<text x="' + x + '" y="' + (y0 - 4) + '" class="sectitle" font-size="10">' + esc(b.name) + " (" + fmt(b.width_m, 1) + " m wide)</text>");
       b.floors.slice().reverse().forEach(function (f, i) {
-        var y = y0 + i * fh, cells = unitCells(f.units, f.split, f.cols), across = f.split === "grid" ? Math.max(1, f.cols || 2) : (f.split === "deep" ? 1 : cells.length);
+        var y = y0 + i * fh, cells = unitCells(f.units, f.split, f.cols, f.core), across = f.split === "grid" ? Math.max(1, f.cols || 2) : (f.split === "deep" ? 1 : cells.length);
+        if (f.core) parts.push('<rect x="' + (x + f.core.a0 * w) + '" y="' + y + '" width="' + ((f.core.a1 - f.core.a0) * w) + '" height="' + fh + '" fill="' + CORE_COLOR + '" stroke="#ffffff" stroke-width="1"/>');
         if (f.split === "deep") {   // units behind one another: show them as stripes of the same cell
-          var uw = w / cells.length;
-          cells.forEach(function (c, j) { parts.push('<rect x="' + (x + j * uw) + '" y="' + y + '" width="' + uw + '" height="' + fh + '" fill="' + unitColor(o, c.key, b.key) + '" stroke="#ffffff" stroke-width="1"/>'); if (uw > 22) parts.push('<text x="' + (x + j * uw + uw / 2) + '" y="' + (y + fh / 2 + 3.5) + '" text-anchor="middle" font-size="9" fill="#ffffff" font-weight="600">' + esc(c.key) + "</text>"); });
+          var uw = (f.core ? (1 - f.core.a1) * w : w) / cells.length, ux = x + (f.core ? f.core.a1 * w : 0);
+          cells.forEach(function (c, j) { parts.push('<rect x="' + (ux + j * uw) + '" y="' + y + '" width="' + uw + '" height="' + fh + '" fill="' + unitColor(o, c.key, b.key) + '" stroke="#ffffff" stroke-width="1"/>'); if (uw > 22) parts.push('<text x="' + (ux + j * uw + uw / 2) + '" y="' + (y + fh / 2 + 3.5) + '" text-anchor="middle" font-size="9" fill="#ffffff" font-weight="600">' + esc(c.key) + "</text>"); });
         } else {
-          var rows = Math.ceil(cells.length / across), cw = w / across, ch = fh / rows;
-          cells.forEach(function (c, j) { var cx = x + (j % across) * cw, cy = y + Math.floor(j / across) * ch; parts.push('<rect x="' + cx + '" y="' + cy + '" width="' + cw + '" height="' + ch + '" fill="' + unitColor(o, c.key, b.key) + '" stroke="#ffffff" stroke-width="1"/>'); if (cw > 22 && ch > 9) parts.push('<text x="' + (cx + cw / 2) + '" y="' + (cy + ch / 2 + 3) + '" text-anchor="middle" font-size="' + (ch > 14 ? 9 : 7) + '" fill="#ffffff" font-weight="600">' + esc(c.key) + "</text>"); });
+          var rows = Math.ceil(cells.length / across), ch = fh / rows;
+          cells.forEach(function (c, j) { var cx = x + c.a0 * w, cw = (c.a1 - c.a0) * w, cy = y + Math.floor(j / across) * ch; parts.push('<rect x="' + cx + '" y="' + cy + '" width="' + cw + '" height="' + ch + '" fill="' + unitColor(o, c.key, b.key) + '" stroke="#ffffff" stroke-width="1"/>'); if (cw > 22 && ch > 9) parts.push('<text x="' + (cx + cw / 2) + '" y="' + (cy + ch / 2 + 3) + '" text-anchor="middle" font-size="' + (ch > 14 ? 9 : 7) + '" fill="#ffffff" font-weight="600">' + esc(c.key) + "</text>"); });
         }
         parts.push('<text x="' + (x + w + 4) + '" y="' + (y + fh / 2 + 3.5) + '" font-size="9" class="sectitle">' + esc(f.name) + "</text>");
       });
@@ -344,6 +359,7 @@ var R1Cmhc = (function () {
     if (nLevels >= 3) return design.key === "duplex" ? ["living", "bedroom", "attic"] : ["entry", "living", "bedroom"];
     return nLevels === 2 ? ["living", "bedroom"] : ["flat"];
   }
+  function bedsLabel(beds) { return beds ? beds + " BED" : "STUDIO"; }
   function programme(role, u) {
     var beds = u ? u.beds : 1, baths = u ? u.baths : 1, den = !!(u && u.den);
     if (role === "flat") return beds >= 2
@@ -380,8 +396,13 @@ var R1Cmhc = (function () {
     o.blocks.forEach(function (b) {
       var levelsOf = {};
       b.floors.forEach(function (f, fi) { f.units.forEach(function (k) { (levelsOf[k] || (levelsOf[k] = [])).push(fi); }); });
+      var nf = b.floors.length, fh = b.height_m / nf;
       b.floors.forEach(function (f, fi) {
-        unitCells(f.units, f.split, f.cols).forEach(function (c) {
+        if (f.core) {   // the shared stair core: vestibule and corridor on the ground, landing and corridor above, one straight stair
+          var cwm = f.core.width_m || (f.core.a1 - f.core.a0) * b.width_m, coreRooms = (typeof R1Rooms !== "undefined") ? R1Rooms.layout("core", null, cwm, b.depth_m, R1Rooms.unitCtx(cwm, b.depth_m, { fh: fh, level: fi, levels: nf })) : [{ name: "Core", x: 0, y: 0, w: cwm, h: b.depth_m, area_m2: cwm * b.depth_m }];
+          out.push({ block: b.key, unit: CORE_KEY, floor: f.name, floor_index: fi, level_index: fi, levels: nf, role: "core", cell: coreCell(f), width_m: cwm, depth_m: b.depth_m, rooms: coreRooms, entry_face: fi === 0 ? "front" : null, entry_floor: 0, walkway: false, core: true });
+        }
+        unitCells(f.units, f.split, f.cols, f.core).forEach(function (c) {
           var u = unitOf(b, c.key), lv = levelsOf[c.key], li = lv.indexOf(fi), role = u && u.kind ? u.kind : (levelRoles(lv.length, b.design)[li] || "flat");
           var cw = (c.a1 - c.a0) * b.width_m, cd = (c.b1 - c.b0) * b.depth_m;
           var ent = ap ? ap.entries[c.key + "@" + b.key] : null, face = ent ? ent.face : null;
@@ -393,7 +414,7 @@ var R1Cmhc = (function () {
           if (face === "rear") rs = rs.map(function (r) { return Object.assign({}, r, { y: r2(cd - r.y - r.h) }); });
           if (face === "right") rs = rs.map(function (r) { return Object.assign({}, r, { x: r2(cw - r.x - r.w) }); });
           out.push({ block: b.key, unit: c.key, floor: f.name, floor_index: fi, level_index: li, levels: lv.length, role: role, cell: c, width_m: cw, depth_m: cd, rooms: rs,
-            entry_face: face, entry_floor: ent ? ent.floor_index : lv[0], walkway: !!(ent && ent.walkway) });
+            entry_face: face, entry_floor: ent ? ent.floor_index : lv[0], walkway: !!(ent && ent.walkway), core: !!(ent && ent.core) });
         });
       });
     });
@@ -461,5 +482,5 @@ var R1Cmhc = (function () {
 
   return { SOURCE: SOURCE, DESIGNS: DESIGNS, UNIT_COLORS: UNIT_COLORS, design: design, url: url, fits: fits, form: form, fitRows: fitRows, fitLines: fitLines,
     unitRows: unitRows, unitSvg: unitSvg, unitMix: unitMix, optionGfa: optionGfa, unitColor: unitColor, unitVolumes: unitVolumes, unitAreas: unitAreas,
-    levelRoles: levelRoles, programme: programme, rooms: rooms, unitRooms: unitRooms, unitCells: unitCells, blockOf: blockOf, unitOf: unitOf, bilinear: bilinear, floorPlansSvg: floorPlansSvg };
+    levelRoles: levelRoles, bedsLabel: bedsLabel, programme: programme, rooms: rooms, unitRooms: unitRooms, unitCells: unitCells, coreCell: coreCell, CORE_KEY: CORE_KEY, CORE_COLOR: CORE_COLOR, blockOf: blockOf, unitOf: unitOf, bilinear: bilinear, floorPlansSvg: floorPlansSvg };
 })();

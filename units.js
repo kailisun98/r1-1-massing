@@ -32,6 +32,16 @@ var R1Units = (function () {
   ];
   var MIN_UNIT_WIDTH_M = 4.5, MIN_UNIT_DEPTH_M = 6.5, TARGET_UNIT_WIDTH_M = 5.8, MIN_TWO_DEEP_M = 13.5;
   var LAYOUTS = { stacked: "Stacked flats", flats_over: "Flats under two-level units", townhouse: "Townhouses", grid: "Two by two" };
+  // how the units are reached: an exterior stair and walkway (R1Access), or one shared internal stair in a core
+  var CORE_W = 2.4, ACCESS = [
+    { key: "exterior", name: "Exterior stair and open walkway", note: "Upper units are reached by an exterior single exit stair and an open walkway on the face they are entered from." },
+    { key: "core", name: "Shared single exit stair (internal core)", note: "One internal stair in a " + CORE_W + " m core across the depth of the building, with a vestibule on the street and a corridor on every floor that the units open onto; " +
+      "a single exit stair is permitted for a building of this size under the BC Building Code 2024 and the Vancouver Building By-law (sprinklered; to be confirmed with the code consultant). The core counts as floor area and is only offered where the layout has at most two units across." }
+  ];
+  function accessOf(key) { return ACCESS.filter(function (a) { return a.key === key; })[0] || ACCESS[0]; }
+  // the straight stair of the core for one floor-to-floor height (BCBC 9.8: rise <= 0.2 m, run 0.26 m, plus a landing)
+  function coreStairLen(fh) { return Math.round(((Math.ceil(fh / 0.2) - 1) * 0.26 + 1.0) * 100) / 100; }
+  function coreFits(b, c) { return c.across <= 2 && (b.width_m - CORE_W) / c.across >= MIN_UNIT_WIDTH_M && b.depth_m >= 1.8 + coreStairLen(b.height_m / floorsOf(b)) + 1.0; }
 
   function tenureOf(key) { return TENURES.filter(function (t) { return t.key === key; })[0] || TENURES[0]; }
   function groundUseOf(key) { return GROUND_USES.filter(function (g) { return g.key === key; })[0] || GROUND_USES[0]; }
@@ -46,9 +56,9 @@ var R1Units = (function () {
   // ------------------------------------------------------------------ candidate layouts of one building
   // A building is w x d with nf floors. Cells are laid out `across` units wide and `deep` units deep.
   function floorsOf(b) { return Math.max(1, Math.round(b.storeys)); }
-  function candidates(b, reserveGround) {
-    var w = b.width_m, d = b.depth_m, nf = floorsOf(b), out = [];
-    var acrossOpts = [1, 2, 3].filter(function (a) { return a === 1 || w / a >= MIN_UNIT_WIDTH_M; });
+  function candidates(b, reserveGround, access) {
+    var w = access === "core" ? b.width_m - CORE_W : b.width_m, d = b.depth_m, nf = floorsOf(b), out = [];
+    var acrossOpts = [1, 2, 3].filter(function (a) { return (a === 1 || w / a >= MIN_UNIT_WIDTH_M) && (access !== "core" || a <= 2); });
     var deepOpts = d >= MIN_TWO_DEEP_M ? [1, 2] : [1];
     acrossOpts.forEach(function (a) {
       deepOpts.forEach(function (dp) {
@@ -105,9 +115,9 @@ var R1Units = (function () {
      combination of layouts (the one whose smallest unit is largest), under the tenure's maximum. */
   function achievable(form, ev, opts) {
     opts = opts || {};
-    var tenure = opts.tenure || "other", ground = groundUseOf(opts.ground || "residential");
+    var tenure = opts.tenure || "other", ground = groundUseOf(opts.ground || "residential"), access = opts.access || "exterior";
     var lim = maxUnits(ev, tenure).value, blds = effective(form, ev, opts).buildings, byTotal = {};
-    var cands = blds.map(function (b, i) { return candidates(b, !!ground.cell && i === 0); });
+    var cands = blds.map(function (b, i) { return candidates(b, !!ground.cell && i === 0, access === "core" && b.key !== "rear" ? "core" : "exterior"); });
     function walk(i, picks, total) {
       if (i === blds.length) {
         if (total < 1 || total > lim) return;
@@ -122,14 +132,67 @@ var R1Units = (function () {
   }
 
   // ------------------------------------------------------------------ build the option
-  function bedsFor(area) {
-    if (area >= 105) return { beds: 3, baths: 2.5, den: area >= 140 };
-    if (area >= 65) return { beds: 2, baths: area >= 90 ? 2 : 1.5 };
-    return { beds: 1, baths: 1 };
+  // unit types by floor area: a 3-bed from 105 m2, a 2-bed from 65, a 1-bed from 38, a studio below that (and from 28 m2)
+  var TYPE_MIN_M2 = { 3: 105, 2: 65, 1: 38, 0: 28 }, TYPE_NAMES = { 3: "3-bed", 2: "2-bed", 1: "1-bed", 0: "studio" };
+  function bedsOf(type, area) {
+    if (type === 3) return { beds: 3, baths: 2.5, den: area >= 140 };
+    if (type === 2) return { beds: 2, baths: area >= 90 ? 2 : 1.5, den: false };
+    if (type === 1) return { beds: 1, baths: 1, den: false };
+    return { beds: 0, baths: 1, den: false };
   }
-  function blockFor(b, c, startIndex, groundCell) {
+  function bedsFor(area) { return bedsOf(area >= 105 ? 3 : (area >= 65 ? 2 : (area >= 38 ? 1 : 0)), area); }
+  /* capacityOf(u, b): the largest unit type whose bedrooms the room engine can actually draw in this unit's cells
+     (3, 2, 1 or 0), with the area floor of the type: the geometric limit of the mix. */
+  function capacityOf(u, b) {
+    if (typeof R1Rooms === "undefined" || typeof R1Cmhc === "undefined") return u.area_est_m2 >= TYPE_MIN_M2[3] ? 3 : (u.area_est_m2 >= TYPE_MIN_M2[2] ? 2 : 1);
+    var levels = [], nf = b.floors.length, fh = b.height_m / nf;
+    b.floors.forEach(function (f) { C.unitCells(f.units, f.split, f.cols, f.core).forEach(function (c) { if (c.key === u.key) levels.push({ w: (c.a1 - c.a0) * b.width_m, d: (c.b1 - c.b0) * b.depth_m }); }); });
+    if (!levels.length) return 1;
+    var roles = C.levelRoles(levels.length, { key: "bylaw" }), ctx = R1Rooms.unitCtx(levels[0].w, levels[0].d, { fh: fh }), MINW = R1Rooms.MIN.living_w;
+    // a type fits when its rooms hold that many beds (0.76 m clear on the open sides) and the living room is wide enough for a sofa
+    for (var t = 3; t >= 1; t--) {
+      if (u.area_est_m2 < TYPE_MIN_M2[t] * 0.9) continue;
+      var probe = bedsOf(t, u.area_est_m2), beds = 0, livingOk = true;
+      levels.forEach(function (lv, i) {
+        var rooms = R1Rooms.layout(roles[i], probe, lv.w, lv.d, ctx);
+        rooms.forEach(function (r) {
+          if (/bedroom/i.test(r.name) && !r.part && (typeof R1Fits === "undefined" || R1Fits.bedFor(r.w, r.h))) beds++;
+          if (/^Living/.test(r.name) && !r.part) {   // the whole of an L-shaped living room
+            var parts = rooms.filter(function (s) { return s.name === r.name; }), x0 = Math.min.apply(null, parts.map(function (s) { return s.x; })), y0 = Math.min.apply(null, parts.map(function (s) { return s.y; })), x1 = Math.max.apply(null, parts.map(function (s) { return s.x + s.w; })), y1 = Math.max.apply(null, parts.map(function (s) { return s.y + s.h; }));
+            if (Math.min(x1 - x0, y1 - y0) < MINW - 0.01) livingOk = false;
+          }
+        });
+      });
+      if (beds >= t && livingOk) return t;
+    }
+    return levels.length === 1 ? 0 : 1;
+  }
+  /* mixLimits(dwellings): how many of each type the units can hold, largest units first: 3-beds where three bedrooms
+     fit, 2-beds where two fit among what is left, studios among the single-level units then left; 1-beds are the rest. */
+  function mixLimits(dwellings, n3, n2) {
+    var sorted = dwellings.slice().sort(function (a, b) { return b.area_est_m2 - a.area_est_m2; });
+    var max3 = sorted.filter(function (u) { return u.cap >= 3; }).length; n3 = Math.min(n3 || 0, max3);
+    var max2 = sorted.slice(n3).filter(function (u) { return u.cap >= 2; }).length; n2 = Math.min(n2 || 0, max2);
+    var max0 = sorted.slice(n3 + n2).filter(function (u) { return u.levels === 1 && u.area_est_m2 >= TYPE_MIN_M2[0]; }).length;
+    return { max3: max3, max2: max2, max0: max0, sorted: sorted };
+  }
+  /* applyMix(dwellings, mix): 3-beds to the largest units that can hold them, 2-beds to the next, studios to the
+     smallest single-level units, 1-beds to the rest; counts beyond the limits are cut back. Returns the counts. */
+  function applyMix(dwellings, mix) {
+    var lim = mixLimits(dwellings, mix.b3, mix.b2), n3 = Math.min(mix.b3 || 0, lim.max3), n2 = Math.min(mix.b2 || 0, lim.max2), n0 = Math.min(mix.b0 || 0, lim.max0);
+    var threes = lim.sorted.filter(function (u) { return u.cap >= 3; }).slice(0, n3), twos = lim.sorted.filter(function (u) { return threes.indexOf(u) < 0 && u.cap >= 2; }).slice(0, n2);
+    lim.sorted.forEach(function (u) { Object.assign(u, bedsOf(threes.indexOf(u) >= 0 ? 3 : (twos.indexOf(u) >= 0 ? 2 : Math.min(1, u.cap)), u.area_est_m2)); u.upgraded = false; });
+    var rest = lim.sorted.filter(function (u) { return threes.indexOf(u) < 0 && twos.indexOf(u) < 0 && u.levels === 1; }).sort(function (a, b) { return a.area_est_m2 - b.area_est_m2; }).slice(0, n0);
+    rest.forEach(function (u) { Object.assign(u, bedsOf(0, u.area_est_m2)); });
+    var b0 = dwellings.filter(function (u) { return u.beds === 0; }).length;
+    return { b3: threes.length, b2: twos.length, b0: b0, b1: dwellings.length - threes.length - twos.length - b0, custom: true };
+  }
+  function blockFor(b, c, startIndex, groundCell, access) {
     var nf = floorsOf(b), split = c.deep === 2 ? "grid" : (c.across > 1 ? "across" : "across"), cols = c.across, cells = c.cells;
     var floors = [], unitList = [], next = startIndex, keysGround = [], keysUpper = [];
+    // the shared stair core: a band across the full depth, between the two columns or at side 1 of a single column
+    var core = null;
+    if (access === "core" && coreFits(b, c)) { var cw = CORE_W / b.width_m; core = c.across === 2 ? { a0: (1 - cw) / 2, a1: (1 + cw) / 2, width_m: CORE_W } : { a0: 0, a1: cw, width_m: CORE_W }; }
     function newKey() { return "U" + (next++); }
     var groundCells = c.mixed ? cells - 1 : cells, gCount = groundCells - (groundCell ? 1 : 0);
     if (c.layout === "townhouse") {
@@ -149,18 +212,19 @@ var R1Units = (function () {
         floors.push({ name: floorName(f3), units: ks, split: f3 === 0 && c.mixed ? "across" : split, cols: cols });
       }
     }
-    // areas per unit -> bedrooms
-    var areas = {};
-    floors.forEach(function (f) { f.units.forEach(function (k) { areas[k] = (areas[k] || 0) + b.footprint_m2 / f.units.length; }); });
+    if (core) floors.forEach(function (f) { f.core = core; });
+    // areas per unit -> bedrooms (the core's share of the footprint belongs to no unit)
+    var areas = {}, usable = core ? b.footprint_m2 * (1 - core.width_m / b.width_m) : b.footprint_m2;
+    floors.forEach(function (f) { f.units.forEach(function (k) { areas[k] = (areas[k] || 0) + usable / f.units.length; }); });
     if (groundCell) unitList.push({ key: groundCell.key, name: groundCell.name, kind: groundCell.kind, beds: 0, baths: 0 });
     Object.keys(areas).forEach(function (k) {
       if (groundCell && k === groundCell.key) return;
-      var bd = bedsFor(areas[k]); unitList.push({ key: k, beds: bd.beds, baths: bd.baths, den: !!bd.den, area_est_m2: areas[k] });
+      var bd = bedsFor(areas[k]); unitList.push({ key: k, beds: bd.beds, baths: bd.baths, den: !!bd.den, area_est_m2: areas[k], levels: floors.filter(function (f) { return f.units.indexOf(k) >= 0; }).length });
     });
     unitList.sort(function (x, y) { return (x.kind ? -1 : 0) - (y.kind ? -1 : 0) || parseInt(x.key.slice(1), 10) - parseInt(y.key.slice(1), 10); });
     return { block: { key: b.key, name: b.name, design: { key: "bylaw", name: "By-law form: " + LAYOUTS[c.layout], slug: null, layout: layoutText(c, b) }, part: null,
       width_m: b.width_m, depth_m: b.depth_m, trimmed_from_m: b.trimmed_from_m || null, storeys: nf, height_m: b.height_m, height_mid_m: b.height_m, footprint_m2: b.footprint_m2, gfa_m2: b.footprint_m2 * nf,
-      units: unitList.filter(function (u) { return !u.kind; }).length, unit_list: unitList, floors: floors, layout: c.layout, rotated: false, n: null }, next: next };
+      units: unitList.filter(function (u) { return !u.kind; }).length, unit_list: unitList, floors: floors, layout: c.layout, rotated: false, n: null, core: core }, next: next };
   }
   function floorName(f) { return ["Ground", "Second", "Third", "Fourth"][f] || ("Level " + (f + 1)); }
   function layoutText(c, b) {
@@ -175,27 +239,35 @@ var R1Units = (function () {
      with `opts.tenure` ("other" | "rental") and `opts.ground` (a GROUND_USES key). */
   function configure(form, ev, opts) {
     opts = opts || {};
-    var tenure = opts.tenure || "other", ground = groundUseOf(opts.ground || "residential"), lim = maxUnits(ev, tenure);
-    var out = { key: null, name: null, kind: "bylaw", source: "bylaw", dims_like: form.dims_like || form.scheme, blocks: [], gaps: form.gaps || [], checks: [], notes: [], tenure: tenure, ground_use: ground.key, units: 0, ok: false, reason: null };
+    var tenure = opts.tenure || "other", ground = groundUseOf(opts.ground || "residential"), lim = maxUnits(ev, tenure), access = accessOf(opts.access || "exterior");
+    var out = { key: null, name: null, kind: "bylaw", source: "bylaw", dims_like: form.dims_like || form.scheme, blocks: [], gaps: form.gaps || [], checks: [], notes: [], tenure: tenure, ground_use: ground.key, access: access.key, units: 0, ok: false, reason: null };
     if (!form || form.status !== "ok" || !form.buildings || !form.buildings.length) { out.reason = "No form to configure."; return out; }
     var eff = effective(form, ev, opts), all = achievable(form, ev, opts);
-    if (!all.length) { out.reason = "No unit layout fits these buildings (units need at least " + MIN_UNIT_WIDTH_M + " m of width)."; return out; }
+    if (!all.length) { out.reason = "No unit layout fits these buildings (units need at least " + MIN_UNIT_WIDTH_M + " m of width" + (access.key === "core" ? " beside the " + CORE_W + " m core" : "") + ")."; return out; }
     var want = opts.units || all[all.length - 1].total, pick = all.filter(function (a) { return a.total === want; })[0];
     if (!pick) { pick = all.reduce(function (best, a) { return a.total <= want && (!best || a.total > best.total) ? a : best; }, null) || all[0]; out.notes.push(want + " units cannot be laid out in these buildings; " + pick.total + " shown."); }
     var next = 1;
     eff.buildings.forEach(function (b, i) {
-      var r = blockFor(b, pick.picks[i], next, i === 0 ? ground.cell : null); next = r.next; out.blocks.push(r.block);
+      var r = blockFor(b, pick.picks[i], next, i === 0 ? ground.cell : null, access.key === "core" && b.key !== "rear" ? "core" : "exterior"); next = r.next; out.blocks.push(r.block);
+      if (access.key === "core" && !r.block.core) out.notes.push(b.name + ": no internal core (" + (b.key === "rear" ? "a rear building is reached from the courtyard" : "the layout needs more than two units across, or the building is too shallow for the stair") + "); its upper units use an exterior stair and walkway.");
     });
+    if (access.key === "core") out.notes.push(access.note);
     eff.notes.forEach(function (n) { out.notes.push(n); });
     out.units = out.blocks.reduce(function (s, b) { return s + b.units; }, 0);
-    // 2.2.8: minimum number of 2+ bedroom units; upgrade the largest one-bedrooms if the mix falls short
+    // the unit mix: by area (a 3-bed from 105 m2, a 2-bed from 65, a 1-bed from 38, a studio below), each unit held
+    // to the bedrooms its rooms can hold, or as the user set it
     var need = familyMin(out.units, tenure), dwellings = [];
-    out.blocks.forEach(function (b) { b.unit_list.forEach(function (u) { if (!u.kind) dwellings.push(u); }); });
+    out.blocks.forEach(function (b) { b.unit_list.forEach(function (u) { if (u.kind) return; u.cap = capacityOf(u, b); if (u.beds > u.cap) Object.assign(u, bedsOf(u.cap, u.area_est_m2)); dwellings.push(u); }); });
+    if (opts.mix) out.mix = applyMix(dwellings, opts.mix);
     var fam = dwellings.filter(function (u) { return u.beds >= 2; }).length;
-    if (fam < need) {
-      dwellings.filter(function (u) { return u.beds < 2 && u.area_est_m2 >= 50; }).sort(function (a, b) { return b.area_est_m2 - a.area_est_m2; }).slice(0, need - fam)
+    // 2.2.8: minimum number of 2+ bedroom units; in the automatic mix the largest one-bedrooms are upgraded when it falls short
+    if (!opts.mix && fam < need) {
+      dwellings.filter(function (u) { return u.beds < 2 && u.cap >= 2; }).sort(function (a, b) { return b.area_est_m2 - a.area_est_m2; }).slice(0, need - fam)
         .forEach(function (u) { u.beds = 2; u.baths = 1; u.upgraded = true; fam++; });
     }
+    if (!opts.mix) out.mix = { b3: dwellings.filter(function (u) { return u.beds === 3; }).length, b2: dwellings.filter(function (u) { return u.beds === 2; }).length, b1: dwellings.filter(function (u) { return u.beds === 1; }).length, b0: dwellings.filter(function (u) { return u.beds === 0; }).length, custom: false };
+    var ml = mixLimits(dwellings, out.mix.b3, out.mix.b2);
+    out.mix.limits = { max3: ml.max3, max2: ml.max2, max0: ml.max0, min_m2: TYPE_MIN_M2 };
     out.checks.push(check("units", out.units <= lim.value, out.units + " dwelling units; maximum " + lim.value + " for " + tenureOf(tenure).name.toLowerCase(), lim.clause));
     out.checks.push(check("family units", fam >= need, fam + " units with 2 or more bedrooms; minimum " + need + " for " + out.units + " units, " + (tenure === "rental" ? "rental" : "other tenure"), RULES.family_min.clause));
     var gfa = out.blocks.reduce(function (s, b) { return s + b.gfa_m2; }, 0), fsr = gfa / ev.area;
@@ -204,9 +276,9 @@ var R1Units = (function () {
     out.reason = out.ok ? "fits" : out.checks.filter(function (c) { return !c.ok; }).map(function (c) { return c.name + ": " + c.detail + " [" + c.clause + "]"; }).join("; ");
     var layoutNames = out.blocks.map(function (b) { return LAYOUTS[b.layout]; }).filter(function (x, i, a) { return a.indexOf(x) === i; }).join(" + ");
     out.name = out.units + " units, " + layoutNames.toLowerCase() + (ground.cell ? ", " + ground.cell.name.toLowerCase() + " at ground" : "");
-    out.key = "bylaw_" + out.units + "_" + tenure + "_" + ground.key + "_" + out.blocks.map(function (b) { return b.layout; }).join("-");
+    out.key = "bylaw_" + out.units + "_" + tenure + "_" + ground.key + "_" + access.key + "_" + out.blocks.map(function (b) { return b.layout; }).join("-");
     if (ground.cell) out.notes.push(ground.note);
-    out.notes.push("Tenure: " + tenureOf(tenure).name + " [" + lim.clause + "]. Bedrooms follow each unit's area (3-bed from 105 m2, 2-bed from 65 m2); " + RULES.source.note);
+    out.notes.push("Tenure: " + tenureOf(tenure).name + " [" + lim.clause + "]. " + (out.mix.custom ? "Unit mix set by hand (" + [3, 2, 1, 0].map(function (t) { return out.mix["b" + t] + " x " + TYPE_NAMES[t]; }).join(", ") + "); the limits are what the rooms of each unit can hold (three bedrooms, two, one) with the area floors of a 3-bed at " + TYPE_MIN_M2[3] + " m2 and a 2-bed at " + TYPE_MIN_M2[2] + "; studios are single-level units." : "Bedrooms follow each unit's area (3-bed from " + TYPE_MIN_M2[3] + " m2, 2-bed from " + TYPE_MIN_M2[2] + ", 1-bed from " + TYPE_MIN_M2[1] + ", studio below), held to what its rooms can hold.") + " " + RULES.source.note);
     out.achievable = all.map(function (a) { return a.total; });
     return out;
   }
@@ -219,5 +291,5 @@ var R1Units = (function () {
     return L;
   }
 
-  return { RULES: RULES, TENURES: TENURES, GROUND_USES: GROUND_USES, LAYOUTS: LAYOUTS, maxUnits: maxUnits, familyMin: familyMin, candidates: candidates, effective: effective, achievable: achievable, configure: configure, optionLines: optionLines, tenureOf: tenureOf, groundUseOf: groundUseOf };
+  return { RULES: RULES, TENURES: TENURES, GROUND_USES: GROUND_USES, ACCESS: ACCESS, CORE_W: CORE_W, LAYOUTS: LAYOUTS, TYPE_MIN_M2: TYPE_MIN_M2, TYPE_NAMES: TYPE_NAMES, maxUnits: maxUnits, familyMin: familyMin, candidates: candidates, effective: effective, achievable: achievable, configure: configure, mixLimits: mixLimits, coreStairLen: coreStairLen, optionLines: optionLines, tenureOf: tenureOf, groundUseOf: groundUseOf, accessOf: accessOf };
 })();

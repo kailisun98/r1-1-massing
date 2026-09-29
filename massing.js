@@ -198,11 +198,56 @@ var R1Massing = (function () {
   }
 
   // ------------------------------------------------------------------ ground
-  function groundAt(topo, x, y, k) {
+  /* Ground model. The elevation points are sparse and banded (every point of a 1 m contour has the same z, plus
+     the 2009 building bases), so averaging the nearest few gives terraces and bumps. groundAt fits a plane
+     z = a + b dx + c dy through the points around (x, y), Gaussian-weighted, and returns a: the slope between
+     contours is followed instead of stepped. The neighbourhood grows (16, 40, 80 m) until the points spread in
+     two directions (a single contour line is collinear and cannot fix a plane); if nothing is in reach the five
+     nearest points are averaged by inverse distance as before. A spatial hash cached on the array keeps it fast. */
+  var GROUND_SCALES = [[16, 6], [40, 15], [80, 30]], GROUND_CELL_M = 8.0, GROUND_MIN_SPREAD_M = 1.5, GROUND_CLAMP_M = 1.0;
+  function groundIndex(topo) {
+    if (topo._index && topo._index.n === topo.length) return topo._index;
+    var cells = {};
+    topo.forEach(function (p, i) { var k = Math.floor(p[0] / GROUND_CELL_M) + "," + Math.floor(p[1] / GROUND_CELL_M); (cells[k] || (cells[k] = [])).push(i); });
+    topo._index = { n: topo.length, cells: cells };
+    return topo._index;
+  }
+  function groundNear(topo, x, y, r) {
+    var idx = groundIndex(topo), out = [], c = Math.ceil(r / GROUND_CELL_M), cx = Math.floor(x / GROUND_CELL_M), cy = Math.floor(y / GROUND_CELL_M);
+    for (var i = -c; i <= c; i++) for (var j = -c; j <= c; j++) {
+      var b = idx.cells[(cx + i) + "," + (cy + j)];
+      if (b) for (var k = 0; k < b.length; k++) { var p = topo[b[k]]; if (Math.hypot(p[0] - x, p[1] - y) <= r) out.push(p); }
+    }
+    return out;
+  }
+  function groundFit(pts, x, y, sigma) {
+    var s2 = 2 * sigma * sigma, sw = 0, sx = 0, sy = 0, sz = 0, sxx = 0, sxy = 0, syy = 0, sxz = 0, syz = 0, zmin = Infinity, zmax = -Infinity;
+    pts.forEach(function (p) {
+      var dx = p[0] - x, dy = p[1] - y, w = Math.exp(-(dx * dx + dy * dy) / s2);
+      sw += w; sx += w * dx; sy += w * dy; sz += w * p[2]; sxx += w * dx * dx; sxy += w * dx * dy; syy += w * dy * dy; sxz += w * dx * p[2]; syz += w * dy * p[2];
+      if (p[2] < zmin) zmin = p[2]; if (p[2] > zmax) zmax = p[2];
+    });
+    if (sw <= 0) return null;
+    var mx = sx / sw, my = sy / sw, cxx = sxx / sw - mx * mx, cxy = sxy / sw - mx * my, cyy = syy / sw - my * my;
+    var tr = cxx + cyy, dt = cxx * cyy - cxy * cxy, lmin = tr / 2 - Math.sqrt(Math.max(0, tr * tr / 4 - dt));
+    if (pts.length < 4 || Math.sqrt(Math.max(lmin, 0)) < GROUND_MIN_SPREAD_M) return { z: sz / sw, planar: false };
+    var det = sw * (sxx * syy - sxy * sxy) - sx * (sx * syy - sxy * sy) + sy * (sx * sxy - sxx * sy);
+    if (Math.abs(det) < 1e-9) return { z: sz / sw, planar: false };
+    var a = (sz * (sxx * syy - sxy * sxy) - sx * (sxz * syy - sxy * syz) + sy * (sxz * sxy - sxx * syz)) / det;
+    return { z: Math.min(zmax + GROUND_CLAMP_M, Math.max(zmin - GROUND_CLAMP_M, a)), planar: true };
+  }
+  function groundAt(topo, x, y) {
     if (!topo || !topo.length) return null;
-    k = k || 5;
-    var near = topo.slice().sort(function (a, b) { return Math.hypot(a[0] - x, a[1] - y) - Math.hypot(b[0] - x, b[1] - y); }).slice(0, k);
-    var ws = 0, zs = 0;
+    var first = null;
+    for (var s = 0; s < GROUND_SCALES.length; s++) {
+      var pts = groundNear(topo, x, y, GROUND_SCALES[s][0]);
+      if (!pts.length) continue;
+      var fit = groundFit(pts, x, y, GROUND_SCALES[s][1]);
+      if (fit && fit.planar) return fit.z;
+      if (fit && first === null) first = fit.z;
+    }
+    if (first !== null) return first;
+    var near = topo.slice().sort(function (a, b) { return Math.hypot(a[0] - x, a[1] - y) - Math.hypot(b[0] - x, b[1] - y); }).slice(0, 5), ws = 0, zs = 0;
     near.forEach(function (p) { var w = 1 / Math.max(Math.hypot(p[0] - x, p[1] - y), 0.5); ws += w; zs += w * p[2]; });
     return zs / ws;
   }
@@ -368,9 +413,16 @@ var R1Massing = (function () {
   }
   function formDimensionPlan(ev, form, off) {
     if (!ev || ev.status !== "ok" || !form || form.status !== "ok") return [];
-    var idx = ev.idx, E = ev.edges, f = idx.front, r = idx.rear, s1 = idx.side1, by = {};
+    var idx = ev.idx, E = ev.edges, f = idx.front, r = idx.rear, s1 = idx.side1, by = {}, like = form.dims_like || form.scheme;
     form.buildings.forEach(function (b) { by[b.key] = b; });
-    if (form.scheme === "courtyard") {
+    if (like === "single" && by.single) {   // one catalogue block inside the envelope: its depth beside side 1, its width behind the rear yard
+      var qs = anchor(ev, s1, off), qr0 = anchor(ev, r, off), sp = by.single.pts;
+      return [
+        { name: "BUILDING DEPTH", string: "form depth", refs: [["form", "single", 3], ["form", "single", 1]], line: seg(qs, E[f].n) },
+        { name: "BUILDING WIDTH", string: "form width", refs: [["form_pt", "single", sp[1]], ["form_pt", "single", sp[2]]], line: seg(qr0, E[f].d) }
+      ];
+    }
+    if (like === "courtyard") {
       var q1 = anchor(ev, s1, off), fb = by.front.pts, rb = by.rear.pts;
       return [
         { name: "FRONT BUILDING", string: "form depth", refs: [["form", "front", 3], ["form", "front", 1]], line: seg(q1, E[f].n) },
@@ -379,7 +431,7 @@ var R1Massing = (function () {
         { name: "REAR YARD (courtyard)", string: "form depth", refs: [["form", "rear", 1], ["boundary", r]], line: seg(q1, E[r].n) }
       ];
     }
-    if (form.scheme === "side_by_side") {
+    if (like === "side_by_side") {
       var qr = anchor(ev, r, off), A = by.A.pts, B = by.B.pts;
       return [
         { name: "BUILDING A", string: "form width", refs: [["form_pt", "A", A[1]], ["form_pt", "A", A[2]]], line: seg(qr, E[f].d) },
@@ -541,13 +593,13 @@ var R1Massing = (function () {
     if (!ev || ev.status !== "ok") return null;
     baseZ = baseZ || 0; off = off || 2.4;
     var E = ev.edges, f = ev.idx.front, nIn = E[f].n, c = site.centroid(ev.pts);
-    var hasForm = form && form.status === "ok" && form.buildings && form.buildings.length;
-    if (hasForm && form.scheme === "side_by_side") c = form.buildings[0].centroid;
+    var hasForm = form && form.status === "ok" && form.buildings && form.buildings.length, like = hasForm ? (form.dims_like || form.scheme) : null;
+    if (hasForm && like === "side_by_side") c = form.buildings[0].centroid;
     var lot = lineSpan(c, nIn, ev.pts);
     if (!lot) return null;
     var blds = [], gapName = "GAP";
     if (hasForm) {
-      gapName = form.scheme === "courtyard" ? "COURTYARD" : "GAP";
+      gapName = like === "courtyard" ? "COURTYARD" : "GAP";
       form.buildings.forEach(function (b) {
         var span = lineSpan(c, nIn, b.pts); if (!span) return;
         var z0 = bases && bases[b.key] !== undefined ? bases[b.key] : baseZ;
@@ -608,7 +660,7 @@ var R1Massing = (function () {
     rows.push(["Max building width", mw.value + " m", mw.clause, stw]);
     var mh = R.max_height_m;
     rows.push(["Max height, single building", mh.value + " m / " + mh.storeys + " storeys", mh.clause.split(" ")[0], applied]);
-    var FR = FORM_RULES, scheme = (form && form.status === "ok") ? form.scheme : null;
+    var FR = FORM_RULES, scheme = (form && form.status === "ok") ? (form.dims_like || form.scheme) : null;
     var cd = FR.courtyard_min_site_depth_m, stc = "";
     if (ev && "site_depth" in ev) stc = "site " + fmt(ev.site_depth, 2) + " m: " + (ev.site_depth >= cd.value ? "OK" : "FAILS");
     rows.push(["Min site depth, courtyard (front + rear building)", cd.value + " m", cd.clause.split(" ")[0], stc]);
@@ -668,5 +720,6 @@ var R1Massing = (function () {
     envelopeDimensionPlan: envelopeDimensionPlan, formDimensionPlan: formDimensionPlan,
     FORM_RULES: FORM_RULES, SCHEMES: SCHEMES, REAR_DEPTHS_M: REAR_DEPTHS_M, REAR_DEPTH_DEFAULT_M: REAR_DEPTH_DEFAULT_M, COURTYARDS_M: COURTYARDS_M,
     schemeName: schemeName, formScheme: formScheme, formBases: formBases, formRows: formRows, formLines: formLines,
+    building: building, quad: quad, offsetLine: offsetLine, quadDims: quadDims, distToLine: distToLine, lineOf: lineOf, anchor: anchor, seg: seg,
     lineSpan: lineSpan, sectionPlan: sectionPlan, rulesRows: rulesRows, rulesGroups: rulesGroups, resultsRows: resultsRows };
 })();

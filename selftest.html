@@ -12,6 +12,7 @@
 <script src="core.js"></script>
 <script src="site.js"></script>
 <script src="massing.js"></script>
+<script src="cmhc.js"></script>
 <script>
 (function () {
   var out = document.getElementById("out"), fails = 0, total = 0;
@@ -70,6 +71,18 @@
   check("formRows: FSR estimate", M.formRows(fc, ev).some(function (r) { return r[1].indexOf("FSR 1.57") >= 0; }), M.formRows(fc, ev));
   check("resultsRows: envelope width row", M.resultsRows(ev, base, { district: "R1-1" }, block[0]).some(function (r) { return r[0] === "Envelope width"; }));
   check("normaliseAddress", R1Site.normaliseAddress("1560 W 13th Ave").join("|") === "1560|W 13TH AV");
+  // CMHC catalogue fits on the synthetic lot (envelope 12.84 x 19.80, band 6, site depth 38.10, area 580.6)
+  var cf = R1Cmhc.fits(ev), byKey = {}; cf.options.forEach(function (o) { byKey[o.key] = o; });
+  check("cmhc: Fourplex 01, Fourplex 02, Duplex, Rowhouse and the Courtyard Sixplex fit", ["fourplex_01", "fourplex_02", "duplex", "rowhouse", "courtyard_sixplex"].every(function (k) { return byKey[k] && byKey[k].ok; }), cf.options.map(function (o) { return o.key + ":" + o.ok; }));
+  check("cmhc: Fourplex 01 + ADU 02 fails on depth (39.9 m needed), Duplex + ADU 02 fits at 37.5 m", byKey["fourplex_01+adu_02"] && !byKey["fourplex_01+adu_02"].ok && /front \+ courtyard \+ rear/.test(byKey["fourplex_01+adu_02"].reason) && byKey["duplex+adu_02"] && byKey["duplex+adu_02"].ok, [byKey["fourplex_01+adu_02"], byKey["duplex+adu_02"]]);
+  check("cmhc: rowhouse row of 3 (17.1 m) is not offered on a 12.84 m envelope; no ADU alone; no side-by-side pair fits", !byKey.rowhouse_x3 && !byKey.adu_01 && !cf.options.some(function (o) { return o.kind === "side_by_side"; }), Object.keys(byKey));
+  check("cmhc: fitting options come first, most units first", cf.options[0].ok && cf.options[0].units === 6 && cf.options.every(function (o, i) { return i === 0 || cf.options[i - 1].ok >= o.ok; }), cf.options.map(function (o) { return o.units + (o.ok ? "" : "x"); }));
+  var f6 = R1Cmhc.form(ev, byKey.courtyard_sixplex), g6 = f6.gaps.filter(function (g) { return g.kind === "courtyard"; })[0];
+  check("cmhc form: sixplex gives front 12.5 x 11.1 on the front yard line and rear 12.2 x 7.7 off the lane, courtyard >= 6.1", f6.status === "ok" && f6.buildings.length === 2 && close(f6.buildings[0].width_m, 12.5) && close(f6.buildings[0].depth_m, 11.1) && close(f6.buildings[1].width_m, 12.2) && close(f6.buildings[1].depth_m, 7.7) && g6 && g6.value_m >= 6.1 - 1e-6 && close(f6.buildings[0].pts[0][1], -D / 2 + 4.9, 0.01), f6);
+  var f4 = R1Cmhc.form(ev, byKey.fourplex_01);
+  check("cmhc form: single block centred, 6.8 x 19.8, dimension plan of two strings", f4.status === "ok" && close(f4.buildings[0].width_m, 6.8) && close(f4.buildings[0].depth_m, 19.8) && close(R1Site.centroid(f4.buildings[0].pts)[0], 0, 0.01) && M.formDimensionPlan(ev, f4, 6).length === 2, f4.buildings[0]);
+  check("cmhc: section through the sixplex form has two buildings and a COURTYARD dim", (function () { var sp = M.sectionPlan(ev, f6, { front: 0, rear: 0 }, 0, 2.4); return sp.buildings.length === 2 && sp.dims.some(function (d) { return d.name === "COURTYARD"; }); })());
+  check("cmhc: unit rows and svg", R1Cmhc.unitRows(byKey.fourplex_01).length === 4 && R1Cmhc.unitSvg(byKey.courtyard_sixplex).indexOf("<svg") === 0 && R1Cmhc.unitMix(byKey.courtyard_sixplex) === "2 x 1-bed, 2 x 2-bed, 2 x 3-bed", R1Cmhc.unitMix(byKey.courtyard_sixplex));
   var url = R1Site.exportUrl("property-parcel-polygons", R1Site.within(-123.18, 49.25, 161.4));
   check("tapeKey blanks the encoded radius", R1Site.tapeKey(url).indexOf("%2C%20Rm)") > 0 && R1Site.tapeKey(url) === R1Site.tapeKey(url.replace("161m", "232m")), R1Site.tapeKey(url));
   var frame0 = new R1Site.LocalFrame(49.25, -123.18), far = frame0.toLonLat(300, 0), near = frame0.toLonLat(10, 0), near2 = frame0.toLonLat(20, 0);

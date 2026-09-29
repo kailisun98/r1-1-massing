@@ -12,23 +12,23 @@
 /* ------------------------------------------------------------------ tokens */
 :root {
   --ink: #2c3e50; --muted: #6b7280; --page: #f5f6f8; --panel: #ffffff; --line: #e1e5ea; --field: #ffffff;
-  --amber: #c77d14; --amber-ink: #ffffff; --blue: #3c8cdc; --red: #c81e1e; --green: #9fb07f;
+  --amber: #c77d14; --amber-ink: #ffffff; --blue: #3c8cdc; --red: #c81e1e; --green: #9fb07f; --teal: #2a9d8f;
   --status-info: #eaf0f8; --status-busy: #fff1d6; --status-ok: #e1f2e5; --status-error: #fbe1e1;
   --group: #e9eef4; --shadow: 0 1px 2px rgba(20, 30, 40, .06);
-  --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; --mono: "IBM Plex Mono", Consolas, "Courier New", monospace;
+  --sans: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif; --mono: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     color-scheme: dark;
     --ink: #e6ebf1; --muted: #9aa4b1; --page: #14181d; --panel: #1c2128; --line: #2c343d; --field: #12161b;
-    --amber: #e0a03a; --amber-ink: #14181d; --blue: #5aa2ea; --red: #e0554f; --green: #7d8f60;
+    --amber: #e0a03a; --amber-ink: #14181d; --blue: #5aa2ea; --red: #e0554f; --green: #7d8f60; --teal: #3fb3a4;
     --status-info: #1f2a3a; --status-busy: #3a2f14; --status-ok: #163121; --status-error: #3b1c1c; --group: #232c37;
   }
 }
 :root[data-theme="dark"] {
   color-scheme: dark;
   --ink: #e6ebf1; --muted: #9aa4b1; --page: #14181d; --panel: #1c2128; --line: #2c343d; --field: #12161b;
-  --amber: #e0a03a; --amber-ink: #14181d; --blue: #5aa2ea; --red: #e0554f; --green: #7d8f60;
+  --amber: #e0a03a; --amber-ink: #14181d; --blue: #5aa2ea; --red: #e0554f; --green: #7d8f60; --teal: #3fb3a4;
   --status-info: #1f2a3a; --status-busy: #3a2f14; --status-ok: #163121; --status-error: #3b1c1c; --group: #232c37;
 }
 
@@ -91,7 +91,10 @@ pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono
 .legend { position: absolute; left: 12px; bottom: 24px; z-index: 900; background: color-mix(in srgb, var(--panel) 90%, transparent); border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px; font-size: 11px; display: grid; grid-template-columns: auto auto; gap: 2px 12px; }
 .legend span::before { content: ""; display: inline-block; width: 14px; height: 8px; margin-right: 6px; vertical-align: middle; border: 1px solid transparent; }
 .legend .l-site::before { border-color: var(--red); border-width: 0 0 2px; } .legend .l-setback::before { border-color: var(--red); border-width: 0 0 1px; border-bottom-style: dashed; }
-.legend .l-env::before { background: var(--blue); opacity: .5; } .legend .l-form::before { background: var(--amber); opacity: .7; }
+.legend .l-env::before { background: var(--blue); opacity: .5; } .legend .l-form::before { background: var(--amber); opacity: .7; } .legend .l-cmhc::before { background: var(--teal); opacity: .7; }
+tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--group); } tr.pick.on td { background: color-mix(in srgb, var(--teal) 18%, var(--panel)); } tr.nofit td { color: var(--muted); }
+#cmhcUnits svg { max-width: 100%; height: auto; display: block; margin-top: 6px; }
+.step a { color: var(--blue); }
 .legend .l-street::before { background: #8e8e8e; } .legend .l-lane::before { background: #bdbdbd; } .legend .l-topo::before { background: var(--green); } .legend .l-bldg::before { background: #f4f4f2; border-color: #6b7280; }
 
 /* map labels */
@@ -182,6 +185,15 @@ pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono
         <p id="formNote" class="muted"></p>
       </section>
 
+      <section class="step" id="cmhcSection" aria-labelledby="h6s" hidden>
+        <h2 id="h6s"><span class="badge">6</span> CMHC catalogue fit</h2>
+        <p class="muted" style="margin-top:0">Tests the British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a> against this envelope: width, depth, storeys and height, the unit count this site's band allows, floor area, and the courtyard rules when a design is paired with an accessory dwelling unit behind it. A fitting option is drawn in teal as the massing, with its unit configuration.</p>
+        <div class="actions"><button id="btnCmhc" disabled>Check catalogue fits</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
+        <table id="cmhcTable"></table>
+        <p id="cmhcNote" class="muted"></p>
+        <div id="cmhcUnits"></div>
+      </section>
+
       <section class="report" aria-labelledby="hrep">
         <h2 id="hrep">Report (every number with its clause)</h2>
         <pre id="report"></pre>
@@ -202,6 +214,7 @@ pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono
       <div class="legend" aria-hidden="true">
         <span class="l-site">Site boundary</span><span class="l-setback">Setback</span>
         <span class="l-env">Permitted envelope</span><span class="l-form">Form option</span>
+        <span class="l-cmhc">Catalogue massing</span><span></span>
         <span class="l-street">Street</span><span class="l-lane">Lane</span>
         <span class="l-topo">Site cut</span><span class="l-bldg">Buildings</span>
       </div>
@@ -218,6 +231,7 @@ pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono
 <script src="core.js"></script>
 <script src="site.js"></script>
 <script src="massing.js"></script>
+<script src="cmhc.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

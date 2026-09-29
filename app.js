@@ -5,7 +5,7 @@ var App = (function () {
   var core = R1Core, site = R1Site, M = R1Massing;
 
   var COLORS = { site: "#c81e1e", parcel: "#7d8590", street: "#8e8e8e", lane: "#bdbdbd", building: "#f4f4f2", buildingLine: "#6b7280",
-    topo: "#9fb07f", cut: "#4a4a4a", setback: "#b42828", envelope: "#3c8cdc", form: "#d99a2b", dim: "#2c3e50", section: "#2c3e50" };
+    topo: "#9fb07f", cut: "#4a4a4a", setback: "#b42828", envelope: "#3c8cdc", form: "#d99a2b", cmhc: "#2a9d8f", dim: "#2c3e50", section: "#2c3e50" };
   var EXAMPLE_ADDRESS = "3567 W 27th Ave", PLAN_SCALE = 500, SECTION_SCALE = 200;
   // The shared (artifact) copy cannot reach the City portal or the map tile server: it replays site files stored
   // with the page (data/index.json lists them) and reads tiles from tiles/{z}/{x}/{y}.png. See tools/build_artifact.py.
@@ -26,7 +26,7 @@ var App = (function () {
 
   function resetState() {
     S = { res: null, zone: null, choices: [], parcel: null, square: null, det: null, click: null, ev: null, base: null, placed: false,
-      form: null, formBases: null, scheme: null, existingIds: [], cutSide: M.CUT_DEFAULT_SIDE_M };
+      form: null, formBases: null, scheme: null, existingIds: [], cutSide: M.CUT_DEFAULT_SIDE_M, cmhc: null, cmhcPick: null };
   }
 
   // ------------------------------------------------------------------ status / report
@@ -79,9 +79,10 @@ var App = (function () {
     ui.btnImport.disabled = !S.choices.length;
     ["single", "courtyard", "side_by_side"].forEach(function (k) { ui.schemeBtns[k].disabled = !haveEnv; });
     ui.btnFormApply.disabled = !haveEnv; ui.btnFormClear.disabled = !haveEnv;
+    ui.btnCmhc.disabled = !haveEnv; ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc");
     ui.tab3d.disabled = !haveModel; ui.tabSection.disabled = !haveSite;
     ui.stepBadges.forEach(function (b, i) {
-      var done = [haveModel, !!S.click || (S.det && S.det.front), !!S.ev, haveEnv, !!(S.form && S.form.status === "ok")][i];
+      var done = [haveModel, !!S.click || (S.det && S.det.front), !!S.ev, haveEnv, !!(S.form && S.form.status === "ok" && S.form.scheme !== "cmhc"), !!(S.form && S.form.scheme === "cmhc")][i];
       b.classList.toggle("done", !!done);
     });
   }
@@ -213,8 +214,8 @@ var App = (function () {
   function drawForm() {
     clearLayers(["forms"]);
     if (!(S.form && S.form.status === "ok")) { if (S.envelopeLayer && !map.hasLayer(S.envelopeLayer)) S.envelopeLayer.addTo(layers.envelope); return; }
-    var ctx = dimContext(), off = M.dimOffsetM(PLAN_SCALE);
-    S.form.buildings.forEach(function (b) { poly(b.pts, { color: COLORS.form, weight: 2, fillColor: COLORS.form, fillOpacity: 0.55, interactive: false }, "forms"); });
+    var ctx = dimContext(), off = M.dimOffsetM(PLAN_SCALE), col = S.form.scheme === "cmhc" ? COLORS.cmhc : COLORS.form;
+    S.form.buildings.forEach(function (b) { poly(b.pts, { color: col, weight: 2, fillColor: col, fillOpacity: 0.55, interactive: false }, "forms"); });
     M.formDimensionPlan(S.ev, S.form, off).forEach(function (spec) { drawDimension(spec, ctx, "forms", { color: COLORS.dim }); });
     if (S.envelopeLayer) S.envelopeLayer.remove();     // the envelope would show through where the form is smaller
   }
@@ -255,7 +256,7 @@ var App = (function () {
     add("polyline", { points: pts.join(" "), fill: "none", stroke: "#3f4733", "stroke-width": 1.2 });
     // buildings
     sp.buildings.forEach(function (b) {
-      var col = b.key === "envelope" ? COLORS.envelope : COLORS.form;
+      var col = b.key === "envelope" ? COLORS.envelope : (S.form && S.form.scheme === "cmhc" ? COLORS.cmhc : COLORS.form);
       add("rect", { x: X(b.s0), y: Y(b.z1), width: (b.s1 - b.s0) * k, height: (b.z1 - b.z0) * k, fill: col, "fill-opacity": 0.75, stroke: "#5b4a1e", "stroke-width": 1 });
     });
     // reference lines
@@ -297,12 +298,13 @@ var App = (function () {
     var renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     host.appendChild(renderer.domElement);
-    var scene = new THREE.Scene(); scene.background = new THREE.Color(0xf7f8fa);
+    var scene = new THREE.Scene(); scene.background = new THREE.Color(0xf4f5f7);
     var camera = new THREE.PerspectiveCamera(40, 1, 1, 5000);
     var controls = new THREE.OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-    var sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(-120, -160, 220); scene.add(sun);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa886, 0.45));
+    var sun = new THREE.DirectionalLight(0xfff4e0, 0.75); sun.position.set(-120, -160, 220); scene.add(sun);
     var group = new THREE.Group(); scene.add(group);
     three = { renderer: renderer, scene: scene, camera: camera, controls: controls, group: group };
     function resize() { var w = host.clientWidth || 800, h = host.clientHeight || 500; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
@@ -324,8 +326,9 @@ var App = (function () {
     var G = three.group;
     while (G.children.length) G.remove(G.children[0]);
     if (!S.square) return;
-    var sq = S.square, res = S.res, N = 40, h = sq.half;
-    // terrain heightfield over the square, with a skirt down to a flat base
+    var sq = S.square, res = S.res, N = 80, h = sq.half;
+    // the ground: M.groundZ (a weighted plane fit through the elevation points, smooth between contours) sampled on
+    // an 80 x 80 grid over the square, smooth-shaded, with a skirt down to a flat base; everything else drapes on it
     var pos = [], idx = [], zs = [];
     for (var j = 0; j <= N; j++) for (var i = 0; i <= N; i++) {
       var p = M.fromUV(sq, [-h + 2 * h * i / N, -h + 2 * h * j / N]), z = M.groundZ(res, p[0], p[1]);
@@ -334,10 +337,10 @@ var App = (function () {
     for (j = 0; j < N; j++) for (i = 0; i < N; i++) { var a = j * (N + 1) + i, b = a + 1, c = a + N + 1, d = c + 1; idx.push(a, b, d, a, d, c); }
     var zBase = Math.min.apply(null, zs) - 4;
     var geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
-    G.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x9fb07f, side: THREE.DoubleSide })));
+    G.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0xa9b78e, side: THREE.DoubleSide })));
     var ring = M.squareRing(sq), skirt = [], sidx = [];
     ring.forEach(function (p, k) {
-      var q = ring[(k + 1) % 4], n = 20;
+      var q = ring[(k + 1) % 4], n = 40;
       for (var t = 0; t <= n; t++) {
         var x = p[0] + (q[0] - p[0]) * t / n, y = p[1] + (q[1] - p[1]) * t / n, z = M.groundZ(res, x, y), base = skirt.length / 3;
         skirt.push(x, y, z, x, y, zBase);
@@ -345,15 +348,27 @@ var App = (function () {
       }
     });
     var sg = new THREE.BufferGeometry(); sg.setAttribute("position", new THREE.Float32BufferAttribute(skirt, 3)); sg.setIndex(sidx); sg.computeVertexNormals();
-    G.add(new THREE.Mesh(sg, new THREE.MeshLambertMaterial({ color: 0x5e6a4a, side: THREE.DoubleSide })));
+    G.add(new THREE.Mesh(sg, new THREE.MeshLambertMaterial({ color: 0x66714f, side: THREE.DoubleSide })));
     var bottom = new THREE.Shape(ring.map(function (p) { return new THREE.Vector2(p[0], p[1]); }));
     var bm = new THREE.Mesh(new THREE.ShapeGeometry(bottom), new THREE.MeshLambertMaterial({ color: 0x4d573d, side: THREE.DoubleSide })); bm.position.z = zBase; G.add(bm);
+    // draped lines: a polyline sampled every 3 m and lifted dz above the ground
+    function drapedLine(pl, dz, color, opacity, closed) {
+      var v = [], pts = closed ? pl.concat([pl[0]]) : pl;
+      for (var k = 0; k < pts.length - 1; k++) {
+        var a = pts[k], b = pts[k + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 3));
+        for (var t = 0; t <= n; t++) { var x = a[0] + (b[0] - a[0]) * t / n, y = a[1] + (b[1] - a[1]) * t / n; if (t > 0 && t < n) v.push(x, y, M.groundZ(res, x, y) + dz); v.push(x, y, M.groundZ(res, x, y) + dz); }
+      }
+      if (v.length < 6) return;
+      var lg = new THREE.BufferGeometry(); lg.setAttribute("position", new THREE.Float32BufferAttribute(v, 3));
+      G.add(new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: color, transparent: opacity < 1, opacity: opacity })));
+    }
+    if (ui.chkParcels.checked) res.parcels.forEach(function (p) { if (p === S.parcel) return; M.clipPolyline(p.ring, sq, true).forEach(function (pl) { drapedLine(pl, 0.15, 0x5a6350, 0.5, false); }); });
     // roads draped 0.1 m above the ground
     if (ui.chkRoads.checked && res.roads) {
       var rp = [], ri = [];
       res.roads.segments.forEach(function (seg) {
         seg.pieces.forEach(function (pc) {
-          var nSub = Math.max(1, Math.ceil(pc.len / 8));
+          var nSub = Math.max(1, Math.ceil(pc.len / 4));
           for (var k = 0; k < nSub; k++) {
             var t0 = k / nSub, t1 = (k + 1) / nSub;
             function st(t) { var cx = pc.a[0] + (pc.b[0] - pc.a[0]) * t, cy = pc.a[1] + (pc.b[1] - pc.a[1]) * t; return [[cx + pc.n[0] * pc.left, cy + pc.n[1] * pc.left], [cx - pc.n[0] * pc.right, cy - pc.n[1] * pc.right]]; }
@@ -368,19 +383,20 @@ var App = (function () {
       var rg = new THREE.BufferGeometry(); rg.setAttribute("position", new THREE.Float32BufferAttribute(rp, 3)); rg.setIndex(ri); rg.computeVertexNormals();
       G.add(new THREE.Mesh(rg, new THREE.MeshLambertMaterial({ color: 0x777777, side: THREE.DoubleSide })));
     }
+    // buildings: the top stays at the LiDAR height (base elevation + height above ground); the base is sunk 0.5 m
+    // below the lowest ground under the footprint so nothing floats on a slope
     if (ui.chkBuildings.checked) res.buildings.forEach(function (b) {
       var onSite = S.parcel && site.pointInRing(b.centroid, S.parcel.ring);
       if (onSite && S.placed && ui.chkHide.checked) return;
       var r = M.clipRing(b.ring, sq); if (!r.length) return;
-      G.add(extrude(r, site.localZ(res, b.base_geodetic), b.height_m, 0xf1f1ee, 1));
+      var top = site.localZ(res, b.base_geodetic) + b.height_m, gmin = Math.min.apply(null, r.map(function (p) { return M.groundZ(res, p[0], p[1]); }));
+      var base = Math.min(gmin, top - 3) - 0.5;
+      G.add(extrude(r, base, top - base, 0xf1f1ee, 1));
     });
-    if (S.parcel) {
-      var lp = S.parcel.ring.map(function (p) { return new THREE.Vector3(p[0], p[1], M.groundZ(res, p[0], p[1]) + 0.2); }); lp.push(lp[0].clone());
-      G.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(lp), new THREE.LineBasicMaterial({ color: 0xc81e1e })));
-    }
+    if (S.parcel) drapedLine(S.parcel.ring, 0.25, 0xc81e1e, 1, true);
     var formUp = S.form && S.form.status === "ok";
     if (S.ev && S.ev.status === "ok" && S.placed && !formUp) G.add(extrude(S.ev.env_pts, envelopeBaseZ(), S.ev.height, 0x3c8cdc, 0.4));
-    if (formUp) S.form.buildings.forEach(function (b) { G.add(extrude(b.pts, S.formBases[b.key], b.height_m, 0xd99a2b, 0.6)); });
+    if (formUp) S.form.buildings.forEach(function (b) { G.add(extrude(b.pts, S.formBases[b.key], b.height_m, S.form.scheme === "cmhc" ? 0x2a9d8f : 0xd99a2b, 0.65)); });
     var c = S.parcel ? S.parcel.centroid : sq.c, cz = M.groundZ(res, c[0], c[1]);
     three.controls.target.set(c[0], c[1], cz);
     three.camera.position.set(c[0] + 90, c[1] - 110, cz + 90);
@@ -498,7 +514,7 @@ var App = (function () {
       S.choices = M.parcelChoices(S.res);
       ui.parcelList.innerHTML = "";
       S.choices.forEach(function (ch, i) { var o = el("option", null, ch.label); o.value = String(i); if (ch.parcel === S.res.target) o.selected = true; ui.parcelList.appendChild(o); });
-      clearLayers(Object.keys(layers)); fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true;
+      clearLayers(Object.keys(layers)); fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true; ui.cmhcSection.hidden = true; resetCmhc();
       useSiteBox(activePreset ? activePreset.centre : null);   // a site file opened in the shared copy has no tiles at all
       map.setView([S.res.centre[0], S.res.centre[1]], 17);
       var roads = S.res.roads ? S.res.roads.segments.length : 0;
@@ -517,7 +533,7 @@ var App = (function () {
     report(M.siteLines(S.parcel)); report(M.cutLines(S.square).concat([""]));
     S.det = M.detectFrontage(S.parcel.ring, S.res.parcels, S.res.radius_m, S.parcel);
     report(M.frontageLines(S.det).concat([""]));
-    fillEdges(); fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true; markDirty(); setReady();
+    fillEdges(); fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true; ui.cmhcSection.hidden = true; resetCmhc(); markDirty(); setReady();
     status("Site shown on the map, cut to a " + S.cutSide + " m square. Confirm the street edge (step 2), then generate the envelope (step 4).", "ok");
   }
   function fillEdges() {
@@ -551,7 +567,7 @@ var App = (function () {
     if (ev.status !== "ok") { S.placed = false; markDirty(); setReady(); status("No envelope: " + (ev.controlling || ev.status) + ". See the report and the by-law table.", "error"); return; }
     S.placed = true;
     drawEnvelope(); setExistingVisible(!ui.chkHide.checked); drawSectionMarker(); markDirty();
-    ui.formSection.hidden = false; setReady();
+    ui.formSection.hidden = false; ui.cmhcSection.hidden = false; resetCmhc(); setReady();
     status("Envelope placed: " + fmt(ev.env_width, 2) + " x " + fmt(ev.env_depth, 2) + " m, " + ev.height + " m high, up to " + ev.band.max_units + " units" +
       (ui.chkHide.checked && S.existingIds.length ? "; existing building hidden" : "") + ". Toggle a form in step 5, or open the 3D view or the section.", "ok");
   }
@@ -560,6 +576,7 @@ var App = (function () {
   // ------------------------------------------------------------------ step 5: forms
   function applyForm(key) {
     if (!(S.ev && S.ev.status === "ok" && S.placed)) { setScheme(null); status("Generate the permitted envelope first (step 4).", "error"); return; }
+    clearCmhcPick();
     var cy = parseFloat(ui.courtyardSel.value), rd = parseFloat(ui.rearDepthSel.value);
     var form = M.formScheme(S.ev, key, cy, rd);
     S.form = form; setScheme(key); fillForm(); fillRules();
@@ -576,8 +593,61 @@ var App = (function () {
     status("Form '" + form.name + "' drawn: " + form.buildings.length + " buildings in amber; envelope hidden.", "ok");
   }
   function onFormClear() {
+    var wasCmhc = S.form && S.form.scheme === "cmhc";
+    clearCmhcPick();
     S.form = null; S.formBases = null; setScheme(null); fillForm(); fillRules(); drawForm(); drawSectionMarker(); markDirty(); setReady();
-    ui.formNote.textContent = ""; status("Form option removed; the permitted envelope is shown again.", "ok");
+    ui.formNote.textContent = ""; status((wasCmhc ? "Catalogue massing" : "Form option") + " removed; the permitted envelope is shown again.", "ok");
+  }
+
+  // ------------------------------------------------------------------ step 6: CMHC catalogue fits
+  function clearCmhcPick() {
+    S.cmhcPick = null; ui.cmhcUnits.innerHTML = "";
+    Array.prototype.forEach.call(ui.cmhcTable.querySelectorAll("tr.pick"), function (tr) { tr.classList.remove("on"); });
+  }
+  function resetCmhc() { S.cmhc = null; clearCmhcPick(); ui.cmhcTable.innerHTML = ""; ui.cmhcNote.textContent = ""; }
+  function onCmhc() {
+    if (!(S.ev && S.ev.status === "ok" && S.placed)) { status("Generate the permitted envelope first (step 4).", "error"); return; }
+    S.cmhc = R1Cmhc.fits(S.ev); clearCmhcPick(); fillCmhcTable();
+    report(R1Cmhc.fitLines(S.cmhc, S.ev).concat([""]));
+    var ok = S.cmhc.options.filter(function (o) { return o.ok; });
+    ui.cmhcNote.textContent = ok.length ? "Click a fitting option to draw it as the massing (teal) and see its unit configuration. Options that do not fit list the failing rule."
+      : "No catalogue design fits this envelope as drawn; the table gives the rule each one fails.";
+    status(ok.length + " of " + S.cmhc.options.length + " catalogue options fit this site. Click one to draw it.", ok.length ? "ok" : "error"); setReady();
+  }
+  function fillCmhcTable() {
+    var t = ui.cmhcTable; t.innerHTML = "";
+    var thead = el("thead"), tr = el("tr");
+    ["Design", "Units", "Block(s)", "Fit"].forEach(function (h) { tr.appendChild(el("th", null, h)); });
+    thead.appendChild(tr); t.appendChild(thead);
+    var tbody = el("tbody");
+    R1Cmhc.fitRows(S.cmhc).forEach(function (r) {
+      var row = el("tr", r.ok ? "pick" : "nofit");
+      r.cells.forEach(function (c, i) { row.appendChild(el("td", i === 1 ? "status-cell" : null, c)); });
+      if (r.ok) row.addEventListener("click", function () { applyCmhc(r.option, row); });
+      tbody.appendChild(row);
+    });
+    t.appendChild(tbody);
+  }
+  function applyCmhc(o, row) {
+    var form = R1Cmhc.form(S.ev, o);
+    clearCmhcPick(); if (row) row.classList.add("on");
+    S.form = form; S.cmhcPick = o; setScheme(null); fillForm(); fillRules();
+    if (form.status !== "ok") { S.formBases = null; drawForm(); drawSectionMarker(); markDirty(); setReady(); status(form.reason, "error"); return; }
+    S.formBases = M.formBases(S.res, form, envelopeBaseZ());
+    drawForm(); drawSectionMarker(); markDirty(); setReady();
+    showCmhcUnits(o); ui.formNote.textContent = "";
+    report(M.formLines(form, S.ev).concat(["  Unit mix: " + R1Cmhc.unitMix(o) + ". Source: " + R1Cmhc.SOURCE.name + ", " + R1Cmhc.SOURCE.url, ""]));
+    status("Catalogue massing drawn: " + o.name + ", " + o.units + " units (" + R1Cmhc.unitMix(o) + "). The envelope is hidden while it is shown.", "ok");
+  }
+  function showCmhcUnits(o) {
+    var host = ui.cmhcUnits; host.innerHTML = "";
+    host.appendChild(el("p", "muted", "Unit configuration as drawn in the catalogue (" + o.units + " units: " + R1Cmhc.unitMix(o) + "):"));
+    var wrap = el("div"); wrap.innerHTML = R1Cmhc.unitSvg(o); host.appendChild(wrap);
+    var table = el("table"); fillTable(table, ["Unit", "Bedrooms", "Bathrooms", "Floors", "Note"], R1Cmhc.unitRows(o)); host.appendChild(table);
+    o.blocks.forEach(function (b) {
+      var p = el("p", "muted"); p.appendChild(document.createTextNode((o.blocks.length > 1 ? b.name + ": " : "") + b.design.layout + " "));
+      var a = el("a", null, "Catalogue page"); a.href = R1Cmhc.url(b.design); a.target = "_blank"; a.rel = "noopener"; p.appendChild(a); host.appendChild(p);
+    });
   }
 
   // ------------------------------------------------------------------ clear / copy
@@ -585,7 +655,7 @@ var App = (function () {
     clearLayers(Object.keys(layers));
     var res = S.res, zone = S.zone, choices = S.choices, cut = S.cutSide, tape = S.siteTape, hit = S.hit, address = S.address;
     resetState(); S.res = res; S.zone = zone; S.choices = choices; S.cutSide = cut; S.siteTape = tape; S.hit = hit; S.address = address;
-    fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true; ui.edgeSelect.innerHTML = ""; ui.edgeNote.textContent = "Import a site to list its edges.";
+    fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true; ui.cmhcSection.hidden = true; resetCmhc(); ui.edgeSelect.innerHTML = ""; ui.edgeNote.textContent = "Import a site to list its edges.";
     markDirty(); setReady(); status("Cleared. The fetched site data is kept; import again or fetch another site.", "ok");
   }
   function onCopy() {
@@ -599,7 +669,9 @@ var App = (function () {
   function bind() {
     ["address", "cutSide", "btnFetch", "parcelList", "zoning", "btnImport", "edgeSelect", "edgeNote", "btnPick", "rules", "assumptions", "btnGenerate", "chkHide",
       "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormApply", "btnFormClear", "formTable", "formNote", "formDesc", "report", "btnCopy",
-      "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "btnSaveSite", "siteFile", "presetList", "sourceNote"].forEach(function (id) { ui[id] = $(id); });
+      "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "btnSaveSite", "siteFile", "presetList", "sourceNote",
+      "btnCmhc", "btnCmhcClear", "cmhcTable", "cmhcNote", "cmhcUnits", "cmhcSection"].forEach(function (id) { ui[id] = $(id); });
+    ui.btnCmhc.addEventListener("click", onCmhc); ui.btnCmhcClear.addEventListener("click", onFormClear);
     ui.btnSaveSite.hidden = BUNDLED;   // the shared copy cannot save files (and has nothing new to save)
     ui.btnSaveSite.addEventListener("click", onSaveSite);
     ui.siteFile.addEventListener("change", onOpenSiteFile);

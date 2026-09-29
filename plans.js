@@ -10,14 +10,17 @@ var R1Plans = (function () {
   function fmt(x, d) { return Number(x).toFixed(d); }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
 
-  var WALL = { ext: 0.30, party: 0.25, int: 0.12 }, DOOR = 0.9, EPS = 0.02;
+  var WALL = { ext: 0.30, party: 0.25, int: 0.12 }, DOOR = 0.9, EPS = 0.02, HALO = ' paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"';
   var INK = "#1f2933", WALL_FILL = "#2c3e50", FLOOR = "#ffffff", GLASS = "#8fc1e3", FIX = "#4b5563", LIGHT = "#9aa4b1";
-  var CIRC = ["Entry", "Lobby, mail", "Living", "Dining", "Hall", "Kitchen", "Stair", "Shop floor", "Common room", "Play room"];
-  var OPEN_PAIRS = [["Entry", "Living"], ["Living", "Dining"], ["Dining", "Kitchen"], ["Entry", "Stair"], ["Living", "Stair"], ["Hall", "Stair"], ["Entry", "Lobby, mail"],
-    ["Lobby, mail", "Common room"], ["Common room", "Kitchenette"], ["Entry", "Play room"], ["Living", "Kitchen"], ["Dining", "Hall"]];
+  var CIRC = ["Entry", "Lobby, mail", "Living", "Dining", "Hall", "Landing", "Kitchen", "Stair", "Shop floor", "Common room", "Play room", "Kitchenette"];
+  var OPEN_PAIRS = [["Entry", "Living"], ["Living", "Dining"], ["Dining", "Kitchen"], ["Entry", "Stair"], ["Living", "Stair"], ["Hall", "Stair"], ["Landing", "Stair"], ["Landing", "Hall"], ["Hall", "Hall"],
+    ["Entry", "Lobby, mail"], ["Lobby, mail", "Common room"], ["Common room", "Kitchenette"], ["Entry", "Play room"], ["Play room", "Play room"], ["Living", "Kitchen"], ["Dining", "Hall"], ["Entry", "Hall"], ["Living", "Living"], ["Living", "Hall"], ["Kitchen", "Hall"]];
+  var DOOR_PRIORITY_EXTRA = ["Landing"];
   var HABITABLE = ["Living", "Dining", "Kitchen", "Bedroom", "Bedroom 1", "Bedroom 2", "Bedroom 3", "Primary bedroom", "Study", "Den", "Office", "Play room", "Nap room", "Common room", "Shop floor", "Flex room", "Kitchenette"];
   var OUTDOOR = ["Terrace", "Patio"], SMALL_WINDOW = ["Bath", "Ensuite", "WC", "Laundry"];
-  var DOOR_PRIORITY = ["Hall", "Entry", "Living", "Dining", "Kitchen", "Lobby, mail", "Common room", "Play room", "Shop floor", "Primary bedroom", "Stair"];
+  var SHORT = { "Primary bedroom": "Primary bed", "Bedroom 1": "Bed 1", "Bedroom 2": "Bed 2", "Bedroom 3": "Bed 3", "Ensuite": "Ens.", "Mechanical": "Mech.", "Lobby, mail": "Lobby", "Back of house": "Back", "Kitchenette": "Kit'ette", "Storage": "Stor.", "Laundry": "Ldry", "Kitchen": "Kit.", "Dining": "Din.", "Living": "Liv.", "Hall": "H", "Shop floor": "Shop", "Common room": "Common", "Play room": "Play", "Nap room": "Nap", "Flex room": "Flex", "Terrace": "Terr.", "Bedroom": "Bed" };
+  var SHORTER = { "Primary bedroom": "P.bed", "Ensuite": "Ens", "Bath": "Bath", "WC": "WC", "Laundry": "L", "Storage": "S", "Kitchen": "K", "Dining": "D", "Living": "L", "Entry": "E", "Hall": "H", "Study": "St", "Den": "Den", "Office": "Off", "Bedroom": "Bed", "Bedroom 1": "B1", "Bedroom 2": "B2", "Bedroom 3": "B3" };
+  var DOOR_PRIORITY = ["Hall", "Landing", "Entry", "Living", "Dining", "Kitchen", "Lobby, mail", "Common room", "Play room", "Shop floor", "Primary bedroom", "Stair"];
 
   function isOpen(a, b) { return OPEN_PAIRS.some(function (p) { return (p[0] === a && p[1] === b) || (p[0] === b && p[1] === a); }); }
   function isCirc(n) { return CIRC.indexOf(n) >= 0; }
@@ -43,20 +46,23 @@ var R1Plans = (function () {
   function openings(ur, ext) {
     var rooms = ur.rooms, out = [], doorsInto = {};
     function pushDoor(from, to, e, kind) {
-      var mid = (e.from + e.to) / 2, w = Math.min(DOOR, e.to - e.from - 0.2);
-      out.push({ kind: kind, side: e.side, at: e.at, from: mid - w / 2, to: mid + w / 2, room: to, other: from });
+      var len = e.to - e.from, w = Math.min(DOOR, len - 0.05), mid = (e.from + e.to) / 2;
+      // hinge the door near the end of the wall closest to the room's corner, not mid-wall, when the wall is long
+      var at0 = len > 1.6 ? e.from + 0.15 : mid - w / 2;
+      out.push({ kind: kind, side: e.side, at: e.at, from: at0, to: at0 + w, room: to, other: from });
       if (kind === "door") doorsInto[to.name] = true;
     }
-    // interior: open connections and doors from circulation into served rooms
-    rooms.forEach(function (r) {
-      rooms.forEach(function (s) {
-        if (r === s) return;
+    // interior: open connections (including the parts of one L-shaped room) and doors from circulation into served rooms
+    rooms.forEach(function (r, i) {
+      rooms.forEach(function (s, j) {
+        if (j <= i) return;
         var e = sharedEdge(r, s); if (!e) return;
-        if (isOpen(r.name, s.name)) { if (r.name < s.name) out.push({ kind: "open", side: e.side, at: e.at, from: e.from + 0.15, to: e.to - 0.15, room: r, other: s }); }
+        if (r.name === s.name && (r.part || s.part)) out.push({ kind: "join", side: e.side, at: e.at, from: e.from, to: e.to, room: r, other: s });
+        else if (isOpen(r.name, s.name)) out.push({ kind: "open", side: e.side, at: e.at, from: e.from + 0.15, to: e.to - 0.15, room: r, other: s });
       });
     });
     rooms.forEach(function (r) {
-      if (isCirc(r.name) || isOutdoor(r.name) || r.name === "Kitchenette") return;   // served rooms get one door
+      if (isCirc(r.name) || isOutdoor(r.name) || r.name === "Kitchenette" || r.part) return;   // served rooms get one door
       var best = null, bestRank = 99;
       rooms.forEach(function (s) {
         if (s === r) return;
@@ -83,13 +89,13 @@ var R1Plans = (function () {
       if (ext.right && Math.abs(entry.x + entry.w - ur.width_m) < EPS) faces.push({ side: "v", at: ur.width_m, from: entry.y, to: entry.y + entry.h });
       if (ext.rear && Math.abs(entry.y + entry.h - ur.depth_m) < EPS) faces.push({ side: "h", at: ur.depth_m, from: entry.x, to: entry.x + entry.w });
       if (faces.length) {
-        var f = faces[0], mid = (f.from + f.to) / 2, w = Math.min(DOOR, f.to - f.from - 0.3);
+        var f = faces[0], mid = (f.from + f.to) / 2, w = Math.min(DOOR, Math.max(0.85, f.to - f.from - 0.1));
         out.push({ kind: "entry", side: f.side, at: f.at, from: mid - w / 2, to: mid + w / 2, room: entry, other: null });
       }
     }
     // windows on exterior walls
     rooms.forEach(function (r) {
-      if (isOutdoor(r.name) || r.name === "Stair") return;
+      if (isOutdoor(r.name) || r.name === "Stair" || r.name === "Landing") return;
       var big = habitable(r.name), small = SMALL_WINDOW.indexOf(r.name) >= 0;
       if (!big && !small) return;
       var cap = small ? 0.6 : (/Living|Shop floor|Common room|Play room/.test(r.name) ? 2.4 : (isBed(r.name) ? 1.5 : 1.2));
@@ -110,14 +116,14 @@ var R1Plans = (function () {
     function circ(x, y, rad, o) { F.push(Object.assign({ t: "circle", x: x, y: y, r: rad }, o || {})); }
     function line(x1, y1, x2, y2, o) { F.push(Object.assign({ t: "line", x1: x1, y1: y1, x2: x2, y2: y2 }, o || {})); }
     function text(x, y, s, o) { F.push(Object.assign({ t: "text", x: x, y: y, s: s }, o || {})); }
-    if (isBed(n) || n === "Study" && false) {
+    if (isBed(n)) {
       var bw = /Primary/.test(n) ? 1.6 : (/Bedroom 1|Bedroom$/.test(n) ? 1.5 : 1.2), bl = 2.0;
       if (w >= bw + 0.6 && h >= bl + 0.6) {   // head against the back wall, centred
         var bx = (w - bw) / 2, by = h - bl - 0.1;
         rect(bx, by, bw, bl); rect(bx + 0.1, by + bl - 0.55, bw / 2 - 0.15, 0.45); rect(bx + bw / 2 + 0.05, by + bl - 0.55, bw / 2 - 0.15, 0.45);
         line(bx, by + bl - 0.65, bx + bw, by + bl - 0.65, { light: true });
         if (bx > 0.7) rect(0.15, h - 0.6, 0.5, 0.5);   // bedside table
-        if (h > bl + 1.4) rect(0.15, 0.15, Math.min(1.2, w - 0.3), 0.6, { light: true });   // wardrobe
+        if (h > bl + 1.6 && w > 2.6) rect(w - Math.min(1.2, w - 0.3) - 0.15, 0.15, Math.min(1.2, w - 0.3), 0.6, { light: true });   // wardrobe, top right (clear of the label)
       } else if (w >= bl + 0.5 && h >= bw + 0.5) {   // turned
         var bx2 = w - bl - 0.1, by2 = (h - bw) / 2;
         rect(bx2, by2, bl, bw); rect(bx2 + bl - 0.55, by2 + 0.1, 0.45, bw / 2 - 0.15); rect(bx2 + bl - 0.55, by2 + bw / 2 + 0.05, 0.45, bw / 2 - 0.15);
@@ -148,34 +154,35 @@ var R1Plans = (function () {
         rect(0.05, h - 0.75, 0.7, 0.7, { thick: true }); text(0.4, h - 0.32, "F");
       }
     } else if (n === "Dining") {
-      var tw = Math.min(1.8, w - 1.2), th = Math.min(0.95, h - 1.2);
+      var tw = Math.min(1.8, w - 1.2), th = Math.min(0.95, h - 1.5);
       if (tw > 1.0 && th > 0.7) {
-        var tx = (w - tw) / 2, ty = (h - th) / 2; rect(tx, ty, tw, th);
+        var tx = (w - tw) / 2, ty = Math.max((h - th) / 2, 1.0); rect(tx, ty, tw, th);
         var seats = Math.max(2, Math.floor(tw / 0.7));
         for (var i = 0; i < seats; i++) { var cx = tx + tw * (i + 0.5) / seats; rect(cx - 0.22, ty - 0.55, 0.44, 0.44, { light: true }); rect(cx - 0.22, ty + th + 0.1, 0.44, 0.44, { light: true }); }
       } else if (Math.min(w, h) > 1.6) { circ(w / 2, h / 2, 0.55); for (var a = 0; a < 4; a++) { rect(w / 2 + Math.cos(a * Math.PI / 2) * 0.85 - 0.22, h / 2 + Math.sin(a * Math.PI / 2) * 0.85 - 0.22, 0.44, 0.44, { light: true }); } }
     } else if (n === "Living" || n === "Common room" || n === "Flex room") {
       if (w >= 2.6 && h >= 2.4) {
         var sl = Math.min(2.2, w - 1.0), sofaX = (w - sl) / 2;
-        rect(sofaX, 0.25, sl, 0.9, { rx: 0.08 }); line(sofaX, 0.55, sofaX + sl, 0.55, { light: true });   // sofa facing the room
-        rect(w / 2 - 0.5, 1.45, 1.0, 0.55, { light: true });                                              // coffee table
-        if (h > 3.8) rect(w / 2 - 0.4, h - 0.55, 0.8, 0.35, { light: true });                             // media unit
-        if (w > 3.6) rect(w - 0.95, 1.1, 0.8, 0.8, { rx: 0.08 });                                          // armchair
+        rect(sofaX, h - 1.15, sl, 0.9, { rx: 0.08 }); line(sofaX, h - 0.85, sofaX + sl, h - 0.85, { light: true });   // sofa along the back, facing the front windows
+        rect(w / 2 - 0.5, h - 2.0, 1.0, 0.55, { light: true });                                                  // coffee table
+        if (w > 3.6) rect(w - 0.95, h - 2.05, 0.8, 0.8, { rx: 0.08 });                                             // armchair
+        if (h > 3.8 && w > 3.0) rect(w - 1.15, 0.9, 1.0, 0.35, { light: true });                                  // media unit, clear of the label
       }
       if (n === "Common room" && w >= 3 && h >= 3) { rect(w / 2 - 1.0, h / 2 - 0.4, 2.0, 0.8); }
     } else if (n === "Stair") {
       var vertical = h >= w, treads = Math.max(6, Math.round((vertical ? h : w) / 0.27));
       for (var t = 1; t < treads; t++) { if (vertical) line(0, h * t / treads, w, h * t / treads); else line(w * t / treads, 0, w * t / treads, h); }
-      if (vertical) { line(w / 2, 0.2, w / 2, h - 0.25, { arrow: true }); text(w / 2, 0.3, ur.level_index === 0 ? "UP" : "DN", { small: true }); }
-      else { line(0.2, h / 2, w - 0.25, h / 2, { arrow: true }); text(0.5, h / 2 - 0.1, ur.level_index === 0 ? "UP" : "DN", { small: true }); }
+      if (vertical) { line(w / 2, 0.2, w / 2, h - 0.3, { arrow: true }); text(w / 2, h - 0.12, ur.level_index === 0 ? "UP" : "DN", { small: true }); }
+      else { line(0.2, h / 2, w - 0.3, h / 2, { arrow: true }); text(w - 0.55, h / 2 - 0.15, ur.level_index === 0 ? "UP" : "DN", { small: true }); }
     } else if (n === "Laundry") {
-      if (w >= 1.4 && h >= 0.7) { rect(0.1, h - 0.7, 0.6, 0.6); circ(0.4, h - 0.4, 0.2); rect(0.8, h - 0.7, 0.6, 0.6); circ(1.1, h - 0.4, 0.2); text(0.4, h - 0.85, "W", { small: true }); text(1.1, h - 0.85, "D", { small: true }); }
-      else if (h >= 1.4) { rect(0.1, 0.1, 0.6, 0.6); circ(0.4, 0.4, 0.2); rect(0.1, 0.8, 0.6, 0.6); circ(0.4, 1.1, 0.2); }
+      if (w >= 1.4 && h >= 0.7) { rect(0.1, h - 0.7, 0.6, 0.6); circ(0.4, h - 0.4, 0.2); rect(0.8, h - 0.7, 0.6, 0.6); circ(1.1, h - 0.4, 0.2); }
+      else if (h >= 1.4) { rect(0.1, h - 0.7, 0.6, 0.6); circ(0.4, h - 0.4, 0.2); rect(0.1, h - 1.4, 0.6, 0.6); circ(0.4, h - 1.1, 0.2); }
     } else if (n === "Storage" || n === "Back of house") {
       for (var s2 = 0.35; s2 < h - 0.3; s2 += 0.35) line(0.1, s2, Math.min(w - 0.1, 0.6 + 0.1), s2, { light: true });
       if (n === "Back of house" && w > 2) rect(w - 1.0, 0.2, 0.8, h - 0.4, { light: true });
     } else if (n === "Mechanical") { rect(0.15, 0.15, Math.min(0.7, w - 0.3), Math.min(0.7, h - 0.3), { thick: true }); text(0.15 + Math.min(0.7, w - 0.3) / 2, 0.55, "M", { small: true }); }
-    else if (n === "Entry" || n === "Lobby, mail") { if (w >= 1.5 && h >= 1.2) rect(w - 0.65, 0.15, 0.6, Math.min(1.2, h - 0.3), { light: true }); }
+    else if (n === "Entry" || n === "Lobby, mail") { if (w >= 1.5 && h >= 1.2) rect(w - 0.65, h - Math.min(1.2, h - 0.3) - 0.15, 0.6, Math.min(1.2, h - 0.3), { light: true }); }
+    else if (n === "Landing" || n === "Hall") { /* kept clear */ }
     else if (n === "Study" || n === "Den" || n === "Office") { if (w >= 1.8 && h >= 1.6) { rect(0.2, h - 0.75, Math.min(1.5, w - 0.4), 0.6); rect(0.2 + Math.min(1.5, w - 0.4) / 2 - 0.22, h - 1.3, 0.44, 0.44, { light: true }); } if (n === "Den" && w >= 2.6 && h >= 2.6) rect(w - 1.9, 0.25, 1.7, 0.8, { rx: 0.08 }); }
     else if (n === "Shop floor") { rect(w - 0.75, 0.6, 0.6, Math.min(2.4, h - 1.2)); for (var g = 0.3; g < w - 1.2; g += 1.3) rect(g, h - 0.5, 1.0, 0.35, { light: true }); }
     else if (n === "Play room") { for (var m = 0.3; m < w - 1.3; m += 1.4) rect(m, 0.4, 1.2, 0.8, { light: true, rx: 0.1 }); rect(w - 1.1, h - 0.7, 0.9, 0.5); }
@@ -229,7 +236,7 @@ var R1Plans = (function () {
               if (g.t === "rect") { var q = P(r.x + g.x, r.y + g.y); parts.push(rectSvg(q[0], q[1], g.w * k, g.h * k, 'fill="' + (g.counter ? "#f3f4f6" : "none") + '" stroke="' + stroke + '" stroke-width="' + sw + '"' + (g.rx ? ' rx="' + g.rx * k + '"' : ""))); }
               else if (g.t === "circle") { var q2 = P(r.x + g.x, r.y + g.y); parts.push('<circle cx="' + q2[0].toFixed(2) + '" cy="' + q2[1].toFixed(2) + '" r="' + (g.r * k).toFixed(2) + '" fill="none" stroke="' + stroke + '" stroke-width="' + sw + '"/>'); }
               else if (g.t === "line") { var a = P(r.x + g.x1, r.y + g.y1), b2 = P(r.x + g.x2, r.y + g.y2); parts.push('<line x1="' + a[0].toFixed(2) + '" y1="' + a[1].toFixed(2) + '" x2="' + b2[0].toFixed(2) + '" y2="' + b2[1].toFixed(2) + '" stroke="' + stroke + '" stroke-width="' + sw + '"' + (g.arrow ? ' marker-end="url(#arr)"' : "") + "/>"); }
-              else if (g.t === "text") { var q3 = P(r.x + g.x, r.y + g.y); parts.push('<text x="' + q3[0].toFixed(2) + '" y="' + q3[1].toFixed(2) + '" text-anchor="middle" font-size="' + (g.small ? fs2 : fs) + '" fill="' + FIX + '">' + esc(g.s) + "</text>"); }
+              else if (g.t === "text") { var q3 = P(r.x + g.x, r.y + g.y); parts.push('<text x="' + q3[0].toFixed(2) + '" y="' + q3[1].toFixed(2) + '" text-anchor="middle" font-size="' + (g.small ? fs2 : fs) + '" fill="' + FIX + '"' + HALO + ">" + esc(g.s) + "</text>"); }
             });
           });
           // party walls of the cell (thicker), exterior walls thickest
@@ -243,7 +250,7 @@ var R1Plans = (function () {
           parts.push(rectSvg(cx + 4, cy + 4, tagW, fs * 1.6, 'fill="' + col2 + '" rx="2"'));
           parts.push('<text x="' + (cx + 7) + '" y="' + (cy + 4 + fs * 1.2) + '" font-size="' + fs + '" font-weight="700" fill="#ffffff">' + esc(c.key) + "</text>");
           var uu = b.unit_list.filter(function (z) { return z.key === c.key; })[0];
-          if (uu && cw > tagW + fs * 9) parts.push('<text x="' + (cx + tagW + 8) + '" y="' + (cy + 4 + fs * 1.2) + '" font-size="' + fs2 + '" fill="' + INK + '">' + (uu.kind ? esc(uu.name) : uu.beds + " bed / " + uu.baths + " bath, ~" + Math.round(areas[c.key + "@" + b.key] || 0) + " m2") + "</text>");
+          if (uu && cw > tagW + fs * 9) parts.push('<text x="' + (cx + tagW + 8) + '" y="' + (cy + 4 + fs * 1.2) + '" font-size="' + fs2 + '" fill="' + INK + '"' + HALO + ">" + (uu.kind ? esc(uu.name) : uu.beds + " bed / " + uu.baths + " bath, ~" + Math.round(areas[c.key + "@" + b.key] || 0) + " m2") + "</text>");
         });
         // 2. walls: thin partitions first, then party and exterior walls; outdoor edges dashed
         walls.sort(function (a, b2) { return a.th - b2.th; });
@@ -261,8 +268,8 @@ var R1Plans = (function () {
           if (op.kind === "window") {
             parts.push('<line x1="' + a[0].toFixed(2) + '" y1="' + a[1].toFixed(2) + '" x2="' + b2[0].toFixed(2) + '" y2="' + b2[1].toFixed(2) + '" stroke="' + GLASS + '" stroke-width="' + (WALL.ext * k * 0.5).toFixed(2) + '"/>');
             parts.push('<line x1="' + a[0].toFixed(2) + '" y1="' + a[1].toFixed(2) + '" x2="' + b2[0].toFixed(2) + '" y2="' + b2[1].toFixed(2) + '" stroke="' + INK + '" stroke-width="0.8"/>');
-          } else if (op.kind === "open") {
-            // a cased opening: two short jamb lines
+          } else if (op.kind === "open" || op.kind === "join") {
+            // a cased opening, or the join between the two parts of one room: nothing but the erased wall
           } else {   // door: hinge at `from`, leaf swings into the room it serves
             var r = op.room, w = op.to - op.from, into;
             if (op.side === "h") into = (r.y + r.h / 2 > op.at) ? 1 : -1; else into = (r.x + r.w / 2 > op.at) ? 1 : -1;
@@ -284,11 +291,18 @@ var R1Plans = (function () {
           var ur = byCell[b.key + "|" + fi + "|" + c.key]; if (!ur) return;
           var cx = x0 + c.a0 * W, cy = y0 + c.b0 * D;
           ur.rooms.forEach(function (r) {
-            var tx = cx + (r.x + 0.18) * k, ty = cy + r.y * k + fs * 1.25;
-            if (r.w * k < fs * 2.6 || r.h * k < fs * 1.5) return;
-            var nm = r.w * k < fs * 6 ? r.name.replace("Primary bedroom", "Primary bed").replace("Mechanical", "Mech.").replace("Lobby, mail", "Lobby").replace("Back of house", "Back") : r.name;
-            parts.push('<text x="' + tx.toFixed(2) + '" y="' + ty.toFixed(2) + '" font-size="' + fs + '" font-weight="600" fill="' + INK + '">' + esc(nm) + "</text>");
-            if (r.h * k > fs * 3 && r.w * k > fs * 4) parts.push('<text x="' + tx.toFixed(2) + '" y="' + (ty + fs * 1.15).toFixed(2) + '" font-size="' + fs2 + '" fill="' + LIGHT + '">' + fmt(r.area_m2, 1) + " m2</text>");
+            if (r.part || r.name === "Stair" || r.name === "Landing") return;   // no name on the second part of an L-shaped room, the stair or its landing
+            var small = r.name === "Hall", size = small ? fs2 : fs;
+            var tx = cx + (r.x + 0.16) * k, ty = cy + r.y * k + size * 1.25;
+            if (r.y < EPS) ty += fs * 1.7;   // rooms along the top edge sit under the unit tag line
+            if (r.h * k < size * 1.4 + (r.y < EPS ? fs * 1.7 : 0)) return;
+            // the name must fit the room's width: full name, then a short form, then nothing
+            var avail = r.w * k - 6, est = function (s) { return s.length * size * 0.56; }, nm = r.name;
+            if (est(nm) > avail) nm = SHORT[r.name] || nm;
+            if (est(nm) > avail) nm = SHORTER[r.name] || (nm.length > 3 ? nm.slice(0, 3) + "." : nm);
+            if (est(nm) > avail) return;
+            parts.push('<text x="' + tx.toFixed(2) + '" y="' + ty.toFixed(2) + '" font-size="' + size + '" font-weight="600" fill="' + INK + '"' + HALO + ">" + esc(nm) + "</text>");
+            if (!small && nm === r.name && r.h >= 2.3 && r.h * k > size * 3.4 && est(fmt(r.area_m2, 1) + " m2") <= avail) parts.push('<text x="' + tx.toFixed(2) + '" y="' + (ty + size * 1.15).toFixed(2) + '" font-size="' + fs2 + '" fill="' + LIGHT + '"' + HALO + ">" + fmt(r.area_m2, 1) + " m2</text>");
           });
         });
         // 5. captions (what lies beyond the top and bottom edges), floor name, dimensions
@@ -328,5 +342,37 @@ var R1Plans = (function () {
     return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + " " + totalH + '" role="img" aria-label="Floor plans">' + defs + parts.join("") + "</svg>", legend: legend, width: totalW, height: totalH };
   }
 
-  return { sheet: sheet, openings: openings, fixtures: fixtures, WALL: WALL };
+  /* check(option): what the drawn plans still fail to provide: a room without a door from a circulation room,
+     a door narrower than 0.85 m, a bedroom, bath, WC, hall, kitchen or stair below its minimum, or a stair
+     that does not stack between the levels of a unit. Empty when the plans meet all of them. */
+  function check(o) {
+    var issues = [], MIN = (typeof R1Rooms !== "undefined") ? R1Rooms.MIN : { hall: 0.95, bath_w: 1.5, wc_w: 0.9, bed_w: 2.7, bed_area: 7, kitchen: 2.1, stair_w: 0.95, stair_l: 3.4, door: 0.85 };
+    var stairs = {};
+    C.unitRooms(o).forEach(function (ur) {
+      var c = ur.cell, ext = { front: c.b0 < EPS, rear: c.b1 > 1 - EPS, left: c.a0 < EPS, right: c.a1 > 1 - EPS }, ops = openings(ur, ext), doored = {};
+      var where = ur.unit + ", " + ur.floor.toLowerCase() + " floor";
+      ops.forEach(function (op) { if ((op.kind === "door" || op.kind === "entry") && op.room) doored[op.room.name + "@" + op.room.x + "," + op.room.y] = op; });
+      ur.rooms.forEach(function (r) {
+        var tag = where + ": " + r.name.toLowerCase(), md = Math.min(r.w, r.h);
+        if (!isCirc(r.name) && !isOutdoor(r.name) && !r.part && r.name !== "Kitchenette" && !doored[r.name + "@" + r.x + "," + r.y]) issues.push(tag + " has no door from a circulation room");
+        if (isBed(r.name) && (md < MIN.bed_w - 0.01 || r.area_m2 < MIN.bed_area - 0.05)) issues.push(tag + " is " + fmt(r.w, 2) + " x " + fmt(r.h, 2) + " m (a bedroom needs " + MIN.bed_w + " m across and " + MIN.bed_area + " m2)");
+        if ((r.name === "Bath" || r.name === "Ensuite") && md < MIN.bath_w - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a bathroom needs " + MIN.bath_w + " m)");
+        if (r.name === "WC" && md < MIN.wc_w - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a water closet needs " + MIN.wc_w + " m)");
+        if ((r.name === "Hall" || r.name === "Landing") && md < MIN.hall - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m wide (a hall needs " + MIN.hall + " m)");
+        if (r.name === "Kitchen" && md < MIN.kitchen - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a kitchen needs " + MIN.kitchen + " m in front of the counter)");
+        if (r.name === "Stair") {
+          if (md < MIN.stair_w - 0.01 || Math.max(r.w, r.h) < MIN.stair_l - 0.01) issues.push(tag + " is " + fmt(r.w, 2) + " x " + fmt(r.h, 2) + " m (a stair needs " + MIN.stair_w + " x " + MIN.stair_l + " m)");
+          (stairs[ur.block + "|" + ur.unit] || (stairs[ur.block + "|" + ur.unit] = [])).push([r.x, r.y, r.w, r.h]);
+        }
+      });
+      ops.forEach(function (op) { if ((op.kind === "door" || op.kind === "entry") && op.to - op.from < MIN.door - 0.01) issues.push(where + ": the door to " + op.room.name.toLowerCase() + " is " + fmt(op.to - op.from, 2) + " m (doors need " + MIN.door + " m)"); });
+    });
+    Object.keys(stairs).forEach(function (k) {
+      var st = stairs[k];
+      for (var i = 1; i < st.length; i++) if (st[i].some(function (v, j) { return Math.abs(v - st[0][j]) > 0.05; })) { issues.push(k.split("|")[1] + ": the stair does not stack between levels"); break; }
+    });
+    return issues;
+  }
+
+  return { sheet: sheet, openings: openings, fixtures: fixtures, check: check, WALL: WALL };
 })();

@@ -381,7 +381,9 @@ var R1Cmhc = (function () {
         unitCells(f.units, f.split, f.cols).forEach(function (c) {
           var u = unitOf(b, c.key), lv = levelsOf[c.key], li = lv.indexOf(fi), role = u && u.kind ? u.kind : (levelRoles(lv.length, b.design)[li] || "flat");
           var cw = (c.a1 - c.a0) * b.width_m, cd = (c.b1 - c.b0) * b.depth_m;
-          out.push({ block: b.key, unit: c.key, floor: f.name, floor_index: fi, level_index: li, role: role, cell: c, width_m: cw, depth_m: cd, rooms: rooms(role, u, cw, cd) });
+          // rooms: the layout engine with clearances when it is loaded (the same stair on every level of a unit), else the band programme
+          var rs = (typeof R1Rooms !== "undefined") ? R1Rooms.layout(role, u, cw, cd, R1Rooms.unitCtx(cw, cd)) : rooms(role, u, cw, cd);
+          out.push({ block: b.key, unit: c.key, floor: f.name, floor_index: fi, level_index: li, levels: lv.length, role: role, cell: c, width_m: cw, depth_m: cd, rooms: rs });
         });
       });
     });

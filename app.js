@@ -31,7 +31,7 @@ var App = (function () {
 
   // ------------------------------------------------------------------ status / report
   function status(text, level) {
-    ui.status.textContent = text;
+    ui.statusText.textContent = text;
     ui.status.className = "status " + (level || "info");
   }
   function report(lines) {
@@ -341,10 +341,38 @@ var App = (function () {
     three.resize = resize;
   }
   function clearLabels3D() { if (!three) return; three.labels.forEach(function (lb) { lb.el.remove(); }); three.labels = []; }
-  function label3D(x, y, z, text, cls, color) {
-    var e = el("div", "lbl3d" + (cls ? " " + cls : ""), text);
-    if (color) e.style.borderLeftColor = color;
-    three.labelHost.appendChild(e); three.labels.push({ el: e, pos: new THREE.Vector3(x, y, z) });
+  // a block with its programme painted on the faces (large letters in a darker shade of the block's colour)
+  var faceTexCache = {};
+  function faceTexture(lines, color) {
+    var key = lines.join("|") + color;
+    if (faceTexCache[key]) return faceTexCache[key];
+    var cv = document.createElement("canvas"); cv.width = 1024; cv.height = 512;
+    var ctx = cv.getContext("2d");
+    ctx.fillStyle = color; ctx.globalAlpha = 0.82; ctx.fillRect(0, 0, cv.width, cv.height); ctx.globalAlpha = 1;
+    var n = parseInt(color.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    ctx.fillStyle = "rgb(" + Math.round(r * 0.42) + "," + Math.round(g * 0.42) + "," + Math.round(b * 0.42) + ")";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    var size = 200, gap = 0.9;
+    lines.forEach(function (t) { ctx.font = "bold " + size + "px 'Helvetica Neue', Helvetica, Arial, sans-serif"; var w = ctx.measureText(t).width; if (w > cv.width * 0.9) size = Math.floor(size * cv.width * 0.9 / w); });
+    size = Math.min(size, Math.floor(cv.height * 0.8 / lines.length));
+    ctx.font = "bold " + size + "px 'Helvetica Neue', Helvetica, Arial, sans-serif";
+    var total = lines.length * size * gap, y0 = cv.height / 2 - total / 2 + size * gap / 2;
+    lines.forEach(function (t, i) { ctx.fillText(t, cv.width / 2, y0 + i * size * gap); });
+    var tex = new THREE.CanvasTexture(cv); tex.anisotropy = three.renderer.capabilities.getMaxAnisotropy();
+    faceTexCache[key] = tex; return tex;
+  }
+  // a box on a plan quad [front-s1, rear-s1, rear-s2, front-s2] from z0, h high, with the text on its four sides
+  function labelledBox(pts, z0, h, color, lines) {
+    var ux = pts[3][0] - pts[0][0], uy = pts[3][1] - pts[0][1], vx = pts[1][0] - pts[0][0], vy = pts[1][1] - pts[0][1];
+    var W = Math.hypot(ux, uy), D = Math.hypot(vx, vy), ang = Math.atan2(uy, ux), c = site.centroid(pts);
+    var geo = new THREE.BoxGeometry(W, h, D); geo.rotateX(Math.PI / 2);   // local x across, z up, -y toward the street
+    var tex = faceTexture(lines, color), side = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.95 });
+    var plain = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.6 });
+    var mesh = new THREE.Mesh(geo, [side, side, plain, plain, side, side]);
+    mesh.position.set(c[0], c[1], z0 + h / 2); mesh.rotation.z = ang;
+    var edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x1f2933, transparent: true, opacity: 0.8 }));
+    edges.position.copy(mesh.position); edges.rotation.z = ang;
+    var grp = new THREE.Group(); grp.add(mesh); grp.add(edges); return grp;
   }
   function extrude(ring, z0, h, color, opacity) {
     var shape = new THREE.Shape(ring.map(function (p) { return new THREE.Vector2(p[0], p[1]); }));
@@ -400,21 +428,16 @@ var App = (function () {
       G.add(extrude(r, base, top - base, 0xf1f1ee, 1));
     });
     var formUp = S.form && S.form.status === "ok";
-    if (S.ev && S.ev.status === "ok" && S.placed && !formUp) G.add(extrude(S.ev.env_pts, envelopeBaseZ(), S.ev.height, 0x3c8cdc, 0.4));
     clearLabels3D();
-    if (formUp && S.unitsOption) {   // one coloured box per unit per floor, each with its tag; a heading per building
+    if (formUp && S.unitsOption) {   // one box per unit per floor, its programme written on its faces
       var o = S.unitsOption;
       R1Cmhc.unitVolumes(o, S.form).forEach(function (v) {
-        G.add(extrude(v.pts, S.formBases[v.block] + v.z0, v.z1 - v.z0, v.color, 0.92));
-        var text = v.kind ? v.unit + " " + (R1Cmhc.blockOf(o, v.block).unit_list.filter(function (u) { return u.key === v.unit; })[0] || {}).name : v.unit + " · " + v.beds + " bed";
-        label3D(v.centroid[0], v.centroid[1], S.formBases[v.block] + (v.z0 + v.z1) / 2, text, null, v.color);
+        var u = (R1Cmhc.blockOf(o, v.block).unit_list.filter(function (x) { return x.key === v.unit; })[0] || {});
+        var lines = v.kind ? [u.name ? u.name.toUpperCase() : v.unit] : [v.unit + " · " + v.beds + " BED"];
+        G.add(labelledBox(v.pts, S.formBases[v.block] + v.z0, v.z1 - v.z0, v.color, lines));
       });
-      S.form.buildings.forEach(function (b) {
-        var blk = R1Cmhc.blockOf(o, b.key); if (!blk) return;
-        label3D(b.centroid[0], b.centroid[1], S.formBases[b.key] + b.height_m + 2.2, blk.name + ": " + blk.units + " unit" + (blk.units === 1 ? "" : "s") + ", " + blk.storeys + " storeys", "head");
-      });
-    } else if (formUp) S.form.buildings.forEach(function (b) { G.add(extrude(b.pts, S.formBases[b.key], b.height_m, 0xd99a2b, 0.65)); label3D(b.centroid[0], b.centroid[1], S.formBases[b.key] + b.height_m + 2.2, b.name + ": " + fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m, " + b.storeys + " storeys", "head"); });
-    else if (S.ev && S.ev.status === "ok" && S.placed) label3D(site.centroid(S.ev.env_pts)[0], site.centroid(S.ev.env_pts)[1], envelopeBaseZ() + S.ev.height + 2.2, "Permitted envelope: " + fmt(S.ev.env_width, 1) + " x " + fmt(S.ev.env_depth, 1) + " m, " + S.ev.height + " m, up to " + S.ev.band.max_units + " units", "head");
+    } else if (formUp) S.form.buildings.forEach(function (b) { G.add(labelledBox(b.pts, S.formBases[b.key], b.height_m, "#d99a2b", [b.name.toUpperCase(), b.storeys + " STOREYS"])); });
+    else if (S.ev && S.ev.status === "ok" && S.placed) G.add(labelledBox(singleQuad(S.ev) || S.ev.env_pts, envelopeBaseZ(), S.ev.height, "#3c8cdc", ["ENVELOPE", "UP TO " + S.ev.band.max_units + " UNITS"]));
     // the camera is set once per site; redrawing for a form or a catalogue option keeps the view where the user left it
     var c = S.parcel ? S.parcel.centroid : sq.c, cz = M.groundZ(res, c[0], c[1]), siteKey = (S.parcel ? S.parcel.site_id + "|" + S.parcel.civic : "-") + "|" + sq.half;
     if (three.siteKey !== siteKey) {
@@ -688,10 +711,14 @@ var App = (function () {
   function onHideToggle() { if (!S.placed) return; setExistingVisible(!ui.chkHide.checked); markDirty(); status("Existing building on the site " + (ui.chkHide.checked ? "hidden." : "shown again."), "ok"); }
 
   // ------------------------------------------------------------------ step 5: forms
+  // the envelope as a quad in the [front-s1, rear-s1, rear-s2, front-s2] order the unit code uses
+  function singleQuad(ev) {
+    var R = core.RULES, E = ev.edges, idx = ev.idx, f = idx.front, s1 = idx.side1, s2 = idx.side2, fy = R.front_yard_m.value, sy = R.side_yard_m.value;
+    return M.quad([M.offsetLine(E[f], fy), M.offsetLine(E[s1], sy), M.offsetLine(E[f], fy + ev.env_depth), M.offsetLine(E[s2], sy)]);
+  }
   // the single-building form as a drawable building (the envelope itself), so units can be laid out in it
   function singleForm(ev) {
-    var R = core.RULES, E = ev.edges, idx = ev.idx, f = idx.front, s1 = idx.side1, s2 = idx.side2, fy = R.front_yard_m.value, sy = R.side_yard_m.value, hm = R.max_height_m;
-    var pts = M.quad([M.offsetLine(E[f], fy), M.offsetLine(E[s1], sy), M.offsetLine(E[f], fy + ev.env_depth), M.offsetLine(E[s2], sy)]);
+    var R = core.RULES, E = ev.edges, idx = ev.idx, f = idx.front, hm = R.max_height_m, pts = singleQuad(ev);
     if (!pts) return null;
     return { scheme: "single", dims_like: "single", name: M.schemeName("single"), status: "ok", reason: null, gaps: [], labels: [], notes: [], params: {},
       buildings: [M.building("single", "Single building", pts, hm.value, hm.storeys, hm.clause.split(" ")[0], E[f])] };
@@ -839,7 +866,7 @@ var App = (function () {
   function bind() {
     ["address", "cutSide", "btnFetch", "parcelList", "zoning", "edgeSelect", "edgeNote", "edgeFallback", "btnPick", "rules", "assumptions", "chkHide",
       "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "btnFormPlans", "unitParams", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
-      "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "tabPlans", "plansHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
+      "btnClear", "status", "statusText", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "tabPlans", "plansHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
       "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnPickSite", "modeForms", "modeCmhc", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightToggle", "btnLeftToggle", "sidePanel"].forEach(function (id) { ui[id] = $(id); });
     ui.btnRightClose.addEventListener("click", function () { openRight(false); });
     ui.btnRightToggle.addEventListener("click", function () { openRight(ui.rightPanel.hidden); });
@@ -891,6 +918,14 @@ var App = (function () {
     ["chkRoads", "chkParcels", "chkBuildings"].forEach(function (id) { ui[id].addEventListener("change", function () { if (S.square) { drawContext(); if (S.placed) { drawEnvelope(); drawForm(); setExistingVisible(!ui.chkHide.checked); } markDirty(); } }); });
     Object.keys(ui.tabs).forEach(function (k) { ui.tabs[k].addEventListener("click", function () { showView(k); }); });
     window.addEventListener("resize", function () { if (!ui.panes.section.hidden) drawSection(); });
+    // shortcuts: Alt+1..4 views, Alt+M massing options, Alt+S steps
+    window.addEventListener("keydown", function (e) {
+      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+      var views = { "1": "map", "2": "3d", "3": "section", "4": "plans" };
+      if (views[e.key]) { if (!ui.tabs[views[e.key]].disabled) showView(views[e.key]); e.preventDefault(); }
+      else if (e.key.toLowerCase() === "m") { if (!ui.btnRightToggle.disabled) openRight(ui.rightPanel.hidden); e.preventDefault(); }
+      else if (e.key.toLowerCase() === "s") { ui.btnLeftToggle.click(); e.preventDefault(); }
+    });
   }
   function start() {
     resetState(); bind(); initMap(); reportReset(); fillRules(); fillResults(); fillForm(); setScheme(null); setReady(); showView("map");

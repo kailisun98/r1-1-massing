@@ -322,11 +322,29 @@ var App = (function () {
     scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa886, 0.45));
     var sun = new THREE.DirectionalLight(0xfff4e0, 0.75); sun.position.set(-120, -160, 220); scene.add(sun);
     var group = new THREE.Group(); scene.add(group);
-    three = { renderer: renderer, scene: scene, camera: camera, controls: controls, group: group };
+    var labelHost = el("div", "lbl3dhost"); host.appendChild(labelHost);
+    three = { renderer: renderer, scene: scene, camera: camera, controls: controls, group: group, labelHost: labelHost, labels: [] };
     function resize() { var w = host.clientWidth || 800, h = host.clientHeight || 500; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
     window.addEventListener("resize", resize); resize();
-    (function loop() { requestAnimationFrame(loop); if (!ui.threeHost.parentElement.hidden) { controls.update(); renderer.render(scene, camera); } })();
+    // labels: HTML tags projected from a 3D point every frame (unit keys on the blocks, a heading per building)
+    var v = new THREE.Vector3();
+    function placeLabels() {
+      var w = host.clientWidth, h = host.clientHeight;
+      three.labels.forEach(function (lb) {
+        v.copy(lb.pos).project(camera);
+        var vis = v.z < 1 && v.x > -1.05 && v.x < 1.05 && v.y > -1.05 && v.y < 1.05;
+        lb.el.style.display = vis ? "" : "none";
+        if (vis) lb.el.style.transform = "translate(" + ((v.x + 1) / 2 * w).toFixed(1) + "px, " + ((1 - v.y) / 2 * h).toFixed(1) + "px) translate(-50%, -50%)";
+      });
+    }
+    (function loop() { requestAnimationFrame(loop); if (!ui.threeHost.parentElement.hidden) { controls.update(); renderer.render(scene, camera); placeLabels(); } })();
     three.resize = resize;
+  }
+  function clearLabels3D() { if (!three) return; three.labels.forEach(function (lb) { lb.el.remove(); }); three.labels = []; }
+  function label3D(x, y, z, text, cls, color) {
+    var e = el("div", "lbl3d" + (cls ? " " + cls : ""), text);
+    if (color) e.style.borderLeftColor = color;
+    three.labelHost.appendChild(e); three.labels.push({ el: e, pos: new THREE.Vector3(x, y, z) });
   }
   function extrude(ring, z0, h, color, opacity) {
     var shape = new THREE.Shape(ring.map(function (p) { return new THREE.Vector2(p[0], p[1]); }));
@@ -383,9 +401,20 @@ var App = (function () {
     });
     var formUp = S.form && S.form.status === "ok";
     if (S.ev && S.ev.status === "ok" && S.placed && !formUp) G.add(extrude(S.ev.env_pts, envelopeBaseZ(), S.ev.height, 0x3c8cdc, 0.4));
-    if (formUp && S.unitsOption) {   // one coloured box per unit per floor
-      R1Cmhc.unitVolumes(S.unitsOption, S.form).forEach(function (v) { G.add(extrude(v.pts, S.formBases[v.block] + v.z0, v.z1 - v.z0, v.color, 0.92)); });
-    } else if (formUp) S.form.buildings.forEach(function (b) { G.add(extrude(b.pts, S.formBases[b.key], b.height_m, 0xd99a2b, 0.65)); });
+    clearLabels3D();
+    if (formUp && S.unitsOption) {   // one coloured box per unit per floor, each with its tag; a heading per building
+      var o = S.unitsOption;
+      R1Cmhc.unitVolumes(o, S.form).forEach(function (v) {
+        G.add(extrude(v.pts, S.formBases[v.block] + v.z0, v.z1 - v.z0, v.color, 0.92));
+        var text = v.kind ? v.unit + " " + (R1Cmhc.blockOf(o, v.block).unit_list.filter(function (u) { return u.key === v.unit; })[0] || {}).name : v.unit + " · " + v.beds + " bed";
+        label3D(v.centroid[0], v.centroid[1], S.formBases[v.block] + (v.z0 + v.z1) / 2, text, null, v.color);
+      });
+      S.form.buildings.forEach(function (b) {
+        var blk = R1Cmhc.blockOf(o, b.key); if (!blk) return;
+        label3D(b.centroid[0], b.centroid[1], S.formBases[b.key] + b.height_m + 2.2, blk.name + ": " + blk.units + " unit" + (blk.units === 1 ? "" : "s") + ", " + blk.storeys + " storeys", "head");
+      });
+    } else if (formUp) S.form.buildings.forEach(function (b) { G.add(extrude(b.pts, S.formBases[b.key], b.height_m, 0xd99a2b, 0.65)); label3D(b.centroid[0], b.centroid[1], S.formBases[b.key] + b.height_m + 2.2, b.name + ": " + fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m, " + b.storeys + " storeys", "head"); });
+    else if (S.ev && S.ev.status === "ok" && S.placed) label3D(site.centroid(S.ev.env_pts)[0], site.centroid(S.ev.env_pts)[1], envelopeBaseZ() + S.ev.height + 2.2, "Permitted envelope: " + fmt(S.ev.env_width, 1) + " x " + fmt(S.ev.env_depth, 1) + " m, " + S.ev.height + " m, up to " + S.ev.band.max_units + " units", "head");
     // the camera is set once per site; redrawing for a form or a catalogue option keeps the view where the user left it
     var c = S.parcel ? S.parcel.centroid : sq.c, cz = M.groundZ(res, c[0], c[1]), siteKey = (S.parcel ? S.parcel.site_id + "|" + S.parcel.civic : "-") + "|" + sq.half;
     if (three.siteKey !== siteKey) {
@@ -439,7 +468,7 @@ var App = (function () {
   }
 
   // ------------------------------------------------------------------ the floor-plan sheet
-  var plansDirty = true, plansFloor = null, plansScale = 14;
+  var plansDirty = true, plansFloor = null, plansScale = 20;
   function drawPlans() {
     var host = ui.plansHost, o = S.unitsOption; host.innerHTML = "";
     if (!o || !S.form || S.form.status !== "ok") { host.appendChild(el("p", "empty", "Draw a massing option in step 4, then open its floor plans.")); plansDirty = false; return; }
@@ -449,21 +478,21 @@ var App = (function () {
     var head = el("div", "sheet-head");
     head.appendChild(el("h2", null, (o.source === "cmhc" ? "CMHC " : "") + o.name + ": schematic floor plans"));
     head.appendChild(el("p", null, (S.address ? S.address + " · " : "") + o.units + " units (" + R1Cmhc.unitMix(o) + "). " +
-      (o.source === "cmhc" ? "Unit extents follow the catalogue's floor layout; the rooms are a schematic programme sized to each unit." : "Units and rooms are a schematic programme fitted to the by-law form.") + " Street side at the bottom of each plan; a red triangle marks an entry."));
+      (o.source === "cmhc" ? "Unit extents follow the catalogue's floor layout; the rooms, walls, doors, windows and fittings are generated to suit each unit." : "Units, rooms, walls, doors, windows and fittings are generated to suit the by-law form.") + " Street side at the bottom of each plan; a red triangle marks an entry; dimensions in mm."));
     host.appendChild(head);
     var tools = el("div", "sheet-tools"), g1 = el("div", "grp"), g2 = el("div", "grp");
     g1.appendChild(el("span", null, "Floor"));
     [null].concat(floorNames).forEach(function (fn) { var b = el("button", fn === plansFloor ? "on" : null, fn || "All"); b.addEventListener("click", function () { plansFloor = fn; drawPlans(); }); g1.appendChild(b); });
     g2.appendChild(el("span", null, "Scale"));
-    [[10, "Small"], [14, "Medium"], [20, "Large"]].forEach(function (s) { var b = el("button", s[0] === plansScale ? "on" : null, s[1]); b.addEventListener("click", function () { plansScale = s[0]; drawPlans(); }); g2.appendChild(b); });
+    [[14, "Small"], [20, "Medium"], [28, "Large"]].forEach(function (s) { var b = el("button", s[0] === plansScale ? "on" : null, s[1]); b.addEventListener("click", function () { plansScale = s[0]; drawPlans(); }); g2.appendChild(b); });
     tools.appendChild(g1); tools.appendChild(g2); host.appendChild(tools);
-    var plans = R1Cmhc.floorPlansSvg(o, { k: plansScale, floors: plansFloor ? [plansFloor] : null });
+    var plans = R1Plans.sheet(o, { k: plansScale, floors: plansFloor ? [plansFloor] : null });
     var body = el("div", "sheet-body"); body.innerHTML = plans.svg; host.appendChild(body);
     var lg = el("div", "sheet-legend"); lg.innerHTML = plans.legend; host.appendChild(lg);
     var notes = el("div", "sheet-notes");
     if (o.source === "cmhc") {
       var links = o.blocks.map(function (b) { return R1Cmhc.url(b.design) ? '<a href="' + R1Cmhc.url(b.design) + '" target="_blank" rel="noopener">' + esc(b.design.name) + "</a>" : null; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
-      notes.innerHTML = "<p>Rooms: entry and living toward the street, kitchen to the rear, bedrooms upstairs; areas are each unit's share of the footprint. CMHC's own room plans: " + links.join(", ") + ". " + esc(R1Cmhc.SOURCE.note) + "</p>";
+      notes.innerHTML = "<p>Layout: entry and living toward the street, kitchen to the rear, bedrooms upstairs; walls 300 mm outside, 250 mm between units, 120 mm inside; areas are each unit's share of the footprint. CMHC's own drawings: " + links.join(", ") + ". " + esc(R1Cmhc.SOURCE.note) + "</p>";
     } else {
       notes.innerHTML = o.blocks.map(function (b) { return "<p><b>" + esc(b.name) + ":</b> " + esc(b.design.layout) + "</p>"; }).join("") +
         o.checks.map(function (c) { return "<p>" + (c.ok ? "OK: " : "<b>Check:</b> ") + esc(c.name + ": " + c.detail) + " [" + esc(c.clause) + "]</p>"; }).join("") +
@@ -607,7 +636,7 @@ var App = (function () {
     var i = parseInt(ui.parcelList.value, 10);
     if (!S.res || isNaN(i)) { status("Fetch the site data and select the parcel first.", "error"); return; }
     S.parcel = S.choices[i].parcel; S.square = M.siteSquare(S.parcel, S.cutSide);
-    S.ev = null; S.base = null; S.placed = false; S.form = null; S.formBases = null; S.click = null; S.envelopeLayer = null; S.unitsOption = null; ui.unitsPanel.innerHTML = "";
+    S.ev = null; S.base = null; S.placed = false; S.form = null; S.formBases = null; S.click = null; S.envelopeLayer = null; S.unitsOption = null; ui.unitsPanel.innerHTML = ""; openRight(false);
     clearLayers(["envelope", "forms", "dims", "section"]);
     drawContext();
     report(M.siteLines(S.parcel)); report(M.cutLines(S.square).concat([""]));
@@ -648,10 +677,10 @@ var App = (function () {
     S.ev = ev; S.base = base; S.form = null; S.formBases = null; S.unitsOption = null; ui.unitsPanel.innerHTML = ""; setScheme(null); clearLayers(["forms"]);
     fillRules(); fillResults(); fillForm();
     report(core.reportLines(ev, "mm").concat([""]).concat(M.groundLines(base)).concat([""]));
-    if (ev.status !== "ok") { S.placed = false; markDirty(); setReady(); status("No envelope: " + (ev.controlling || ev.status) + ". See the report and the by-law table.", "error"); return; }
+    if (ev.status !== "ok") { S.placed = false; markDirty(); setReady(); openRight(false); status("No envelope: " + (ev.controlling || ev.status) + ". See the report and the by-law table.", "error"); return; }
     S.placed = true;
     drawEnvelope(); setExistingVisible(!ui.chkHide.checked); drawSectionMarker(); markDirty();
-    resetCmhc(); setReady();
+    resetCmhc(); setReady(); openRight(true);
     if (massingMode === "cmhc") onCmhc(true);
     status("Envelope placed: " + fmt(ev.env_width, 2) + " x " + fmt(ev.env_depth, 2) + " m, " + ev.height + " m high, up to " + ev.band.max_units + " units" +
       (ui.chkHide.checked && S.existingIds.length ? "; existing building hidden" : "") + ". Pick a massing option in step 4, or open the 3D view or the section.", "ok");
@@ -811,7 +840,9 @@ var App = (function () {
     ["address", "cutSide", "btnFetch", "parcelList", "zoning", "edgeSelect", "edgeNote", "edgeFallback", "btnPick", "rules", "assumptions", "chkHide",
       "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "btnFormPlans", "unitParams", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
       "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "tabPlans", "plansHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
-      "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnPickSite", "modeForms", "modeCmhc", "panelForms", "panelCmhc"].forEach(function (id) { ui[id] = $(id); });
+      "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnPickSite", "modeForms", "modeCmhc", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightOpen"].forEach(function (id) { ui[id] = $(id); });
+    ui.btnRightClose.addEventListener("click", function () { openRight(false); });
+    ui.btnRightOpen.addEventListener("click", function () { openRight(true); });
     ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans); ui.btnFormPlans.addEventListener("click", showFloorPlans);
     R1Units.TENURES.forEach(function (t) { var o = el("option", null, t.name); o.value = t.key; ui.tenureSel.appendChild(o); });
     R1Units.GROUND_USES.forEach(function (g) { var o = el("option", null, g.name); o.value = g.key; ui.groundSel.appendChild(o); });
@@ -837,7 +868,7 @@ var App = (function () {
     ui.schemeBtns = { single: $("rbSingle"), courtyard: $("rbCourtyard"), side_by_side: $("rbSide") };
     ui.tabs = { map: $("tabMap"), "3d": $("tab3d"), section: $("tabSection"), plans: $("tabPlans") };
     ui.panes = { map: $("paneMap"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans") };
-    ui.stepBadges = Array.prototype.slice.call(document.querySelectorAll(".step .badge"));
+    ui.stepBadges = Array.prototype.slice.call(document.querySelectorAll(".step .badge, .rhead .badge"));
     M.CUT_SIDES_M.forEach(function (s) { var o = el("option", null, s + " x " + s + " m"); o.value = String(s); if (s === M.CUT_DEFAULT_SIDE_M) o.selected = true; ui.cutSide.appendChild(o); });
     M.COURTYARDS_M.forEach(function (c) { var o = el("option", null, c + " m"); o.value = String(c); ui.courtyardSel.appendChild(o); });
     M.REAR_DEPTHS_M.forEach(function (d) { var o = el("option", null, d + " m"); o.value = String(d); if (d === M.REAR_DEPTH_DEFAULT_M) o.selected = true; ui.rearDepthSel.appendChild(o); });
@@ -867,6 +898,11 @@ var App = (function () {
       status("Example site loading: " + EXAMPLE_ADDRESS + " (an R1-1 lot in Dunbar). Type your own address or pick a site on the map to start over.", "busy");
       onFetch();   // a working state at rest: the fetch imports the site and draws the envelope by itself
     });
+  }
+  // the massing options live in the panel on the right; it opens when the site has its envelope
+  function openRight(show) {
+    ui.rightPanel.hidden = !show; ui.btnRightOpen.hidden = show || !S.placed;
+    setTimeout(function () { map.invalidateSize(); if (three) three.resize(); }, 30);
   }
   // step 4 has two sources of massing: the by-law form options and the CMHC catalogue
   var massingMode = "forms";

@@ -449,5 +449,5 @@ var R1Cmhc = (function () {
 
   return { SOURCE: SOURCE, DESIGNS: DESIGNS, UNIT_COLORS: UNIT_COLORS, design: design, url: url, fits: fits, form: form, fitRows: fitRows, fitLines: fitLines,
     unitRows: unitRows, unitSvg: unitSvg, unitMix: unitMix, optionGfa: optionGfa, unitColor: unitColor, unitVolumes: unitVolumes, unitAreas: unitAreas,
-    levelRoles: levelRoles, programme: programme, rooms: rooms, unitRooms: unitRooms, floorPlansSvg: floorPlansSvg };
+    levelRoles: levelRoles, programme: programme, rooms: rooms, unitRooms: unitRooms, unitCells: unitCells, blockOf: blockOf, floorPlansSvg: floorPlansSvg };
 })();

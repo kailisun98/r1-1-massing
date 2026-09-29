@@ -14,6 +14,7 @@
 <script src="massing.js"></script>
 <script src="cmhc.js"></script>
 <script src="units.js"></script>
+<script src="plans.js"></script>
 <script>
 (function () {
   var out = document.getElementById("out"), fails = 0, total = 0;
@@ -110,6 +111,9 @@
   var uc = R1Units.configure(f6, evR, { tenure: "rental", units: 8 });
   check("units: the courtyard sixplex form (front 3 st + rear 2 st) holds 8 rental units across both buildings, front trimmed for FSR", uc.units === 8 && uc.blocks.length === 2 && uc.blocks[0].units + uc.blocks[1].units === 8 && close(uc.blocks[0].trimmed_from_m, 11.1, 0.02) && close(uc.blocks[1].depth_m, 7.7) && uc.ok, uc.blocks.map(function (b) { return b.layout + ":" + b.units + ":" + b.depth_m; }).concat([uc.reason]));
   check("units: floor plans draw for a by-law option with a grocery store and a 5 m scale bar", (function () { var p = R1Cmhc.floorPlansSvg(ug, { k: 14 }); return p.svg.indexOf("Shop floor") > 0 && p.svg.indexOf("5 m") > 0 && p.legend.indexOf("Grocery store") > 0; })());
+  var sheet = R1Plans.sheet(byKey.fourplex_01, { k: 20 }), ops = R1Plans.openings(R1Cmhc.unitRooms(byKey.fourplex_01)[0], { front: true, left: true, right: true, rear: false });
+  check("plans: the sheet has doors (arcs), windows, wall lines, fixtures and mm dimensions", sheet.svg.indexOf("<svg") === 0 && (sheet.svg.match(/ A [\d.]+ [\d.]+ 0 0 [01] /g) || []).length >= 8 && sheet.svg.indexOf("#8fc1e3") > 0 && sheet.svg.indexOf(">6800<") > 0 && sheet.svg.indexOf(">19800<") > 0 && sheet.svg.indexOf("<circle") > 0, [sheet.width, sheet.height]);
+  check("plans: a ground flat gets an entry door on the street face, a door into the bedroom and bath, windows for living and bedroom", ops.some(function (x) { return x.kind === "entry" && x.side === "h" && x.at === 0; }) && ops.some(function (x) { return x.kind === "door" && x.room.name === "Bedroom"; }) && ops.some(function (x) { return x.kind === "door" && x.room.name === "Bath"; }) && ops.filter(function (x) { return x.kind === "window"; }).length >= 2, ops.map(function (x) { return x.kind + ":" + (x.room ? x.room.name : ""); }));
   var ua = R1Cmhc.unitAreas(byKey.fourplex_01);
   check("cmhc areas: Fourplex 01 ground flats ~67 m2 each, upper units ~134 m2", close(ua["U1@single"], 134.1 / 2, 0.1) && close(ua["U3@single"], 134.1, 0.1), ua);
   var url = R1Site.exportUrl("property-parcel-polygons", R1Site.within(-123.18, 49.25, 161.4));

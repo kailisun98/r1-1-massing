@@ -384,9 +384,12 @@ var R1Cmhc = (function () {
         unitCells(f.units, f.split, f.cols).forEach(function (c) {
           var u = unitOf(b, c.key), lv = levelsOf[c.key], li = lv.indexOf(fi), role = u && u.kind ? u.kind : (levelRoles(lv.length, b.design)[li] || "flat");
           var cw = (c.a1 - c.a0) * b.width_m, cd = (c.b1 - c.b0) * b.depth_m;
-          // rooms: the layout engine with clearances when it is loaded (the same stair on every level of a unit), else the band programme
-          var rs = (typeof R1Rooms !== "undefined") ? R1Rooms.layout(role, u, cw, cd, R1Rooms.unitCtx(cw, cd)) : rooms(role, u, cw, cd);
           var ent = ap ? ap.entries[c.key + "@" + b.key] : null, face = ent ? ent.face : null;
+          // which faces of the unit are exterior, in the unit's own frame (its entry face in front)
+          var ext = { front: c.b0 < 0.02, rear: c.b1 > 0.98, left: c.a0 < 0.02, right: c.a1 > 0.98 };
+          var win = face === "rear" ? { front: ext.rear, back: ext.front, left: ext.left, right: ext.right } : (face === "right" ? { front: ext.front, back: ext.rear, left: ext.right, right: ext.left } : { front: ext.front, back: ext.rear, left: ext.left, right: ext.right });
+          // rooms: the layout engine (standard test fits, the same stair on every level of a unit) when it is loaded, else the band programme
+          var rs = (typeof R1Rooms !== "undefined") ? R1Rooms.layout(role, u, cw, cd, R1Rooms.unitCtx(cw, cd, { fh: b.height_m / b.floors.length, win: win })) : rooms(role, u, cw, cd);
           if (face === "rear") rs = rs.map(function (r) { return Object.assign({}, r, { y: r2(cd - r.y - r.h) }); });
           if (face === "right") rs = rs.map(function (r) { return Object.assign({}, r, { x: r2(cw - r.x - r.w) }); });
           out.push({ block: b.key, unit: c.key, floor: f.name, floor_index: fi, level_index: li, levels: lv.length, role: role, cell: c, width_m: cw, depth_m: cd, rooms: rs,

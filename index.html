@@ -184,6 +184,9 @@ fieldset.units:disabled { opacity: .5; }
 .sheet-legend .lg i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .sheet-notes { margin-top: 10px; color: var(--muted); font-size: 12px; max-width: 90ch; }
 .sheet-notes a { color: var(--blue); }
+.sheet-section { background: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px 4px; margin: 0 0 10px; max-width: 924px; }
+.sheet-section h3 { margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.sheet-section svg { display: block; }
 .sheet-check { margin: 10px 0 0; padding: 6px 10px; border-radius: 4px; font-size: 12px; max-width: 110ch; }
 .sheet-check.ok { background: var(--status-ok); } .sheet-check.warn { background: var(--status-busy); }
 .sheet-table { max-width: 110ch; margin-top: 10px; }
@@ -350,7 +353,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
               <div class="row"><label for="tenureSel">Tenure</label><select id="tenureSel"></select></div>
               <div class="row"><label for="groundSel">Ground floor</label><select id="groundSel"></select></div>
             </fieldset>
-            <div class="actions"><button id="btnFormPlans" class="primary" disabled>Floor plans</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
+            <div class="actions"><button id="btnFormPlans" class="primary" disabled>Floor plans</button><button id="btnFormSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
             <table id="formTable"></table>
             <p id="formNote" class="muted"></p>
           </div>
@@ -358,7 +361,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
             <p class="muted" style="margin-top:0">The British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a>, tested against this envelope. Click a fitting option to draw it.</p>
             <div id="cmhcList" class="optlist" aria-live="polite"></div>
             <p id="cmhcNote" class="muted"></p>
-            <div class="actions"><button id="btnCmhcPlans" class="primary" disabled>Floor plans</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
+            <div class="actions"><button id="btnCmhcPlans" class="primary" disabled>Floor plans</button><button id="btnCmhcSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
             <details class="help"><summary>What is checked</summary><p class="muted">Width, depth, storeys and height against the envelope; the unit count this site's band allows; floor area against FSR 1.00; and, for a design with an accessory dwelling unit behind it, the courtyard rules (3.1.2.4(a), 3.1.2.8(a), 3.1.2.11(c), 3.1.2.5(a)). Options that do not fit say which rule they fail.</p></details>
           </div>
           <div id="unitsPanel"></div>
@@ -376,6 +379,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
 <script src="cmhc.js"></script>
 <script src="units.js"></script>
 <script src="access.js"></script>
+<script src="fits.js"></script>
 <script src="rooms.js"></script>
 <script src="plans.js"></script>
 <script src="siteplan.js"></script>

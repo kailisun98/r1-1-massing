@@ -15,14 +15,17 @@ var R1Plans = (function () {
 
   var WALL = { ext: 0.30, party: 0.25, int: 0.12 }, DOOR = 0.9, EPS = 0.02;
   var INK = "#1f2933", WALL_FILL = "#2c3e50", FLOOR = "#ffffff", GLASS = "#8fc1e3", FIX = "#4b5563", LIGHT = "#9aa4b1", WALK = "#e9ebe6", STAIR = "#f1f2ef";
-  var CIRC = ["Entry", "Lobby, mail", "Living", "Dining", "Hall", "Landing", "Kitchen", "Stair", "Shop floor", "Common room", "Play room", "Kitchenette"];
+  var CIRC = ["Entry", "Lobby, mail", "Living", "Living / dining", "Dining", "Hall", "Landing", "Kitchen", "Stair", "Shop floor", "Common room", "Play room", "Kitchenette", "Den", "Flex room"];
   var OPEN_PAIRS = [["Entry", "Living"], ["Living", "Dining"], ["Dining", "Kitchen"], ["Entry", "Stair"], ["Living", "Stair"], ["Hall", "Stair"], ["Landing", "Stair"], ["Landing", "Hall"], ["Hall", "Hall"],
-    ["Entry", "Lobby, mail"], ["Lobby, mail", "Common room"], ["Common room", "Kitchenette"], ["Entry", "Play room"], ["Play room", "Play room"], ["Living", "Kitchen"], ["Dining", "Hall"], ["Entry", "Hall"], ["Living", "Living"], ["Living", "Hall"], ["Kitchen", "Hall"]];
-  var HABITABLE = ["Living", "Dining", "Kitchen", "Bedroom", "Bedroom 1", "Bedroom 2", "Bedroom 3", "Primary bedroom", "Study", "Den", "Office", "Play room", "Nap room", "Common room", "Shop floor", "Flex room", "Kitchenette"];
+    ["Entry", "Lobby, mail"], ["Lobby, mail", "Common room"], ["Common room", "Kitchenette"], ["Entry", "Play room"], ["Play room", "Play room"], ["Living", "Kitchen"], ["Dining", "Hall"], ["Entry", "Hall"], ["Living", "Living"], ["Living", "Hall"], ["Kitchen", "Hall"],
+    ["Entry", "Living / dining"], ["Living / dining", "Living / dining"], ["Living / dining", "Kitchen"], ["Living / dining", "Hall"], ["Living / dining", "Dining"], ["Hall", "Den"], ["Hall", "Flex room"], ["Den", "Den"]];
+  var HABITABLE = ["Living", "Living / dining", "Dining", "Kitchen", "Bedroom", "Bedroom 1", "Bedroom 2", "Bedroom 3", "Primary bedroom", "Study", "Den", "Office", "Play room", "Nap room", "Common room", "Shop floor", "Flex room", "Kitchenette"];
   var OUTDOOR = ["Terrace", "Patio"], SMALL_WINDOW = ["Bath", "Ensuite", "WC", "Laundry"];
-  var SHORT = { "Primary bedroom": "Primary bed", "Bedroom 1": "Bed 1", "Bedroom 2": "Bed 2", "Bedroom 3": "Bed 3", "Ensuite": "Ens.", "Mechanical": "Mech.", "Lobby, mail": "Lobby", "Back of house": "Back", "Kitchenette": "Kit'ette", "Storage": "Stor.", "Laundry": "Ldry", "Kitchen": "Kit.", "Dining": "Din.", "Living": "Liv.", "Hall": "H", "Shop floor": "Shop", "Common room": "Common", "Play room": "Play", "Nap room": "Nap", "Flex room": "Flex", "Terrace": "Terr.", "Bedroom": "Bed" };
-  var SHORTER = { "Primary bedroom": "P.bed", "Ensuite": "Ens", "Bath": "Bath", "WC": "WC", "Laundry": "L", "Storage": "S", "Kitchen": "K", "Dining": "D", "Living": "L", "Entry": "E", "Hall": "H", "Study": "St", "Den": "Den", "Office": "Off", "Bedroom": "Bed", "Bedroom 1": "B1", "Bedroom 2": "B2", "Bedroom 3": "B3" };
-  var DOOR_PRIORITY = ["Hall", "Landing", "Entry", "Living", "Dining", "Kitchen", "Lobby, mail", "Common room", "Play room", "Shop floor", "Primary bedroom", "Stair"];
+  // rooms that may open off the room they serve rather than a hall: a walk-in closet off a bedroom, a pantry off the kitchen
+  var OFF_ANY = ["Ensuite", "Closet", "Linen", "Mechanical", "Storage", "Laundry"], NEVER_FROM = /Bath|WC|Ensuite|Stair|Laundry|Mechanical|Storage|Linen|Closet|Patio|Terrace/;
+  var SHORT = { "Primary bedroom": "Primary bed", "Bedroom 1": "Bed 1", "Bedroom 2": "Bed 2", "Bedroom 3": "Bed 3", "Ensuite": "Ens.", "Mechanical": "Mech.", "Lobby, mail": "Lobby", "Back of house": "Back", "Kitchenette": "Kit'ette", "Storage": "Stor.", "Laundry": "Ldry", "Kitchen": "Kit.", "Dining": "Din.", "Living": "Liv.", "Living / dining": "Liv / din", "Hall": "H", "Shop floor": "Shop", "Common room": "Common", "Play room": "Play", "Nap room": "Nap", "Flex room": "Flex", "Terrace": "Terr.", "Bedroom": "Bed", "Closet": "Clo.", "Linen": "Lin." };
+  var SHORTER = { "Primary bedroom": "P.bed", "Ensuite": "Ens", "Bath": "Bath", "WC": "WC", "Laundry": "L", "Storage": "S", "Kitchen": "K", "Dining": "D", "Living": "L", "Living / dining": "L/D", "Entry": "E", "Hall": "H", "Study": "St", "Den": "Den", "Office": "Off", "Bedroom": "Bed", "Bedroom 1": "B1", "Bedroom 2": "B2", "Bedroom 3": "B3", "Closet": "C", "Linen": "Ln", "Mechanical": "M" };
+  var DOOR_PRIORITY = ["Hall", "Landing", "Entry", "Living", "Living / dining", "Dining", "Kitchen", "Den", "Flex room", "Lobby, mail", "Common room", "Play room", "Shop floor", "Primary bedroom", "Stair"];
   var FLOOR_WORD = ["ground", "second", "third", "fourth"];
 
   function isOpen(a, b) { return OPEN_PAIRS.some(function (p) { return (p[0] === a && p[1] === b) || (p[0] === b && p[1] === a); }); }
@@ -73,16 +76,19 @@ var R1Plans = (function () {
         if (s === r) return;
         var e = sharedEdge(r, s); if (!e) return;
         if (r.name === "Ensuite" && s.name !== "Primary bedroom") return;
-        if (r.name !== "Ensuite" && !isCirc(s.name)) return;
-        var rank = DOOR_PRIORITY.indexOf(s.name); if (rank < 0) rank = 50;
+        var circ = isCirc(s.name), offAny = OFF_ANY.indexOf(r.name) >= 0 && !NEVER_FROM.test(s.name);
+        if (r.name !== "Ensuite" && !circ && !offAny) return;
+        var rank = circ ? DOOR_PRIORITY.indexOf(s.name) : 70; if (circ && rank < 0) rank = 50;
+        if (r.name === "Closet" && isBed(s.name)) rank = 1;        // a walk-in closet off its bedroom
+        if (r.name === "Laundry" && s.name === "Kitchen") rank = 1; // a laundry closet off the kitchen
         if (rank < bestRank) { bestRank = rank; best = { s: s, e: e }; }
       });
       if (best) pushDoor(best.s, r, best.e, "door");
     });
-    rooms.forEach(function (r) {   // outdoor rooms: a door from the room they open off
+    rooms.forEach(function (r) {   // outdoor rooms: a door from the room they open off (the longest shared wall with a living room, den or bedroom)
       if (!isOutdoor(r.name)) return;
       var best = null, bestLen = 0;
-      rooms.forEach(function (s) { if (s === r || isOutdoor(s.name) || /Bath|WC|Storage|Stair|Mech/.test(s.name)) return; var e = sharedEdge(r, s); if (e && (e.to - e.from) > bestLen) { bestLen = e.to - e.from; best = { s: s, e: e }; } });
+      rooms.forEach(function (s) { if (s === r || isOutdoor(s.name) || NEVER_FROM.test(s.name) || s.name === "Kitchen") return; var e = sharedEdge(r, s); if (e && (e.to - e.from) > bestLen) { bestLen = e.to - e.from; best = { s: s, e: e }; } });
       if (best) pushDoor(best.s, r, best.e, "door");
     });
     // the entry door on the level a unit is entered on, from the exterior: on the face R1Access chose (the street,
@@ -114,85 +120,116 @@ var R1Plans = (function () {
     return out;
   }
 
-  /* fixtures of a room, in room-local metres (x from the room's left, y from its front/bottom); each is a small
-     list of primitives: rect, circle, line, arc, text */
+  /* fixtures of a room, in room-local metres (x from the room's left, y from its top, the entry face); each is a
+     small list of primitives: rect, circle, line, text. Sizes are the catalogue sizes in R1Fits.FIX: the bed is the
+     largest that fits with 0.76 m clear on its open sides (R1Fits.bedFor), bathroom fixtures line one wall
+     (tub or shower, toilet, vanity), the kitchen is a single row (fridge, counter, sink, dishwasher, range),
+     the dining table seats 4 or 6 with 0.91 m behind the chairs, the living room has a sofa, coffee table,
+     armchair and TV unit, the laundry a stacked washer and dryer. The top-left corner is kept for the label. */
   function fixtures(r, ur, ext) {
-    var F = [], n = r.name, w = r.w, h = r.h;
+    var F = [], n = r.name, w = r.w, h = r.h, X = (typeof R1Fits !== "undefined") ? R1Fits.FIX : null, BEDS = X ? R1Fits.BEDS : null;
     function rect(x, y, rw, rh, o) { F.push(Object.assign({ t: "rect", x: x, y: y, w: rw, h: rh }, o || {})); }
     function circ(x, y, rad, o) { F.push(Object.assign({ t: "circle", x: x, y: y, r: rad }, o || {})); }
     function line(x1, y1, x2, y2, o) { F.push(Object.assign({ t: "line", x1: x1, y1: y1, x2: x2, y2: y2 }, o || {})); }
     function text(x, y, s, o) { F.push(Object.assign({ t: "text", x: x, y: y, s: s }, o || {})); }
+    if (!X) return F;
+    var horiz = w >= h, Lg = horiz ? w : h, Dp = horiz ? h : w;
+    // a fixture against the room's "far" wall (the bottom wall of a wide room, the left wall of a deep one), placed
+    // `a` along that wall with length `la`, standing `lc` out from it, `c` off the wall
+    function onWall(a, la, lc, c, o) { c = c || 0; if (horiz) rect(a, h - c - lc, la, lc, o); else rect(c, a, lc, la, o); }
+    function dotOnWall(a, c, rad, o) { if (horiz) circ(a, h - c, rad, o); else circ(c, a, rad, o); }
     if (isBed(n)) {
-      var bw = /Primary/.test(n) ? 1.6 : (/Bedroom 1|Bedroom$/.test(n) ? 1.5 : 1.2), bl = 2.0;
-      if (w >= bw + 0.6 && h >= bl + 0.6) {   // head against the back wall, centred
-        var bx = (w - bw) / 2, by = h - bl - 0.1;
-        rect(bx, by, bw, bl); rect(bx + 0.1, by + bl - 0.55, bw / 2 - 0.15, 0.45); rect(bx + bw / 2 + 0.05, by + bl - 0.55, bw / 2 - 0.15, 0.45);
-        line(bx, by + bl - 0.65, bx + bw, by + bl - 0.65, { light: true });
-        if (bx > 0.7) rect(0.15, h - 0.6, 0.5, 0.5);   // bedside table
-        if (h > bl + 1.6 && w > 2.6) rect(w - Math.min(1.2, w - 0.3) - 0.15, 0.15, Math.min(1.2, w - 0.3), 0.6, { light: true });   // wardrobe, top right (clear of the label)
-      } else if (w >= bl + 0.5 && h >= bw + 0.5) {   // turned
-        var bx2 = w - bl - 0.1, by2 = (h - bw) / 2;
-        rect(bx2, by2, bl, bw); rect(bx2 + bl - 0.55, by2 + 0.1, 0.45, bw / 2 - 0.15); rect(bx2 + bl - 0.55, by2 + bw / 2 + 0.05, 0.45, bw / 2 - 0.15);
+      var kind = R1Fits.bedFor(w, h);
+      if (kind) {
+        var bd = BEDS[kind], bw = bd.w, bl = bd.l;
+        if (h >= w) {   // head against the back wall, 0.76 m clear at least one side
+          var bx = (w - bw - 1.52 >= 0) ? (w - bw) / 2 : Math.max(0.05, w - bw - 0.76), by = h - bl - 0.05;
+          rect(bx, by, bw, bl); rect(bx + 0.1, by + bl - 0.55, bw / 2 - 0.15, 0.45); rect(bx + bw / 2 + 0.05, by + bl - 0.55, bw / 2 - 0.15, 0.45);
+          line(bx, by + bl - 0.65, bx + bw, by + bl - 0.65, { light: true });
+          if (bx >= 0.6) rect(bx - 0.55, h - 0.55, 0.5, 0.5);                                  // nightstands
+          if (w - bx - bw >= 0.6) rect(bx + bw + 0.05, h - 0.55, 0.5, 0.5);
+          if (w >= 3.6 && by >= 1.0) { rect(w - 1.65, 0.1, 1.5, 0.6, { light: true }); line(w - 1.65, 0.4, w - 0.15, 0.4, { light: true }); }   // closet on the entry wall, right of the label
+        } else {         // turned: head against the right wall
+          var bx2 = w - bl - 0.05, by2 = Math.max((h - bw) / 2, 0.76);
+          if (by2 + bw > h - 0.05) by2 = Math.max(0.3, h - bw - 0.05);
+          rect(bx2, by2, bl, bw); rect(bx2 + bl - 0.55, by2 + 0.1, 0.45, bw / 2 - 0.15); rect(bx2 + bl - 0.55, by2 + bw / 2 + 0.05, 0.45, bw / 2 - 0.15);
+          line(bx2 + bl - 0.65, by2, bx2 + bl - 0.65, by2 + bw, { light: true });
+          if (h - by2 - bw >= 0.6) rect(w - 0.55, h - 0.55, 0.5, 0.5);
+          if (bx2 >= 0.8 && h >= 2.2) { rect(0.1, h - 0.7, 0.6, Math.min(1.5, h - 1.5), { light: true }); }   // closet on the left wall, below the label
+        }
       }
     } else if (n === "Bath" || n === "Ensuite" || n === "WC") {
-      var tub = n !== "WC" && r.area_m2 >= 4.2 && Math.max(w, h) >= 2.0;
-      if (w >= h) {   // fixtures along the back wall, tub along the right
-        rect(0.15, h - 0.7, 0.45, 0.65); circ(0.375, h - 0.2, 0.2);                      // toilet
-        rect(0.75, h - 0.55, 0.6, 0.45); circ(1.05, h - 0.32, 0.14);                   // basin
-        if (tub) rect(w - 0.85, 0.15, 0.7, Math.min(1.7, h - 0.3), { rx: 0.1 }); else if (w > 2.2) { rect(w - 1.05, 0.15, 0.9, 0.9); line(w - 1.05, 0.15, w - 0.15, 1.05, { light: true }); }
-      } else {
-        rect(w - 0.65, 0.15, 0.65, 0.45); circ(w - 0.2, 0.375, 0.2);
-        rect(w - 0.55, 0.8, 0.45, 0.6); circ(w - 0.32, 1.1, 0.14);
-        if (tub) rect(0.15, h - 1.85, Math.min(0.7, w - 0.3), 1.7, { rx: 0.1 }); else if (h > 2.2) { rect(0.15, h - 1.05, 0.9, 0.9); line(0.15, h - 1.05, 1.05, h - 0.15, { light: true }); }
-      }
+      // one wall of fixtures along the room's long side: tub or shower at the far end, toilet, vanity at the door end
+      var a = 0.1, tubL = X.tub[1], full = n !== "WC" && Lg >= 2.1 && Dp >= 1.45, shower = n !== "WC" && !full && Lg >= 1.9;
+      if (full) { onWall(Lg - tubL - 0.05, tubL, X.tub[0], 0, { rx: 0.08 }); if (horiz) line(Lg - tubL + 0.15, h - X.tub[0] + 0.15, Lg - 0.2, h - X.tub[0] + 0.15, { light: true }); else line(X.tub[0] - 0.15, Lg - tubL + 0.15, X.tub[0] - 0.15, Lg - 0.2, { light: true }); }
+      else if (shower) { onWall(Lg - X.shower[0] - 0.05, X.shower[0], X.shower[1], 0); if (horiz) line(Lg - X.shower[0] - 0.05, h - X.shower[1], Lg - 0.05, h, { light: true }); else line(0, Lg - X.shower[0] - 0.05, X.shower[1], Lg - 0.05, { light: true }); }
+      var tcx = a + X.toilet_centre, tEnd = (full ? Lg - tubL - 0.05 : (shower ? Lg - X.shower[0] - 0.05 : Lg)) ;
+      if (tEnd - a >= X.toilet[0] + X.vanity[1] + 0.2) {   // toilet then vanity along the wall
+        onWall(tEnd - X.toilet[0] - 0.05, X.toilet[0], X.toilet[1] - 0.25, 0); dotOnWall(tEnd - X.toilet[0] / 2 - 0.05, X.toilet[1] - 0.2, 0.19);
+        var vl = Math.min(X.vanity[1], tEnd - X.toilet[0] - 0.2 - a); onWall(a, vl, X.vanity[0], 0); dotOnWall(a + vl / 2, X.vanity[0] / 2, 0.15);
+      } else if (tEnd - a >= X.toilet[0] + 0.1) { onWall(tEnd - X.toilet[0] - 0.05, X.toilet[0], X.toilet[1] - 0.25, 0); dotOnWall(tEnd - X.toilet[0] / 2 - 0.05, X.toilet[1] - 0.2, 0.19); }
     } else if (n === "Kitchen" || n === "Kitchenette") {
-      var along = w >= h ? "back" : "left", d = 0.6;
-      if (along === "back") {
-        rect(0, h - d, w, d, { counter: true });
-        rect(w * 0.18, h - 0.5, 0.5, 0.4); circ(w * 0.18 + 0.25, h - 0.3, 0.1);         // sink
-        var sx = w * 0.62; rect(sx, h - 0.6, 0.6, 0.6); [[0.17, 0.17], [0.43, 0.17], [0.17, 0.43], [0.43, 0.43]].forEach(function (p) { circ(sx + p[0], h - 0.6 + p[1], 0.09); });
-        rect(w - 0.75, h - 0.75, 0.7, 0.7, { thick: true }); text(w - 0.4, h - 0.32, "F");   // fridge
-        if (n === "Kitchen" && h > 3.2 && w > 3.0) rect(w * 0.25, h - 2.3, w * 0.5, 0.8, { light: true });   // island
-      } else {
-        rect(0, 0, d, h, { counter: true });
-        rect(0.1, h * 0.18, 0.4, 0.5); circ(0.3, h * 0.18 + 0.25, 0.1);
-        var sy = h * 0.6; rect(0, sy, 0.6, 0.6); [[0.17, 0.17], [0.43, 0.17], [0.17, 0.43], [0.43, 0.43]].forEach(function (p) { circ(p[0], sy + p[1], 0.09); });
-        rect(0.05, h - 0.75, 0.7, 0.7, { thick: true }); text(0.4, h - 0.32, "F");
-      }
+      // a single row along the far wall: fridge, counter, sink, dishwasher, counter, range; a second row when deep enough
+      var cd = X.counter_d;
+      onWall(0, Lg, cd, 0, { counter: true });
+      var fr = X.fridge[0]; onWall(0.05, fr, fr, 0, { thick: true }); if (horiz) text(0.05 + fr / 2, h - fr / 2 + 0.12, "F"); else text(fr / 2, 0.05 + fr / 2 + 0.12, "F");
+      var sa = Math.min(Lg * 0.45, Lg - X.range - X.sink - 0.4); if (sa > fr + 0.2) { onWall(sa, X.sink, 0.45, 0.05); dotOnWall(sa + X.sink / 2, 0.3, 0.1); if (sa + X.sink + X.dishwasher <= Lg - X.range - 0.3) onWall(sa + X.sink, X.dishwasher, cd, 0, { light: true }); }
+      var ra = Lg - X.range - 0.2; if (ra > fr + 0.3) { onWall(ra, X.range, cd, 0); [[0.19, 0.17], [0.57, 0.17], [0.19, 0.43], [0.57, 0.43]].forEach(function (p) { if (horiz) circ(ra + p[0], h - cd + p[1], 0.08); else circ(cd - p[1], ra + p[0], 0.08); }); }
+      if (n === "Kitchen" && Dp >= 3.0 && Lg >= 2.4) onWall(0.3, Lg - 0.6, cd, cd + 1.2, { light: true });   // second row or island across a 1.2 m aisle
     } else if (n === "Dining") {
-      var tw = Math.min(1.8, w - 1.2), th = Math.min(0.95, h - 1.5);
-      if (tw > 1.0 && th > 0.7) {
-        var tx = (w - tw) / 2, ty = Math.max((h - th) / 2, 1.0); rect(tx, ty, tw, th);
-        var seats = Math.max(2, Math.floor(tw / 0.7));
-        for (var i = 0; i < seats; i++) { var cx = tx + tw * (i + 0.5) / seats; rect(cx - 0.22, ty - 0.55, 0.44, 0.44, { light: true }); rect(cx - 0.22, ty + th + 0.1, 0.44, 0.44, { light: true }); }
-      } else if (Math.min(w, h) > 1.6) { circ(w / 2, h / 2, 0.55); for (var a = 0; a < 4; a++) { rect(w / 2 + Math.cos(a * Math.PI / 2) * 0.85 - 0.22, h / 2 + Math.sin(a * Math.PI / 2) * 0.85 - 0.22, 0.44, 0.44, { light: true }); } }
-    } else if (n === "Living" || n === "Common room" || n === "Flex room") {
-      if (w >= 2.6 && h >= 2.4) {
-        var sl = Math.min(2.2, w - 1.0), sofaX = (w - sl) / 2;
-        rect(sofaX, h - 1.15, sl, 0.9, { rx: 0.08 }); line(sofaX, h - 0.85, sofaX + sl, h - 0.85, { light: true });   // sofa along the back, facing the front windows
-        rect(w / 2 - 0.5, h - 2.0, 1.0, 0.55, { light: true });                                                  // coffee table
-        if (w > 3.6) rect(w - 0.95, h - 2.05, 0.8, 0.8, { rx: 0.08 });                                             // armchair
-        if (h > 3.8 && w > 3.0) rect(w - 1.15, 0.9, 1.0, 0.35, { light: true });                                  // media unit, clear of the label
+      var six = Lg >= 3.3 && Dp >= 2.7, tb = six ? X.table6 : X.table4, tl = tb[1], tw = tb[0];
+      if (Lg >= tl + 1.2 && Dp >= tw + 1.2) {
+        var ta = (Lg - tl) / 2, tc = (Dp - tw) / 2, ch = X.chair, perSide = six ? 3 : 2;
+        function tRect(a, c, la, lc, o) { if (horiz) rect(a, c, la, lc, o); else rect(c, a, lc, la, o); }
+        tRect(ta, tc, tl, tw);
+        for (var i = 0; i < perSide; i++) { var ca = ta + tl * (i + 0.5) / perSide - ch / 2; tRect(ca, tc - ch - 0.08, ch, ch, { light: true }); tRect(ca, tc + tw + 0.08, ch, ch, { light: true }); }
+        if (Lg >= tl + 2.4) { tRect(ta - ch - 0.08, tc + tw / 2 - ch / 2, ch, ch, { light: true }); tRect(ta + tl + 0.08, tc + tw / 2 - ch / 2, ch, ch, { light: true }); }
       }
-      if (n === "Common room" && w >= 3 && h >= 3) { rect(w / 2 - 1.0, h / 2 - 0.4, 2.0, 0.8); }
+    } else if (n === "Living" || n === "Living / dining" || n === "Common room" || n === "Flex room" || n === "Den") {
+      var sofa = n === "Den" ? X.loveseat : X.sofa, sl = sofa[0], sd = sofa[1];
+      if (w >= 3.0 && h >= 2.6) {
+        var sx = n === "Living / dining" && w >= 4.8 ? 0.3 : Math.max(0.3, (Math.min(w, 3.6) - sl) / 2), sy = h - sd - 0.15;
+        rect(sx, sy, sl, sd, { rx: 0.08 }); line(sx, sy + 0.3, sx + sl, sy + 0.3, { light: true });                       // sofa along the back wall
+        rect(sx + sl / 2 - X.coffee_table[0] / 2, sy - X.coffee_gap - X.coffee_table[1], X.coffee_table[0], X.coffee_table[1], { light: true });
+        if (sx + sl + 0.3 + X.armchair[0] <= w - 0.15 && n !== "Living / dining") rect(sx + sl + 0.3, sy - 0.1, X.armchair[0], X.armchair[1], { rx: 0.08 });   // armchair at the end
+        else if (sx + sl + 0.3 + X.armchair[0] <= w - 0.15 && h >= 3.4) rect(sx + sl + 0.3, sy - 0.1, X.armchair[0], X.armchair[1], { rx: 0.08 });
+        if (h >= 3.6 && w >= 3.4 && sy - X.coffee_gap - X.coffee_table[1] - X.tv_unit[1] >= 1.2) rect(sx + sl / 2 - X.tv_unit[0] / 2, sy - X.coffee_gap - X.coffee_table[1] - 0.8 - X.tv_unit[1], X.tv_unit[0], X.tv_unit[1], { light: true });   // TV unit facing the sofa
+        if (n === "Living / dining" && w - (sx + sl + 0.4) >= X.table4[0] + 1.0 && h >= 3.2) {   // a table for four by the window end, beside the sofa group
+          var tx = w - X.table4[0] - 0.95, ty = 0.95; rect(tx, ty, X.table4[0], X.table4[1]);
+          for (var q = 0; q < 2; q++) { rect(tx - X.chair - 0.08, ty + X.table4[1] * (q + 0.5) / 2 - X.chair / 2, X.chair, X.chair, { light: true }); rect(tx + X.table4[0] + 0.08, ty + X.table4[1] * (q + 0.5) / 2 - X.chair / 2, X.chair, X.chair, { light: true }); }
+        }
+      }
+      if (n === "Common room" && w >= 3 && h >= 3) rect(w / 2 - 1.0, h / 2 - 0.4, 2.0, 0.8);
+      if (n === "Den" && w >= 2.6 && h >= 3.4) { rect(w - X.desk[1] - 0.15, 0.9, X.desk[1], X.desk[0]); rect(w - X.desk[1] - 0.15 - X.chair - 0.1, 0.9 + X.desk[0] / 2 - X.chair / 2, X.chair, X.chair, { light: true }); }
     } else if (n === "Stair") {
-      var vertical = h >= w, treads = Math.max(6, Math.round((vertical ? h : w) / 0.27));
-      for (var t = 1; t < treads; t++) { if (vertical) line(0, h * t / treads, w, h * t / treads); else line(w * t / treads, 0, w * t / treads, h); }
-      if (vertical) { line(w / 2, 0.2, w / 2, h - 0.3, { arrow: true }); text(w / 2, h - 0.12, ur.level_index === 0 ? "UP" : "DN", { small: true }); }
-      else { line(0.2, h / 2, w - 0.3, h / 2, { arrow: true }); text(w - 0.55, h / 2 - 0.15, ur.level_index === 0 ? "UP" : "DN", { small: true }); }
+      var st = r.stair || { kind: Math.min(w, h) >= 1.8 ? "u" : "straight" }, vertical = h >= w, up = ur.level_index < ur.levels - 1, dn = ur.level_index > 0;
+      var lab = up && dn ? "UP / DN" : (up ? "UP" : "DN");
+      if (st.kind === "u" && Dp >= 1.8) {   // two flights side by side along the length, the landing at the far end
+        var land = 0.95, runL = Lg - land, nT = Math.max(4, Math.round(runL / 0.26));
+        for (var t = 0; t <= nT; t++) { var a2 = runL * t / nT; if (vertical) { line(0, a2, Dp / 2, a2); line(Dp / 2, a2, Dp, a2); } else { line(a2, 0, a2, Dp / 2); line(a2, Dp / 2, a2, Dp); } }
+        if (vertical) { line(Dp / 2, 0, Dp / 2, runL); rect(0.03, runL, Dp - 0.06, land - 0.03, { light: true }); line(Dp / 4, 0.2, Dp / 4, runL - 0.15, { arrow: true }); text(Dp / 2, runL + land / 2 + 0.12, lab, { small: true }); }
+        else { line(0, Dp / 2, runL, Dp / 2); rect(runL, 0.03, land - 0.03, Dp - 0.06, { light: true }); line(0.2, Dp / 4, runL - 0.15, Dp / 4, { arrow: true }); text(runL + land / 2, Dp / 2 + 0.12, lab, { small: true }); }
+      } else {
+        var treads = Math.max(6, Math.round(Lg / 0.26));
+        for (var t2 = 1; t2 < treads; t2++) { if (vertical) line(0, h * t2 / treads, w, h * t2 / treads); else line(w * t2 / treads, 0, w * t2 / treads, h); }
+        if (vertical) { line(w / 2, 0.2, w / 2, h - 0.3, { arrow: true }); text(w / 2, h - 0.12, lab, { small: true }); }
+        else { line(0.2, h / 2, w - 0.3, h / 2, { arrow: true }); text(w - 0.55, h / 2 - 0.15, lab, { small: true }); }
+      }
     } else if (n === "Laundry") {
-      if (w >= 1.4 && h >= 0.7) { rect(0.1, h - 0.7, 0.6, 0.6); circ(0.4, h - 0.4, 0.2); rect(0.8, h - 0.7, 0.6, 0.6); circ(1.1, h - 0.4, 0.2); }
-      else if (h >= 1.4) { rect(0.1, h - 0.7, 0.6, 0.6); circ(0.4, h - 0.4, 0.2); rect(0.1, h - 1.4, 0.6, 0.6); circ(0.4, h - 1.1, 0.2); }
+      var wd = X.washer_dryer_stacked;   // stacked washer and dryer against the far wall
+      if (Math.min(w, h) >= 0.75) { onWall(Math.max(0.05, (Lg - wd[0]) / 2), wd[0], wd[1], 0); dotOnWall(Math.max(0.05, (Lg - wd[0]) / 2) + wd[0] / 2, wd[1] / 2, 0.2); }
+    } else if (n === "Closet" || n === "Linen") {
+      if (Math.min(w, h) >= 0.6) { onWall(0.05, Lg - 0.1, X.closet_d, 0, { light: true }); if (horiz) line(0.05, h - X.closet_d / 2, w - 0.05, h - X.closet_d / 2, { light: true }); else line(X.closet_d / 2, 0.05, X.closet_d / 2, h - 0.05, { light: true }); }
     } else if (n === "Storage" || n === "Back of house") {
-      for (var s2 = 0.35; s2 < h - 0.3; s2 += 0.35) line(0.1, s2, Math.min(w - 0.1, 0.6 + 0.1), s2, { light: true });
+      for (var s2 = 0.35; s2 < h - 0.3; s2 += 0.35) line(0.1, s2, Math.min(w - 0.1, 0.7), s2, { light: true });
       if (n === "Back of house" && w > 2) rect(w - 1.0, 0.2, 0.8, h - 0.4, { light: true });
-    } else if (n === "Mechanical") { rect(0.15, 0.15, Math.min(0.7, w - 0.3), Math.min(0.7, h - 0.3), { thick: true }); text(0.15 + Math.min(0.7, w - 0.3) / 2, 0.55, "M", { small: true }); }
-    else if (n === "Entry" || n === "Lobby, mail") { if (w >= 1.5 && h >= 1.2) rect(w - 0.65, h - Math.min(1.2, h - 0.3) - 0.15, 0.6, Math.min(1.2, h - 0.3), { light: true }); }
+    } else if (n === "Mechanical") { rect(0.15, h - 0.85, Math.min(0.7, w - 0.3), Math.min(0.7, h - 0.3), { thick: true }); text(0.15 + Math.min(0.7, w - 0.3) / 2, h - 0.45, "M", { small: true }); }
+    else if (n === "Entry" || n === "Lobby, mail") { if (w >= 1.2 && h >= 1.2) { rect(0.1, h - X.closet_d - 0.05, Math.min(X.vanity[1], w - 0.2), X.closet_d, { light: true }); line(0.1, h - X.closet_d / 2 - 0.05, 0.1 + Math.min(X.vanity[1], w - 0.2), h - X.closet_d / 2 - 0.05, { light: true }); } }
     else if (n === "Landing" || n === "Hall") { /* kept clear */ }
-    else if (n === "Study" || n === "Den" || n === "Office") { if (w >= 1.8 && h >= 1.6) { rect(0.2, h - 0.75, Math.min(1.5, w - 0.4), 0.6); rect(0.2 + Math.min(1.5, w - 0.4) / 2 - 0.22, h - 1.3, 0.44, 0.44, { light: true }); } if (n === "Den" && w >= 2.6 && h >= 2.6) rect(w - 1.9, 0.25, 1.7, 0.8, { rx: 0.08 }); }
+    else if (n === "Study" || n === "Office") { if (w >= 1.8 && h >= 1.8) { rect(0.2, h - X.desk[1] - 0.15, Math.min(X.desk[0], w - 0.4), X.desk[1]); rect(0.2 + Math.min(X.desk[0], w - 0.4) / 2 - X.chair / 2, h - X.desk[1] - 0.15 - X.chair - 0.08, X.chair, X.chair, { light: true }); } }
     else if (n === "Shop floor") { rect(w - 0.75, 0.6, 0.6, Math.min(2.4, h - 1.2)); for (var g = 0.3; g < w - 1.2; g += 1.3) rect(g, h - 0.5, 1.0, 0.35, { light: true }); }
     else if (n === "Play room") { for (var m = 0.3; m < w - 1.3; m += 1.4) rect(m, 0.4, 1.2, 0.8, { light: true, rx: 0.1 }); rect(w - 1.1, h - 0.7, 0.9, 0.5); }
-    else if (n === "Nap room") { for (var q = 0.2; q < w - 0.7; q += 0.75) rect(q, h - 1.5, 0.6, 1.3, { light: true }); }
+    else if (n === "Nap room") { for (var q2 = 0.2; q2 < w - 0.7; q2 += 0.75) rect(q2, h - 1.5, 0.6, 1.3, { light: true }); }
     else if (isOutdoor(n)) { if (w > 1.8 && h > 1.2) { circ(w / 2, h / 2, 0.45, { light: true }); rect(w / 2 - 0.9, h / 2 - 0.2, 0.4, 0.4, { light: true }); rect(w / 2 + 0.5, h / 2 - 0.2, 0.4, 0.4, { light: true }); } }
     return F;
   }
@@ -423,7 +460,7 @@ var R1Plans = (function () {
       '<span class="lg"><i style="background:#c81e1e"></i>entry</span><span class="lg"><i style="background:' + GLASS + '"></i>window</span>' +
       (R1Access && R1Access.hasStairs(access) ? '<span class="lg"><i style="background:' + WALK + ';border:1px solid ' + INK + '"></i>open walkway</span><span class="lg"><i style="background:' + STAIR + ';border:1px solid ' + INK + '"></i>exterior exit stair</span>' : "");
     var defs = '<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="' + FIX + '"/></marker></defs>';
-    return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + " " + totalH + '" role="img" aria-label="Floor plans">' + defs + parts.join("") + "</svg>", legend: legend, width: totalW, height: totalH, access: access };
+    return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + " " + totalH + '" role="img" aria-label="Floor plans" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">' + defs + parts.join("") + "</svg>", legend: legend, width: totalW, height: totalH, access: access };
   }
 
   /* check(option): what the drawn plans still fail to provide: a room without a door from a circulation room,
@@ -431,7 +468,7 @@ var R1Plans = (function () {
      does not stack between the levels of a unit, or a unit with no way in (no entry door on the face it is
      reached from, or an upper entry level with no walkway and exit stair). Empty when the plans meet all of them. */
   function check(o) {
-    var issues = [], MIN = (typeof R1Rooms !== "undefined") ? R1Rooms.MIN : { hall: 0.95, bath_w: 1.5, wc_w: 0.9, bed_w: 2.7, bed_area: 7, kitchen: 2.1, stair_w: 0.95, stair_l: 3.4, door: 0.85 };
+    var issues = [], MIN = (typeof R1Rooms !== "undefined") ? R1Rooms.MIN : { hall: 0.9, bath_w: 1.5, wc_w: 1.35, bed_w: 2.5, bed_area: 7.5, kitchen: 1.7, kitchen_run: 2.1, living_w: 3.2, dining_w: 2.6, stair_w: 0.86, stair_l: 3.0, door: 0.86 };
     var stairs = {}, access = (typeof R1Access !== "undefined") ? R1Access.plan(o) : null;
     C.unitRooms(o).forEach(function (ur) {
       var c = ur.cell, ext = { front: c.b0 < EPS, rear: c.b1 > 1 - EPS, left: c.a0 < EPS, right: c.a1 > 1 - EPS }, ops = openings(ur, ext), doored = {};
@@ -440,13 +477,19 @@ var R1Plans = (function () {
       ur.rooms.forEach(function (r) {
         var tag = where + ": " + r.name.toLowerCase(), md = Math.min(r.w, r.h);
         if (!isCirc(r.name) && !isOutdoor(r.name) && !r.part && r.name !== "Kitchenette" && !doored[r.name + "@" + r.x + "," + r.y]) issues.push(tag + " has no door from a circulation room");
-        if (isBed(r.name) && (md < MIN.bed_w - 0.01 || r.area_m2 < MIN.bed_area - 0.05)) issues.push(tag + " is " + fmt(r.w, 2) + " x " + fmt(r.h, 2) + " m (a bedroom needs " + MIN.bed_w + " m across and " + MIN.bed_area + " m2)");
-        if ((r.name === "Bath" || r.name === "Ensuite") && md < MIN.bath_w - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a bathroom needs " + MIN.bath_w + " m)");
-        if (r.name === "WC" && md < MIN.wc_w - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a water closet needs " + MIN.wc_w + " m)");
+        if (isBed(r.name)) { var bed = (typeof R1Fits !== "undefined") ? R1Fits.bedFor(r.w, r.h) : (md >= MIN.bed_w && r.area_m2 >= MIN.bed_area ? "twin" : null); if (!bed) issues.push(tag + " is " + fmt(r.w, 2) + " x " + fmt(r.h, 2) + " m: no bed fits with 0.76 m clear on its open sides (a twin room needs 7.75 m2)"); }
+        if ((r.name === "Bath" || r.name === "Ensuite") && md < MIN.bath_w - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a one-wall bathroom needs " + MIN.bath_w + " m)");
+        if (r.name === "WC" && md < MIN.wc_w - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a half bath needs " + MIN.wc_w + " m)");
         if ((r.name === "Hall" || r.name === "Landing") && md < MIN.hall - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m wide (a hall needs " + MIN.hall + " m)");
-        if (r.name === "Kitchen" && md < MIN.kitchen - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a kitchen needs " + MIN.kitchen + " m in front of the counter)");
+        if (r.name === "Kitchen") {
+          if (md < MIN.kitchen - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a 0.6 m counter with a 1.07 m aisle needs " + MIN.kitchen + " m)");
+          if (Math.max(r.w, r.h) < MIN.kitchen_run - 0.01) issues.push(tag + " has a " + fmt(Math.max(r.w, r.h), 2) + " m run (a single-row kitchen needs " + MIN.kitchen_run + " m)");
+        }
+        if (/^Living/.test(r.name) && !r.part && md < MIN.living_w - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a sofa and armchair fit needs " + MIN.living_w + " m)");
+        if (r.name === "Dining" && md < MIN.dining_w - 0.01) issues.push(tag + " is " + fmt(md, 2) + " m across (a table with 0.91 m behind the chairs needs " + MIN.dining_w + " m)");
         if (r.name === "Stair") {
-          if (md < MIN.stair_w - 0.01 || Math.max(r.w, r.h) < MIN.stair_l - 0.01) issues.push(tag + " is " + fmt(r.w, 2) + " x " + fmt(r.h, 2) + " m (a stair needs " + MIN.stair_w + " x " + MIN.stair_l + " m)");
+          var needW = r.stair && r.stair.kind === "u" ? 1.8 : MIN.stair_w;
+          if (md < needW - 0.01 || Math.max(r.w, r.h) < MIN.stair_l - 0.01) issues.push(tag + " is " + fmt(r.w, 2) + " x " + fmt(r.h, 2) + " m (" + (r.stair && r.stair.kind === "u" ? "a U-stair needs two 0.9 m flights, " + needW + " m" : "a stair needs " + needW + " m") + " wide and " + MIN.stair_l + " m long)");
           (stairs[ur.block + "|" + ur.unit] || (stairs[ur.block + "|" + ur.unit] = [])).push([r.x, r.y, r.w, r.h]);
         }
       });
@@ -461,9 +504,9 @@ var R1Plans = (function () {
         }
       }
     });
-    Object.keys(stairs).forEach(function (k) {
+    Object.keys(stairs).forEach(function (k) {   // the same x, y and width on every level; the length may differ by the top landing
       var st = stairs[k];
-      for (var i = 1; i < st.length; i++) if (st[i].some(function (v, j) { return Math.abs(v - st[0][j]) > 0.05; })) { issues.push(k.split("|")[1] + ": the stair does not stack between levels"); break; }
+      for (var i = 1; i < st.length; i++) if (st[i].some(function (v, j) { return Math.abs(v - st[0][j]) > (j === 3 ? 1.05 : 0.05); })) { issues.push(k.split("|")[1] + ": the stair does not stack between levels"); break; }
     });
     return issues;
   }

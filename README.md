@@ -120,17 +120,38 @@ opens in a working state; type another address to start over.
   depth and redraws the massing at that depth (the note says by how much). Bedrooms follow each
   unit's area (3-bed from 105 m², 2-bed from 65 m²). Units are coloured on the map, in 3D and in the
   unit table, and *Floor plans* opens the sheet for them too.
-- **Room layouts** (`web/rooms.js`): rooms are laid out in metres with circulation and clearances
-  built in. A unit on several levels has one stair rectangle in the same place on every level
-  (0.95 to 1.2 m wide, 3.4 to 4.3 m long, with a landing); a hall 0.95 m wide runs beside it on the
-  bedroom level and every served room (bedroom, bath, laundry, storage, den) touches a circulation
-  room along at least 0.9 m so a door can be placed; bathrooms are at least 1.5 m across, water
-  closets 0.9 m, bedrooms 2.7 m and 7 m², kitchens 2.1 m in front of the counter; when a unit is
-  too small the layout drops rooms in a fixed order rather than draw them below these sizes, and a
-  flat too shallow for a hall puts the bedroom beside the living room. `R1Plans.check` re-reads
-  every drawn plan and reports what it still fails (a room without a door, a door under 0.85 m, a
-  room below its minimum, a stair that does not stack, a unit with no way in); the sheet and the
-  unit panel show the result.
+- **Standard test fits** (`web/fits.js`): the room sizes, furniture and clearances the plans are
+  built from, transcribed from dimensions.com's Layouts pages (read 2026-09-29; the element slug is
+  kept with each value): one-wall bathrooms (half 1.42–2.13 × 1.37–1.68 m, three-quarter
+  2.13–2.9 × 1.52–1.83 m, full 2.13–2.74 × 1.52–1.83 m) with 0.61 m activity and 0.76 m circulation
+  clearances; queen 1.52 × 2.03 m, double 1.37 × 1.91 m and twin 0.97 × 1.91 m beds with 0.76 m
+  clear on their open sides and rooms from 9.8, 9 and 7.75 m²; living fits of 3.35 × 2.74 m (sofa
+  and armchair) and 3.66 × 2.74 m (sofa facing two armchairs); a casual dining table 0.76–1.07 ×
+  1.22–1.52 m with 0.91 m behind the chairs (0.46 sitting + 0.46 circulation); a single-row kitchen
+  with a 1.2 m aisle and a 2.1–3.8 m run (an L-shape needs a 1.07 m aisle). Fixture and furniture
+  sizes not on those pages are the usual catalogue sizes (0.6 m counter, 0.76 × 1.52 m tub, 0.9 m
+  shower, 2.1 × 0.9 m sofa, stacked washer and dryer); stairs follow BC Building Code 2024 Part 9
+  (width 0.86 m, rise under 0.2 m, 0.26 m run).
+- **Room layouts** (`web/rooms.js`): every unit level is composed from those modules. A unit on
+  several levels has a U-stair core 2.0 m wide (two 0.95 m flights side by side with a landing,
+  3.3 m long for 3.83 m floors) in the same place on every level, or a 1.0 m straight run (5.9 m)
+  along the party wall when the unit is narrower than 6.1 m; the entry is 1.5 m deep with a coat
+  closet, halls are 1.0 m, the bath 2.2 × 1.7 m on one wall, the powder room 1.45 × 1.4 m, the
+  kitchen band 1.8 m deep (0.6 m counter, 1.2 m aisle) with a 2.4 m run or more, the laundry a
+  0.95 m closet, bedrooms sized to the bed they hold with a 0.6 m closet or a 1.2 m walk-in. A flat
+  8.2 m or deeper gets an entry hall along the party wall, living/dining in front, the wet band
+  across the middle and the bedroom(s) behind; a shallower flat puts living/dining and the bedroom
+  side by side on the window wall with bath, kitchen and laundry across the back. A two-level unit
+  has entry, stair, powder room and laundry in the column beside living, dining and kitchen, then
+  landing, hall, primary bedroom, bath row and the other bedrooms (off a cross hall when the depth
+  allows two rooms, else one bedroom with a walk-in closet); a three-level townhouse adds an entry
+  level with bath, den and patio; the duplex an attic level with a terrace. When a unit is too
+  small for the full programme the layout drops rooms in a fixed order (the ensuite, the third
+  bedroom, the laundry closet) rather than draw rooms below these sizes, and no room is narrower
+  than a door. `R1Plans.check` re-reads every drawn plan and reports what it still fails: a room
+  without a door, a door under 0.86 m, a bedroom no bed fits, a living room under 3.2 m, a dining
+  room under 2.6 m, a kitchen under 1.7 m or with a run under 2.1 m, a bath under 1.5 m, a stair
+  that does not stack, a unit with no way in; the sheet and the unit panel show the result.
 - **Access** (`web/access.js`): how every unit is reached. Ground units are entered at grade from
   the street, or from the side-yard path when a cell sits behind another. A unit whose entry level
   is an upper floor is reached by an exterior single exit stair and a 1.2 m open walkway on one
@@ -148,20 +169,25 @@ opens in a working state; type another address to start over.
   permitted for buildings of this size under the BC Building Code 2024 and the Vancouver Building
   By-law (to be confirmed with the code consultant).
 - **Floor plans tab** (`web/plans.js`, `drawPlans` in `app.js`): a sheet in the main stage with a
-  floor filter (All / Ground / Second / Third), three scales, a 5 m scale bar, a legend, the plan
-  check and the notes of the drawn option. The plans are drawn as plans: 300 mm exterior walls,
+  floor filter (All / Ground / Second / Third), three scales, a *Site section* switch that draws
+  the section A-A beside the plan options so plans and section read together, a 5 m scale bar, a
+  legend, the plan check and the notes of the drawn option (the massing panel also has a *Site
+  section* button next to *Floor plans*). The plans are drawn as plans: 300 mm exterior walls,
   250 mm party walls between units, 120 mm partitions, drawn as segments with every opening left
   out of them (a door or a cased opening is a real gap, nothing is painted over); an entry door per
   unit on the face it is reached from (street, walkway or side path), interior doors with swings
-  from the circulation rooms into the served rooms and cased openings between entry, living,
-  dining, hall and kitchen; windows on the exterior walls of habitable rooms; stairs with treads
-  and an UP/DN arrow; kitchens with counter, sink, stove and fridge; bathrooms with toilet, basin
-  and tub or shower; beds, wardrobes, dining tables and chairs, sofas, washer and dryer; room names
-  with areas placed in each room's top-left corner clear of the fittings (no halos; the stair text
-  is haloed in the unit's own floor tint); overall and unit dimensions in mm. The sheet reads as a
-  rotation of the map with the street at the top, the same frame as the site plan, so a lot whose
-  side 1 lies on the right of that view is drawn mirrored. `R1Cmhc.floorPlansSvg` keeps the
-  earlier block diagram for tests.
+  from the circulation rooms into the served rooms (a walk-in closet off its bedroom, a laundry or
+  pantry off the kitchen) and cased openings between entry, living, dining, hall and kitchen;
+  windows on the exterior walls of habitable rooms. Furniture is drawn at catalogue size from the
+  fits: the largest bed the room holds with its clearances (queen, double or twin) with nightstands
+  and closet; toilet, vanity and tub or shower on one wall; a single-row kitchen with fridge,
+  sink, dishwasher and range (a second row across a 1.2 m aisle when deep enough); a table for 4 or
+  6 with its chairs; sofa, coffee table, armchair and TV unit; a U-stair with both flights, its
+  landing and the UP/DN arrow, or a straight run; a stacked washer and dryer. Room names with
+  areas sit in each room's top-left corner clear of the fittings (no halos); overall and unit
+  dimensions in mm. The sheet reads as a rotation of the map with the street at the top, the same
+  frame as the site plan, so a lot whose side 1 lies on the right of that view is drawn mirrored.
+  `R1Cmhc.floorPlansSvg` keeps the earlier block diagram for tests.
 - **Site plan tab** (`web/siteplan.js`, `drawSitePlan` in `app.js`): the lot with its street and
   lane, the neighbours' parcels and buildings in halftone, the yard lines of the schedule labelled
   (front 4.9 m, sides 1.2 m, rear 10.7 m, and 0.9 m behind a rear building), the footprints with the
@@ -173,7 +199,10 @@ opens in a working state; type another address to start over.
   private patios and moves the shared space behind them. Every dimension is in halftone (lot,
   yards, buildings, outdoor space, stall), with a north arrow (the sheet is a rotation of the map,
   street at the top) and a 10 m scale bar; a schedule beside the drawing lists site, footprint and
-  coverage, outdoor space, stalls, access, paths and units. The parking assumption (no minimum for
+  coverage, outdoor space, stalls, access, paths and units. Labels keep out of the drawing: the
+  yard lines are tagged in the margins (front and rear at the right end of their lines, side yards
+  at the lane end), the dimension chains sit in one band on each side, and the unit tags, storey
+  count and stair names are the only text inside the lot. The parking assumption (no minimum for
   an R1-1 multiplex, stalls optional) and the untested schedule rules (site coverage, impermeable
   area, outdoor space) are stated in the notes; a courtyard form gets no stall because its rear
   building stands 0.9 m off the lane.
@@ -255,7 +284,7 @@ tiles there; everything else identical). The link is private until it is shared 
 ```
 01 Revit Massing tool/
   web/                                      the browser version (see "Web app" above)
-    index.html, app.js, core.js, site.js, massing.js, cmhc.js, units.js, access.js, rooms.js, plans.js, siteplan.js, selftest.html
+    index.html, app.js, core.js, site.js, massing.js, cmhc.js, units.js, access.js, fits.js, rooms.js, plans.js, siteplan.js, selftest.html
     tools/serve.py, tools/build_artifact.py the local server (+ save endpoint) and the artifact bundle build
     artifact.html, data/, tiles/            generated: the shared copy's page, stored site files, map tiles
   r1_1_envelope.py                          the Rhino original (reference)

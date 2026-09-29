@@ -7,7 +7,7 @@
 var R1SitePlan = (function () {
   "use strict";
   var core = R1Core, site = R1Site, M = R1Massing;
-  var INK = "#1f2933", LIGHT = "#9aa4b1", HALF = "#aab3bd", RED = "#c81e1e", SETBACK = "#b42828", ENV = "#3c8cdc";
+  var INK = "#1f2933", LIGHT = "#9aa4b1", HALF = "#8f99a6", RED = "#c81e1e", SETBACK = "#b42828", ENV = "#3c8cdc";
   var STALL = { w: 2.5, d: 5.5 }, PATH_W = 1.2, FRONT_WALK_W = 1.5, EDGE = 0.6, PATIO_D = 3.0, WALK = 1.0;
   var NOTES = {
     parking: "Parking: a car-share stall is optional. The tool assumes no parking minimum applies to an R1-1 multiplex (verify against the Parking By-law); stalls are 2.5 x 5.5 m, entered from the lane, so a lane must exist and the rear yard must hold a 5.5 m stall.",
@@ -37,7 +37,7 @@ var R1SitePlan = (function () {
     var lot = ev.pts.map(T), LB = bbox(lot), frontGap = det && det.front && det.front.gap_m ? Math.min(det.front.gap_m, 14) : 12, rearGap = det && det.rear && det.rear.gap_m ? Math.min(det.rear.gap_m, 10) : 6;
     var hasLane = !!(det && det.rear && det.rear.gap_m !== null && det.rear.gap_m >= 3 && det.rear.gap_m < 12);
     var access = (o && typeof R1Access !== "undefined") ? R1Access.plan(o) : null;
-    var win = { x0: LB.x0 - 9, x1: LB.x1 + 9, y0: LB.y0 - (frontGap + 2.5), y1: LB.y1 + (rearGap + 2.5) };
+    var win = { x0: LB.x0 - 7, x1: LB.x1 + 11, y0: LB.y0 - (frontGap + 2.5), y1: LB.y1 + (rearGap + 2.5) };
     var pad = 22, W = (win.x1 - win.x0) * k + 2 * pad, H = (win.y1 - win.y0) * k + 2 * pad, fs = Math.max(7.5, k * 0.95), fs2 = Math.max(6.5, k * 0.8), parts = [], notes = [], rows = [];
     function X(x) { return pad + (x - win.x0) * k; } function Y(y) { return pad + (y - win.y0) * k; }
     function P(p) { var q = T(p); return [X(q[0]), Y(q[1])]; }
@@ -185,10 +185,10 @@ var R1SitePlan = (function () {
         if ((cb.x1 - cb.x0) * k > fs2 * 5) parts.push(textF(c[0], c[1], u.kind ? (u.name || "").toUpperCase() : v.beds + " BED", 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="#ffffff" letter-spacing=".5"', fs2 * 1.1));
       }
     });
-    blds.forEach(function (e) { if (o) parts.push(textF(e.box.x0 + 0.35, e.box.y0 + 0.35, e.b.storeys + " ST", 'font-size="' + (fs2 - 1) + '" fill="' + INK + '" fill-opacity=".8"', fs2)); });
+    blds.forEach(function (e) { if (o) parts.push(textF(e.box.x1 - 0.35, e.box.y0 + 0.35, e.b.storeys + " STOREYS", 'text-anchor="end" font-size="' + (fs2 - 1.5) + '" fill="' + INK + '" fill-opacity=".8" letter-spacing=".5"', fs2)); });
     // 7. the exterior stairs and walkways
     acc.forEach(function (a) {
-      if (a.kind === "walkway") { parts.push('<polygon points="' + polyS(a.pts) + '" fill="none" stroke="' + INK + '" stroke-width="0.8" stroke-dasharray="4 3"/>'); if ((a.box.x1 - a.box.x0) * k > fs2 * 8) parts.push(textF((a.box.x0 + a.box.x1) / 2, (a.box.y0 + a.box.y1) / 2, "WALKWAY OVER", 'text-anchor="middle" font-size="' + (fs2 - 1.5) + '" fill="' + INK + '" fill-opacity=".7" letter-spacing=".5"', fs2 * 0.35)); }
+      if (a.kind === "walkway") { parts.push('<polygon points="' + polyS(a.pts) + '" fill="none" stroke="' + INK + '" stroke-width="0.8" stroke-dasharray="4 3"/>'); if ((a.box.x1 - a.box.x0) * k > fs2 * 8) parts.push(textF(a.box.x0 + (a.box.x1 - a.box.x0) * 0.3, (a.box.y0 + a.box.y1) / 2, "WALKWAY OVER", 'text-anchor="middle" font-size="' + (fs2 - 1.5) + '" fill="' + INK + '" fill-opacity=".7" letter-spacing=".5"', fs2 * 0.35)); }
       else {
         parts.push('<polygon points="' + polyS(a.pts) + '" fill="#f1f2ef" stroke="' + INK + '" stroke-width="0.9"/>');
         [a.land0, a.land1].forEach(function (q) { parts.push('<polygon points="' + polyS(q) + '" fill="#e9ebe6" stroke="' + LIGHT + '" stroke-width="0.6"/>'); });
@@ -207,18 +207,18 @@ var R1SitePlan = (function () {
       var a = [X(en.out[0]), Y(en.out[1])], b = [X(en.door[0]), Y(en.door[1])], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1, ux = dx / L, uy = dy / L, s = 4.5;
       parts.push('<path d="M ' + (b[0] - ux * 1).toFixed(1) + " " + (b[1] - uy * 1).toFixed(1) + " L " + (a[0] - uy * s).toFixed(1) + " " + (a[1] + ux * s).toFixed(1) + " L " + (a[0] + uy * s).toFixed(1) + " " + (a[1] - ux * s).toFixed(1) + ' z" fill="' + RED + '"/>');
     });
-    // 9. the yard lines of the schedule, labelled
+    // 9. the yard lines of the schedule: dashed across the lot, named in the margins (front and rear yards tagged at
+    // the right end of their lines, side yards at the lane end), so no label crosses the drawing
+    var tagStyle = 'font-size="' + (fs2 - 1) + '" fill="' + SETBACK + '" letter-spacing=".5"';
     M.setbackSegments(ev).forEach(function (sg) {
-      var a = T(sg.a), b = T(sg.b), mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], along = Math.abs(b[0] - a[0]) > Math.abs(b[1] - a[1]);
+      var a = T(sg.a), b = T(sg.b), along = Math.abs(b[0] - a[0]) > Math.abs(b[1] - a[1]);
       parts.push('<line x1="' + X(a[0]) + '" y1="' + Y(a[1]) + '" x2="' + X(b[0]) + '" y2="' + Y(b[1]) + '" stroke="' + SETBACK + '" stroke-width="0.8" stroke-dasharray="7 4" stroke-opacity=".85"/>');
-      var label = sg.kind + " YARD " + sg.value_m + " m" + (sg.kind === "REAR" && rearB ? ", single bldg" : ""), tx, ty, rot = 0;
-      if (along) { tx = X(mid[0]); ty = Y(mid[1]) + (sg.kind === "FRONT" ? -3 : fs2 + 2); }
-      else { var leftSide = mid[0] < (LB.x0 + LB.x1) / 2; tx = X(mid[0]) + (leftSide ? -3 : fs2 + 2); ty = Y(mid[1]); rot = -90; }
-      parts.push('<text x="' + tx + '" y="' + ty + '" text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="' + SETBACK + '" letter-spacing=".5"' + (rot ? ' transform="rotate(' + rot + " " + tx + " " + ty + ')"' : "") + ">" + esc(label) + "</text>");
+      if (along) { var right = a[0] > b[0] ? a : b; parts.push(text(X(LB.x1) + 4, Y(right[1]) + 3, sg.kind + " YARD" + (sg.kind === "REAR" && rearB ? " (SINGLE BLDG)" : ""), 'text-anchor="start" ' + tagStyle)); }
+      else { var low = a[1] > b[1] ? a : b; parts.push(text(X(low[0]), Y(LB.y1) + fs2 + 3, "SIDE YARD", 'text-anchor="middle" ' + tagStyle)); }
     });
     if (rearB) {   // the courtyard rear yard line at 0.9 m
       var Er = ev.edges[ev.idx.rear], L9 = M.offsetLine(Er, FR.courtyard_rear_yard_m.value), a9 = core.intersect(L9[0], L9[1], ev.edges[ev.idx.side1].a, ev.edges[ev.idx.side1].d), b9 = core.intersect(L9[0], L9[1], ev.edges[ev.idx.side2].a, ev.edges[ev.idx.side2].d);
-      if (a9 && b9) { var A9 = T(a9), B9 = T(b9); parts.push('<line x1="' + X(A9[0]) + '" y1="' + Y(A9[1]) + '" x2="' + X(B9[0]) + '" y2="' + Y(B9[1]) + '" stroke="' + SETBACK + '" stroke-width="0.8" stroke-dasharray="7 4"/>'); parts.push(textF((A9[0] + B9[0]) / 2, (A9[1] + B9[1]) / 2 - 0.15, "REAR YARD " + FR.courtyard_rear_yard_m.value + " m, rear bldg", 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="' + SETBACK + '" letter-spacing=".5"')); }
+      if (a9 && b9) { var A9 = T(a9), B9 = T(b9); parts.push('<line x1="' + X(A9[0]) + '" y1="' + Y(A9[1]) + '" x2="' + X(B9[0]) + '" y2="' + Y(B9[1]) + '" stroke="' + SETBACK + '" stroke-width="0.8" stroke-dasharray="7 4"/>'); parts.push(text(X(LB.x1) + 4, Y((A9[1] + B9[1]) / 2) + 3, "REAR YARD (REAR BLDG)", 'text-anchor="start" ' + tagStyle)); }
     }
     // 10. labels of the open space and the halftone dimensions
     shared.forEach(function (s) {
@@ -241,7 +241,7 @@ var R1SitePlan = (function () {
     else if (ev.env_pts) { var ebx = bbox(ev.env_pts.map(T)); xs.push(ebx.x0, ebx.x1); }
     xs.push(LB.x1);
     for (var xi = 1; xi < xs.length; xi++) if (xs[xi] - xs[xi - 1] > 0.3) dimH(xs[xi - 1], xs[xi], chainY, null, true);
-    dimV(LB.y0, LB.y1, LB.x1 + 2.4, "SITE DEPTH", false);
+    dimV(LB.y0, LB.y1, LB.x1 + 6.2, "SITE DEPTH", false);   // beyond the yard tags
     dimH(LB.x0, LB.x1, LB.y0 - 4.2, "FRONTAGE", true);
     parts.push("</g>");
     // 11. north arrow, scale bar
@@ -270,7 +270,7 @@ var R1SitePlan = (function () {
       '<span class="lg"><i style="background:#dedfd9;border:1px solid #b8bab3"></i>path</span>' + (stalls.length ? '<span class="lg"><i style="background:#e2e3df;border:1px solid ' + INK + '"></i>car-share stall</span>' : "") +
       (acc.length ? '<span class="lg"><i style="background:#f1f2ef;border:1px solid ' + INK + '"></i>exit stair</span><span class="lg"><i style="background:none;border:1px dashed ' + INK + '"></i>walkway over</span>' : "") +
       '<span class="lg"><i style="background:none;border-bottom:2px dashed ' + SETBACK + '"></i>yard line</span><span class="lg"><i style="background:' + RED + '"></i>entry</span>';
-    return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + Math.round(W) + '" height="' + Math.round(H) + '" viewBox="0 0 ' + Math.round(W) + " " + Math.round(H) + '" role="img" aria-label="Site plan">' + parts.join("") + "</svg>",
+    return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + Math.round(W) + '" height="' + Math.round(H) + '" viewBox="0 0 ' + Math.round(W) + " " + Math.round(H) + '" role="img" aria-label="Site plan" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">' + parts.join("") + "</svg>",
       width: Math.round(W), height: Math.round(H), rows: rows, notes: notes, legend: legend, mirror: F.mirror, shared_m2: sharedArea, stalls: stalls.length, patios: patios.length };
   }
   return { sheet: sheet, frame: frame, STALL: STALL, PATIO_D: PATIO_D, NOTES: NOTES };

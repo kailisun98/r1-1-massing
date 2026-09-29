@@ -63,7 +63,7 @@ var R1Cmhc = (function () {
       layout: "A three-storey front building (two one-bedroom flats under two three-bedroom units) and a two-storey rear building of two two-bedroom units, across a courtyard." }
   ];
   function design(key) { return DESIGNS.filter(function (d) { return d.key === key; })[0] || null; }
-  function url(d) { return BASE + d.slug; }
+  function url(d) { return d && d.slug ? BASE + d.slug : null; }
 
   // ------------------------------------------------------------------ blocks and checks
   // A block is one building of an option: the design (or one part of the sixplex) with the size it is placed at.
@@ -226,13 +226,21 @@ var R1Cmhc = (function () {
     o.blocks.forEach(function (b) { b.unit_list.forEach(function (u) { idx[u.key + "@" + b.key] = n++; }); });
     return idx;
   }
-  function unitColor(o, unitKey, blockKey) { var i = unitIndex(o)[unitKey + "@" + blockKey]; return UNIT_COLORS[(i === undefined ? 0 : i) % UNIT_COLORS.length]; }
+  var NON_DWELLING_COLOR = "#8d949c";
+  function blockOf(o, blockKey) { return o.blocks.filter(function (b) { return b.key === blockKey; })[0] || null; }
+  function unitColor(o, unitKey, blockKey) {
+    var b = blockOf(o, blockKey), u = b ? unitOf(b, unitKey) : null;
+    if (u && u.kind) return NON_DWELLING_COLOR;   // a common room, store or day care is not a dwelling
+    var i = unitIndex(o)[unitKey + "@" + blockKey]; return UNIT_COLORS[(i === undefined ? 0 : i) % UNIT_COLORS.length];
+  }
   function unitOf(b, key) { return b.unit_list.filter(function (u) { return u.key === key; })[0] || null; }
-  // cells of one floor in the unit square: a across from side 1 (0..1), b deep from the front (0..1)
-  function unitCells(units, split) {
+  // cells of one floor in the unit square: a across from side 1 (0..1), b deep from the front (0..1);
+  // "grid" lays the units out row by row, `cols` across (2 unless the floor says otherwise), front row first
+  function unitCells(units, split, cols) {
     var n = units.length, cells = [];
-    if (split === "grid" && n === 4) {
-      [[0, 0.5, 0, 0.5], [0.5, 1, 0, 0.5], [0, 0.5, 0.5, 1], [0.5, 1, 0.5, 1]].forEach(function (c, i) { cells.push({ key: units[i], a0: c[0], a1: c[1], b0: c[2], b1: c[3] }); });
+    if (split === "grid") {
+      var nc = Math.max(1, cols || 2), nr = Math.ceil(n / nc);
+      units.forEach(function (u, i) { var col = i % nc, row = Math.floor(i / nc); cells.push({ key: u, a0: col / nc, a1: (col + 1) / nc, b0: row / nr, b1: (row + 1) / nr }); });
       return cells;
     }
     units.forEach(function (u, i) {
@@ -254,9 +262,9 @@ var R1Cmhc = (function () {
       if (!bld) return;
       var nf = b.floors.length, fh = b.height_m / nf;
       b.floors.forEach(function (f, fi) {
-        unitCells(f.units, f.split).forEach(function (c) {
+        unitCells(f.units, f.split, f.cols).forEach(function (c) {
           var pts = [bilinear(bld.pts, c.a0, c.b0), bilinear(bld.pts, c.a0, c.b1), bilinear(bld.pts, c.a1, c.b1), bilinear(bld.pts, c.a1, c.b0)], u = unitOf(b, c.key);
-          out.push({ block: b.key, block_name: b.name, unit: c.key, beds: u ? u.beds : null, baths: u ? u.baths : null, floor: f.name, floor_index: fi, pts: pts, z0: fi * fh, z1: (fi + 1) * fh,
+          out.push({ block: b.key, block_name: b.name, unit: c.key, kind: u && u.kind ? u.kind : null, beds: u ? u.beds : null, baths: u ? u.baths : null, floor: f.name, floor_index: fi, pts: pts, z0: fi * fh, z1: (fi + 1) * fh,
             color: unitColor(o, c.key, b.key), area_m2: b.footprint_m2 * (c.a1 - c.a0) * (c.b1 - c.b0), centroid: site.centroid(pts) });
         });
       });
@@ -265,7 +273,7 @@ var R1Cmhc = (function () {
   }
   function unitAreas(o) {   // approximate floor area per unit: its share of the footprint on every floor it occupies
     var areas = {};
-    o.blocks.forEach(function (b) { b.floors.forEach(function (f) { unitCells(f.units, f.split).forEach(function (c) { var k = c.key + "@" + b.key; areas[k] = (areas[k] || 0) + b.footprint_m2 * (c.a1 - c.a0) * (c.b1 - c.b0); }); }); });
+    o.blocks.forEach(function (b) { b.floors.forEach(function (f) { unitCells(f.units, f.split, f.cols).forEach(function (c) { var k = c.key + "@" + b.key; areas[k] = (areas[k] || 0) + b.footprint_m2 * (c.a1 - c.a0) * (c.b1 - c.b0); }); }); });
     return areas;
   }
 
@@ -277,9 +285,9 @@ var R1Cmhc = (function () {
     });
   }
   function unitMix(o) {
-    var beds = {};
-    o.blocks.forEach(function (b) { b.unit_list.forEach(function (u) { var k = u.beds + "-bed"; beds[k] = (beds[k] || 0) + 1; }); });
-    return Object.keys(beds).sort().map(function (k) { return beds[k] + " x " + k; }).join(", ");
+    var beds = {}, extra = [];
+    o.blocks.forEach(function (b) { b.unit_list.forEach(function (u) { if (u.kind) { extra.push(u.name.toLowerCase()); return; } var k = u.beds + "-bed"; beds[k] = (beds[k] || 0) + 1; }); });
+    return Object.keys(beds).sort().map(function (k) { return beds[k] + " x " + k; }).join(", ") + (extra.length ? " + " + extra.join(", ") : "");
   }
   function fitLines(res, ev) {
     var L = ["CMHC CATALOGUE FIT (" + SOURCE.name + ", accessed " + SOURCE.accessed + ")"];
@@ -297,8 +305,9 @@ var R1Cmhc = (function () {
     o.blocks.forEach(function (b) {
       b.unit_list.forEach(function (u) {
         var floors = b.floors.filter(function (f) { return f.units.indexOf(u.key) >= 0; }).map(function (f) { return f.name; }).join(" + ");
-        rows.push({ color: unitColor(o, u.key, b.key), cells: [(o.blocks.length > 1 ? b.name + ": " : "") + u.key, u.beds + " bed" + (u.den ? " + den" : ""), u.baths + " bath", floors,
-          "~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2", u.adaptable_alt ? "adaptable version " + u.key + "a" : ""] });
+        rows.push({ color: unitColor(o, u.key, b.key), kind: u.kind || null, cells: [(o.blocks.length > 1 ? b.name + ": " : "") + u.key + (u.kind ? " " + u.name : ""),
+          u.kind ? "not a dwelling" : u.beds + " bed" + (u.den ? " + den" : ""), u.kind ? "" : u.baths + " bath", floors,
+          "~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2", u.adaptable_alt ? "adaptable version " + u.key + "a" : (u.upgraded ? "2-bed to meet 2.2.8" : "")] });
       });
     });
     return rows;
@@ -312,7 +321,7 @@ var R1Cmhc = (function () {
       var w = Math.max(b.width_m * k, 60), y0 = pad + 14;
       parts.push('<text x="' + x + '" y="' + (y0 - 4) + '" class="sectitle" font-size="10">' + esc(b.name) + " (" + fmt(b.width_m, 1) + " m wide)</text>");
       b.floors.slice().reverse().forEach(function (f, i) {
-        var y = y0 + i * fh, cells = unitCells(f.units, f.split), across = f.split === "grid" ? 2 : (f.split === "deep" ? 1 : cells.length);
+        var y = y0 + i * fh, cells = unitCells(f.units, f.split, f.cols), across = f.split === "grid" ? Math.max(1, f.cols || 2) : (f.split === "deep" ? 1 : cells.length);
         if (f.split === "deep") {   // units behind one another: show them as stripes of the same cell
           var uw = w / cells.length;
           cells.forEach(function (c, j) { parts.push('<rect x="' + (x + j * uw) + '" y="' + y + '" width="' + uw + '" height="' + fh + '" fill="' + unitColor(o, c.key, b.key) + '" stroke="#ffffff" stroke-width="1"/>'); if (uw > 22) parts.push('<text x="' + (x + j * uw + uw / 2) + '" y="' + (y + fh / 2 + 3.5) + '" text-anchor="middle" font-size="9" fill="#ffffff" font-weight="600">' + esc(c.key) + "</text>"); });
@@ -348,6 +357,9 @@ var R1Cmhc = (function () {
       return [[0, 0.4, [["Primary bedroom", 0.62], [baths >= 2 ? "Ensuite" : "Bath", 0.38]]], [0.4, 0.62, mid], [0.62, 1, back]];
     }
     if (role === "attic") return [[0, 0.48, [["Bedroom 3", 0.6], ["Bath", 0.4]]], [0.48, 0.68, [["Stair", 0.35], ["Hall", 0.65]]], [0.68, 1, [[den ? "Den" : "Study", 0.5], ["Terrace", 0.5]]]];
+    if (role === "common") return [[0, 0.3, [["Entry", 0.3], ["Lobby, mail", 0.7]]], [0.3, 1, [["Common room", 0.68], ["Kitchenette", 0.17], ["WC", 0.15]]]];
+    if (role === "shop") return [[0, 0.64, [["Shop floor", 1]]], [0.64, 1, [["Back of house", 0.55], ["WC", 0.15], ["Storage", 0.3]]]];
+    if (role === "daycare") return [[0, 0.55, [["Entry", 0.24], ["Play room", 0.76]]], [0.55, 1, [["Nap room", 0.4], ["Kitchen", 0.25], ["WC", 0.15], ["Office", 0.2]]]];
     return [[0, 1, [["Unit", 1]]]];
   }
   // rooms of one unit level in unit metres: x across from the unit's left, y from the street side back
@@ -366,8 +378,8 @@ var R1Cmhc = (function () {
       var levelsOf = {};
       b.floors.forEach(function (f, fi) { f.units.forEach(function (k) { (levelsOf[k] || (levelsOf[k] = [])).push(fi); }); });
       b.floors.forEach(function (f, fi) {
-        unitCells(f.units, f.split).forEach(function (c) {
-          var u = unitOf(b, c.key), lv = levelsOf[c.key], li = lv.indexOf(fi), role = levelRoles(lv.length, b.design)[li] || "flat";
+        unitCells(f.units, f.split, f.cols).forEach(function (c) {
+          var u = unitOf(b, c.key), lv = levelsOf[c.key], li = lv.indexOf(fi), role = u && u.kind ? u.kind : (levelRoles(lv.length, b.design)[li] || "flat");
           var cw = (c.a1 - c.a0) * b.width_m, cd = (c.b1 - c.b0) * b.depth_m;
           out.push({ block: b.key, unit: c.key, floor: f.name, floor_index: fi, level_index: li, role: role, cell: c, width_m: cw, depth_m: cd, rooms: rooms(role, u, cw, cd) });
         });
@@ -376,52 +388,62 @@ var R1Cmhc = (function () {
     return out;
   }
 
-  /* floorPlansSvg: schematic plans of every floor of every block, the street (or courtyard) at the bottom, each
-     unit in its colour with its rooms drawn and named, entries marked on the level a unit is entered on. */
-  function floorPlansSvg(o) {
-    var k = 13, pad = 18, gapX = 30, parts = [], y = pad, width = 0, areas = unitAreas(o), byCell = {};
+  /* floorPlansSvg(option, opts): schematic plans, the street (or courtyard) side at the bottom, each unit in its
+     colour with its rooms drawn and named, entries marked on the level a unit is entered on. opts: k px per metre
+     (default 13), floors: names to draw (default all), block: one block key (default all), oneBlock: layout the
+     floors of each block in a row (default) or wrap. Returns svg, legend html, width, height. */
+  function floorPlansSvg(o, opts) {
+    opts = opts || {};
+    var k = opts.k || 13, pad = 18, gapX = Math.round(k * 2.4), parts = [], y = pad, width = 0, areas = unitAreas(o), byCell = {}, fs = Math.max(6.5, k * 0.58), fs2 = Math.max(5.5, k * 0.5);
     unitRooms(o).forEach(function (r) { byCell[r.block + "|" + r.floor_index + "|" + r.unit] = r; });
     function darker(hex) { var n = parseInt(hex.slice(1), 16), r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255; return "rgb(" + Math.round(r * 0.6) + "," + Math.round(g * 0.6) + "," + Math.round(b * 0.6) + ")"; }
     o.blocks.forEach(function (b) {
-      var W = b.width_m * k, D = b.depth_m * k, x = pad + 14, y0 = y + 18;
-      parts.push('<text x="' + x + '" y="' + (y + 4) + '" font-size="11" font-weight="600" fill="#2c3e50">' + esc(b.name) + ": " + fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m, " + b.storeys + " storeys, " + b.units + " unit" + (b.units === 1 ? "" : "s") + "</text>");
-      b.floors.forEach(function (f, fi) {
-        var x0 = x + fi * (W + gapX);
-        unitCells(f.units, f.split).forEach(function (c) {
-          var u = unitOf(b, c.key), cx = x0 + c.a0 * W, cw = (c.a1 - c.a0) * W, ch = (c.b1 - c.b0) * D, cy = y0 + D - c.b1 * D, col = unitColor(o, c.key, b.key), ur = byCell[b.key + "|" + fi + "|" + c.key];
-          parts.push('<rect x="' + cx + '" y="' + cy + '" width="' + cw + '" height="' + ch + '" fill="' + col + '" fill-opacity="0.3"/>');
+      if (opts.block && b.key !== opts.block) return;
+      var floors = b.floors.map(function (f, i) { return { f: f, i: i }; }).filter(function (x) { return !opts.floors || opts.floors.indexOf(x.f.name) >= 0; });
+      if (!floors.length) return;
+      var W = b.width_m * k, D = b.depth_m * k, x = pad + 16, y0 = y + 20;
+      parts.push('<text x="' + x + '" y="' + (y + 4) + '" font-size="' + (fs + 2) + '" font-weight="600" fill="#2c3e50">' + esc(b.name) + ": " + fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m, " + b.storeys + " storeys, " + b.units + " unit" + (b.units === 1 ? "" : "s") + "</text>");
+      floors.forEach(function (fx, col) {
+        var f = fx.f, fi = fx.i, x0 = x + col * (W + gapX);
+        unitCells(f.units, f.split, f.cols).forEach(function (c) {
+          var u = unitOf(b, c.key), cx = x0 + c.a0 * W, cw = (c.a1 - c.a0) * W, ch = (c.b1 - c.b0) * D, cy = y0 + D - c.b1 * D, colr = unitColor(o, c.key, b.key), ur = byCell[b.key + "|" + fi + "|" + c.key];
+          parts.push('<rect x="' + cx + '" y="' + cy + '" width="' + cw + '" height="' + ch + '" fill="' + colr + '" fill-opacity="0.3"/>');
           if (ur) ur.rooms.forEach(function (r) {
             var rx = cx + r.x * k, rw = r.w * k, rh = r.h * k, ry = cy + ch - (r.y + r.h) * k, stair = r.name === "Stair", outdoor = r.name === "Terrace" || r.name === "Patio";
-            parts.push('<rect x="' + rx + '" y="' + ry + '" width="' + rw + '" height="' + rh + '" fill="' + (outdoor ? "#ffffff" : "#ffffff") + '" fill-opacity="' + (outdoor ? 0.25 : 0.55) + '" stroke="' + darker(col) + '" stroke-width="0.8"' + (outdoor ? ' stroke-dasharray="3 2"' : "") + "/>");
-            if (stair) for (var s = 1; s < 6; s++) parts.push('<line x1="' + rx + '" y1="' + (ry + rh * s / 6) + '" x2="' + (rx + rw) + '" y2="' + (ry + rh * s / 6) + '" stroke="' + darker(col) + '" stroke-width="0.6"/>');
-            if (rw >= 26 && rh >= 14) {
-              var short = rw < 46 ? r.name.replace("Primary bedroom", "Primary bed").replace("Mechanical", "Mech.").replace("Flex room", "Flex") : r.name;
-              parts.push('<text x="' + (rx + rw / 2) + '" y="' + (ry + rh / 2 + (rh >= 30 ? -1 : 3)) + '" text-anchor="middle" font-size="7.5" fill="#2c3e50">' + esc(short) + "</text>");
-              if (rh >= 30 && rw >= 34) parts.push('<text x="' + (rx + rw / 2) + '" y="' + (ry + rh / 2 + 9) + '" text-anchor="middle" font-size="6.5" fill="#6b7280">' + Math.round(r.area_m2) + " m2</text>");
+            parts.push('<rect x="' + rx + '" y="' + ry + '" width="' + rw + '" height="' + rh + '" fill="#ffffff" fill-opacity="' + (outdoor ? 0.25 : 0.55) + '" stroke="' + darker(colr) + '" stroke-width="0.8"' + (outdoor ? ' stroke-dasharray="3 2"' : "") + "/>");
+            if (stair) for (var s = 1; s < 6; s++) parts.push('<line x1="' + rx + '" y1="' + (ry + rh * s / 6) + '" x2="' + (rx + rw) + '" y2="' + (ry + rh * s / 6) + '" stroke="' + darker(colr) + '" stroke-width="0.6"/>');
+            if (rw >= fs * 3.4 && rh >= fs * 1.8) {
+              var short = rw < fs * 6 ? r.name.replace("Primary bedroom", "Primary bed").replace("Mechanical", "Mech.").replace("Flex room", "Flex").replace("Back of house", "Back") : r.name;
+              parts.push('<text x="' + (rx + rw / 2) + '" y="' + (ry + rh / 2 + (rh >= fs * 4 ? -1 : fs * 0.4)) + '" text-anchor="middle" font-size="' + fs + '" fill="#2c3e50">' + esc(short) + "</text>");
+              if (rh >= fs * 4 && rw >= fs * 4.5) parts.push('<text x="' + (rx + rw / 2) + '" y="' + (ry + rh / 2 + fs * 1.2) + '" text-anchor="middle" font-size="' + fs2 + '" fill="#6b7280">' + Math.round(r.area_m2) + " m2</text>");
             }
           });
-          parts.push('<rect x="' + cx + '" y="' + cy + '" width="' + cw + '" height="' + ch + '" fill="none" stroke="' + darker(col) + '" stroke-width="1.6"/>');
-          parts.push('<rect x="' + (cx + 2) + '" y="' + (cy + 2) + '" width="' + Math.min(cw - 4, 34) + '" height="11" rx="2" fill="' + col + '"/>');
-          parts.push('<text x="' + (cx + 4) + '" y="' + (cy + 10.5) + '" font-size="8" font-weight="700" fill="#ffffff">' + esc(c.key) + "</text>");
-          if (u && cw > 60) parts.push('<text x="' + (cx + 40) + '" y="' + (cy + 10.5) + '" font-size="7" fill="#2c3e50">' + u.beds + " bed / " + u.baths + " bath</text>");
-          // the entry: on the unit's first level, at the street face when the unit touches it, otherwise at its side
+          parts.push('<rect x="' + cx + '" y="' + cy + '" width="' + cw + '" height="' + ch + '" fill="none" stroke="' + darker(colr) + '" stroke-width="1.6"/>');
+          var tagW = Math.min(cw - 4, fs * 4.4);
+          parts.push('<rect x="' + (cx + 2) + '" y="' + (cy + 2) + '" width="' + tagW + '" height="' + (fs * 1.5) + '" rx="2" fill="' + colr + '"/>');
+          parts.push('<text x="' + (cx + 4) + '" y="' + (cy + 2 + fs * 1.1) + '" font-size="' + fs + '" font-weight="700" fill="#ffffff">' + esc(c.key) + "</text>");
+          if (u && cw > tagW + fs * 8) parts.push('<text x="' + (cx + tagW + 6) + '" y="' + (cy + 2 + fs * 1.1) + '" font-size="' + fs2 + '" fill="#2c3e50">' + (u.kind ? esc(u.name) : u.beds + " bed / " + u.baths + " bath") + "</text>");
           if (ur && ur.level_index === 0) {
             if (c.b0 === 0) parts.push('<path d="M ' + (cx + cw * 0.12) + " " + (y0 + D + 1) + ' l 4 -7 l 4 7 z" fill="#c81e1e"/>');
             else parts.push('<path d="M ' + (cx - 1) + " " + (cy + ch * 0.8) + ' l -7 -4 l 0 8 z" fill="#c81e1e"/>');
           }
         });
         parts.push('<rect x="' + x0 + '" y="' + y0 + '" width="' + W + '" height="' + D + '" fill="none" stroke="#2c3e50" stroke-width="1.8"/>');
-        parts.push('<text x="' + (x0 + W / 2) + '" y="' + (y0 + D + 22) + '" text-anchor="middle" font-size="10" font-weight="600" fill="#2c3e50">' + esc(f.name) + " floor</text>");
-        parts.push('<text x="' + (x0 + W / 2) + '" y="' + (y0 + D + 34) + '" text-anchor="middle" font-size="8" fill="#6b7280" letter-spacing="1">' + (b.key === "rear" ? "COURTYARD SIDE" : "STREET SIDE") + "</text>");
+        parts.push('<text x="' + (x0 + W / 2) + '" y="' + (y0 + D + fs * 2.2) + '" text-anchor="middle" font-size="' + (fs + 1.5) + '" font-weight="600" fill="#2c3e50">' + esc(f.name) + " floor</text>");
+        parts.push('<text x="' + (x0 + W / 2) + '" y="' + (y0 + D + fs * 3.6) + '" text-anchor="middle" font-size="' + fs2 + '" fill="#6b7280" letter-spacing="1">' + (b.key === "rear" ? "COURTYARD SIDE" : "STREET SIDE") + "</text>");
         width = Math.max(width, x0 + W + pad);
       });
-      parts.push('<text x="' + (x - 5) + '" y="' + (y0 + D / 2) + '" text-anchor="middle" font-size="8" fill="#6b7280" transform="rotate(-90 ' + (x - 5) + " " + (y0 + D / 2) + ')">' + fmt(b.depth_m, 1) + " m</text>");
-      parts.push('<text x="' + (x + W / 2) + '" y="' + (y0 - 5) + '" text-anchor="middle" font-size="8" fill="#6b7280">' + fmt(b.width_m, 1) + " m</text>");
-      y = y0 + D + 54;
+      parts.push('<text x="' + (x - 6) + '" y="' + (y0 + D / 2) + '" text-anchor="middle" font-size="' + fs2 + '" fill="#6b7280" transform="rotate(-90 ' + (x - 6) + " " + (y0 + D / 2) + ')">' + fmt(b.depth_m, 1) + " m</text>");
+      parts.push('<text x="' + (x + W / 2) + '" y="' + (y0 - 5) + '" text-anchor="middle" font-size="' + fs2 + '" fill="#6b7280">' + fmt(b.width_m, 1) + " m</text>");
+      y = y0 + D + fs * 4.6 + 12;
     });
+    // scale bar: 5 m
+    parts.push('<line x1="' + (pad + 16) + '" y1="' + (y - 4) + '" x2="' + (pad + 16 + 5 * k) + '" y2="' + (y - 4) + '" stroke="#2c3e50" stroke-width="2"/>');
+    parts.push('<text x="' + (pad + 16 + 5 * k + 4) + '" y="' + (y - 1) + '" font-size="' + fs2 + '" fill="#6b7280">5 m</text>');
+    y += 10;
     var totalW = Math.max(width, 260), totalH = y;
-    var legend = o.blocks.map(function (b) { return b.unit_list.map(function (u) { return '<span style="display:inline-block;width:10px;height:10px;background:' + unitColor(o, u.key, b.key) + ';margin:0 4px 0 8px;vertical-align:middle"></span>' + esc(u.key) + " " + u.beds + " bed, ~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2"; }).join(""); }).join("") +
-      '<span style="margin-left:8px">&#9650; entry</span>';
+    var legend = o.blocks.map(function (b) { return b.unit_list.map(function (u) { return '<span class="lg"><i style="background:' + unitColor(o, u.key, b.key) + '"></i>' + esc(u.key) + " " + (u.kind ? esc(u.name) : u.beds + " bed") + ", ~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2</span>"; }).join(""); }).join("") +
+      '<span class="lg"><i style="background:#c81e1e"></i>entry</span>';
     return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + " " + totalH + '" role="img" aria-label="Schematic floor plans">' + parts.join("") + "</svg>", legend: legend, width: totalW, height: totalH };
   }
 

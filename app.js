@@ -26,7 +26,7 @@ var App = (function () {
 
   function resetState() {
     S = { res: null, zone: null, choices: [], parcel: null, square: null, det: null, click: null, ev: null, base: null, placed: false,
-      form: null, formBases: null, scheme: null, existingIds: [], cutSide: M.CUT_DEFAULT_SIDE_M, cmhc: null, cmhcPick: null };
+      form: null, formBases: null, scheme: null, existingIds: [], cutSide: M.CUT_DEFAULT_SIDE_M, cmhc: null, cmhcPick: null, unitsOption: null };
   }
 
   // ------------------------------------------------------------------ status / report
@@ -77,9 +77,10 @@ var App = (function () {
     var haveSite = !!S.parcel, haveModel = !!S.square, haveEnv = !!(S.ev && S.ev.status === "ok" && S.placed);
     ui.edgeSelect.disabled = !haveSite; ui.btnPick.disabled = !haveSite;
     ["single", "courtyard", "side_by_side"].forEach(function (k) { ui.schemeBtns[k].disabled = !haveEnv; });
-    ui.btnFormApply.disabled = !haveEnv; ui.btnFormClear.disabled = !haveEnv;
-    ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc");
-    ui.tab3d.disabled = !haveModel; ui.tabSection.disabled = !haveSite;
+    var bylawUp = !!(S.form && S.form.status === "ok" && S.form.scheme !== "cmhc");
+    ui.btnFormClear.disabled = !bylawUp; ui.unitParams.disabled = !bylawUp; ui.btnFormPlans.disabled = !(bylawUp && S.unitsOption);
+    ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc"); ui.btnCmhcPlans.disabled = !S.cmhcPick;
+    ui.tab3d.disabled = !haveModel; ui.tabSection.disabled = !haveSite; ui.tabPlans.disabled = !S.unitsOption;
     ui.stepBadges.forEach(function (b, i) {
       var done = [haveModel, !!S.ev, haveEnv, !!(S.form && S.form.status === "ok")][i];
       b.classList.toggle("done", !!done);
@@ -224,9 +225,9 @@ var App = (function () {
     clearLayers(["forms"]);
     if (!(S.form && S.form.status === "ok")) { if (S.envelopeLayer && !map.hasLayer(S.envelopeLayer)) S.envelopeLayer.addTo(layers.envelope); return; }
     var ctx = dimContext(), off = M.dimOffsetM(PLAN_SCALE), col = S.form.scheme === "cmhc" ? COLORS.cmhc : COLORS.form;
-    S.form.buildings.forEach(function (b) { poly(b.pts, { color: col, weight: 2, fillColor: col, fillOpacity: S.form.scheme === "cmhc" ? 0.15 : 0.55, interactive: false }, "forms"); });
-    if (S.form.scheme === "cmhc" && S.cmhcPick) {   // ground-floor units in their colours, labelled
-      R1Cmhc.unitVolumes(S.cmhcPick, S.form).filter(function (v) { return v.floor_index === 0; }).forEach(function (v) {
+    S.form.buildings.forEach(function (b) { poly(b.pts, { color: col, weight: 2, fillColor: col, fillOpacity: S.unitsOption ? 0.15 : 0.55, interactive: false }, "forms"); });
+    if (S.unitsOption) {   // ground-floor units in their colours, labelled
+      R1Cmhc.unitVolumes(S.unitsOption, S.form).filter(function (v) { return v.floor_index === 0; }).forEach(function (v) {
         poly(v.pts, { color: "#ffffff", weight: 1, fillColor: v.color, fillOpacity: 0.7, interactive: false }, "forms");
         label(v.centroid, v.unit, 0, "unitlbl", "forms");
       });
@@ -382,8 +383,8 @@ var App = (function () {
     });
     var formUp = S.form && S.form.status === "ok";
     if (S.ev && S.ev.status === "ok" && S.placed && !formUp) G.add(extrude(S.ev.env_pts, envelopeBaseZ(), S.ev.height, 0x3c8cdc, 0.4));
-    if (formUp && S.form.scheme === "cmhc" && S.cmhcPick) {   // catalogue massing: one coloured box per unit per floor
-      R1Cmhc.unitVolumes(S.cmhcPick, S.form).forEach(function (v) { G.add(extrude(v.pts, S.formBases[v.block] + v.z0, v.z1 - v.z0, v.color, 0.92)); });
+    if (formUp && S.unitsOption) {   // one coloured box per unit per floor
+      R1Cmhc.unitVolumes(S.unitsOption, S.form).forEach(function (v) { G.add(extrude(v.pts, S.formBases[v.block] + v.z0, v.z1 - v.z0, v.color, 0.92)); });
     } else if (formUp) S.form.buildings.forEach(function (b) { G.add(extrude(b.pts, S.formBases[b.key], b.height_m, 0xd99a2b, 0.65)); });
     // the camera is set once per site; redrawing for a form or a catalogue option keeps the view where the user left it
     var c = S.parcel ? S.parcel.centroid : sq.c, cz = M.groundZ(res, c[0], c[1]), siteKey = (S.parcel ? S.parcel.site_id + "|" + S.parcel.civic : "-") + "|" + sq.half;
@@ -423,15 +424,59 @@ var App = (function () {
 
   // ------------------------------------------------------------------ tabs
   function showView(name) {
-    ["map", "3d", "section"].forEach(function (k) {
+    ["map", "3d", "section", "plans"].forEach(function (k) {
       var pane = ui.panes[k], on = k === name;
       pane.hidden = !on; ui.tabs[k].classList.toggle("on", on); ui.tabs[k].setAttribute("aria-selected", on ? "true" : "false");
     });
     if (name === "map") setTimeout(function () { map.invalidateSize(); if (S.parcel && map.getZoom() < 14) zoomToSite(); }, 30);
     if (name === "3d" && S.square) { if (threeDirty) build3D(); else three.resize(); }
     if (name === "section" && sectionDirty) drawSection();
+    if (name === "plans" && plansDirty) drawPlans();
   }
-  function markDirty() { threeDirty = true; sectionDirty = true; if (!ui.panes.section.hidden) drawSection(); if (!ui.panes["3d"].hidden && S.square) build3D(); }
+  function markDirty() {
+    threeDirty = true; sectionDirty = true; plansDirty = true;
+    if (!ui.panes.section.hidden) drawSection(); if (!ui.panes["3d"].hidden && S.square) build3D(); if (!ui.panes.plans.hidden) drawPlans();
+  }
+
+  // ------------------------------------------------------------------ the floor-plan sheet
+  var plansDirty = true, plansFloor = null, plansScale = 14;
+  function drawPlans() {
+    var host = ui.plansHost, o = S.unitsOption; host.innerHTML = "";
+    if (!o || !S.form || S.form.status !== "ok") { host.appendChild(el("p", "empty", "Draw a massing option in step 4, then open its floor plans.")); plansDirty = false; return; }
+    var floorNames = [];
+    o.blocks.forEach(function (b) { b.floors.forEach(function (f) { if (floorNames.indexOf(f.name) < 0) floorNames.push(f.name); }); });
+    if (plansFloor && floorNames.indexOf(plansFloor) < 0) plansFloor = null;
+    var head = el("div", "sheet-head");
+    head.appendChild(el("h2", null, (o.source === "cmhc" ? "CMHC " : "") + o.name + ": schematic floor plans"));
+    head.appendChild(el("p", null, (S.address ? S.address + " · " : "") + o.units + " units (" + R1Cmhc.unitMix(o) + "). " +
+      (o.source === "cmhc" ? "Unit extents follow the catalogue's floor layout; the rooms are a schematic programme sized to each unit." : "Units and rooms are a schematic programme fitted to the by-law form.") + " Street side at the bottom of each plan; a red triangle marks an entry."));
+    host.appendChild(head);
+    var tools = el("div", "sheet-tools"), g1 = el("div", "grp"), g2 = el("div", "grp");
+    g1.appendChild(el("span", null, "Floor"));
+    [null].concat(floorNames).forEach(function (fn) { var b = el("button", fn === plansFloor ? "on" : null, fn || "All"); b.addEventListener("click", function () { plansFloor = fn; drawPlans(); }); g1.appendChild(b); });
+    g2.appendChild(el("span", null, "Scale"));
+    [[10, "Small"], [14, "Medium"], [20, "Large"]].forEach(function (s) { var b = el("button", s[0] === plansScale ? "on" : null, s[1]); b.addEventListener("click", function () { plansScale = s[0]; drawPlans(); }); g2.appendChild(b); });
+    tools.appendChild(g1); tools.appendChild(g2); host.appendChild(tools);
+    var plans = R1Cmhc.floorPlansSvg(o, { k: plansScale, floors: plansFloor ? [plansFloor] : null });
+    var body = el("div", "sheet-body"); body.innerHTML = plans.svg; host.appendChild(body);
+    var lg = el("div", "sheet-legend"); lg.innerHTML = plans.legend; host.appendChild(lg);
+    var notes = el("div", "sheet-notes");
+    if (o.source === "cmhc") {
+      var links = o.blocks.map(function (b) { return R1Cmhc.url(b.design) ? '<a href="' + R1Cmhc.url(b.design) + '" target="_blank" rel="noopener">' + esc(b.design.name) + "</a>" : null; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
+      notes.innerHTML = "<p>Rooms: entry and living toward the street, kitchen to the rear, bedrooms upstairs; areas are each unit's share of the footprint. CMHC's own room plans: " + links.join(", ") + ". " + esc(R1Cmhc.SOURCE.note) + "</p>";
+    } else {
+      notes.innerHTML = o.blocks.map(function (b) { return "<p><b>" + esc(b.name) + ":</b> " + esc(b.design.layout) + "</p>"; }).join("") +
+        o.checks.map(function (c) { return "<p>" + (c.ok ? "OK: " : "<b>Check:</b> ") + esc(c.name + ": " + c.detail) + " [" + esc(c.clause) + "]</p>"; }).join("") +
+        o.notes.map(function (n) { return "<p>" + esc(n) + "</p>"; }).join("");
+    }
+    host.appendChild(notes);
+    plansDirty = false;
+  }
+  function showFloorPlans() {
+    if (!(S.unitsOption && S.form && S.form.status === "ok")) { status("Draw a massing option first (step 4).", "error"); return; }
+    plansDirty = true; showView("plans");
+    status("Floor plans of " + S.unitsOption.name + " in the Floor plans tab; pick a floor or a scale above the sheet.", "ok");
+  }
 
   // ------------------------------------------------------------------ data source: live portal, opened site file, or preloaded site
   // The stored tiles cover centre +/- tileHalfM of each preloaded site: the tile layer only asks for tiles in that
@@ -562,7 +607,7 @@ var App = (function () {
     var i = parseInt(ui.parcelList.value, 10);
     if (!S.res || isNaN(i)) { status("Fetch the site data and select the parcel first.", "error"); return; }
     S.parcel = S.choices[i].parcel; S.square = M.siteSquare(S.parcel, S.cutSide);
-    S.ev = null; S.base = null; S.placed = false; S.form = null; S.formBases = null; S.click = null; S.envelopeLayer = null;
+    S.ev = null; S.base = null; S.placed = false; S.form = null; S.formBases = null; S.click = null; S.envelopeLayer = null; S.unitsOption = null; ui.unitsPanel.innerHTML = "";
     clearLayers(["envelope", "forms", "dims", "section"]);
     drawContext();
     report(M.siteLines(S.parcel)); report(M.cutLines(S.square).concat([""]));
@@ -600,7 +645,7 @@ var App = (function () {
     if (!click) { status("Choose the street edge (or pick a point on the map) first.", "error"); return; }
     var ev = core.evaluate(S.parcel.ring, click);
     var base = ev.status === "ok" ? M.envelopeBase(S.res, ev.env_pts) : null;
-    S.ev = ev; S.base = base; S.form = null; S.formBases = null; setScheme(null); clearLayers(["forms"]);
+    S.ev = ev; S.base = base; S.form = null; S.formBases = null; S.unitsOption = null; ui.unitsPanel.innerHTML = ""; setScheme(null); clearLayers(["forms"]);
     fillRules(); fillResults(); fillForm();
     report(core.reportLines(ev, "mm").concat([""]).concat(M.groundLines(base)).concat([""]));
     if (ev.status !== "ok") { S.placed = false; markDirty(); setReady(); status("No envelope: " + (ev.controlling || ev.status) + ". See the report and the by-law table.", "error"); return; }
@@ -614,60 +659,75 @@ var App = (function () {
   function onHideToggle() { if (!S.placed) return; setExistingVisible(!ui.chkHide.checked); markDirty(); status("Existing building on the site " + (ui.chkHide.checked ? "hidden." : "shown again."), "ok"); }
 
   // ------------------------------------------------------------------ step 5: forms
-  function applyForm(key) {
-    if (!(S.ev && S.ev.status === "ok" && S.placed)) { setScheme(null); status("Generate the permitted envelope first (step 4).", "error"); return; }
+  // the single-building form as a drawable building (the envelope itself), so units can be laid out in it
+  function singleForm(ev) {
+    var R = core.RULES, E = ev.edges, idx = ev.idx, f = idx.front, s1 = idx.side1, s2 = idx.side2, fy = R.front_yard_m.value, sy = R.side_yard_m.value, hm = R.max_height_m;
+    var pts = M.quad([M.offsetLine(E[f], fy), M.offsetLine(E[s1], sy), M.offsetLine(E[f], fy + ev.env_depth), M.offsetLine(E[s2], sy)]);
+    if (!pts) return null;
+    return { scheme: "single", dims_like: "single", name: M.schemeName("single"), status: "ok", reason: null, gaps: [], labels: [], notes: [], params: {},
+      buildings: [M.building("single", "Single building", pts, hm.value, hm.storeys, hm.clause.split(" ")[0], E[f])] };
+  }
+  function unitOpts() { return { units: parseInt(ui.unitsSel.value, 10) || undefined, tenure: ui.tenureSel.value || "other", ground: ui.groundSel.value || "residential" }; }
+  // shorten a form building from the rear to the depth the configurator settled on (points are [front-s1, rear-s1, rear-s2, front-s2])
+  function trimForm(form, o) {
+    var ef = S.ev.edges[S.ev.idx.front];
+    o.blocks.forEach(function (b) {
+      if (!b.trimmed_from_m) return;
+      var i = form.buildings.map(function (x) { return x.key; }).indexOf(b.key); if (i < 0) return;
+      var old = form.buildings[i], p = old.pts, r = b.depth_m / old.depth_m;
+      var pts = [p[0], [p[0][0] + (p[1][0] - p[0][0]) * r, p[0][1] + (p[1][1] - p[0][1]) * r], [p[3][0] + (p[2][0] - p[3][0]) * r, p[3][1] + (p[2][1] - p[3][1]) * r], p[3]];
+      form.buildings[i] = M.building(old.key, old.name, pts, old.height_m, old.storeys, old.clause, ef);
+    });
+    form.gaps.forEach(function (g) { if (g.kind === "courtyard" && form.buildings.length === 2) g.value_m = Math.min(M.distToLine(form.buildings[1].pts[0], [form.buildings[0].pts[1], ef.d]), M.distToLine(form.buildings[1].pts[3], [form.buildings[0].pts[2], ef.d])); });
+  }
+  function fillUnitsSelect(o) {
+    var list = (o && o.achievable) || [];
+    ui.unitsSel.innerHTML = "";
+    list.forEach(function (n) { var opt = el("option", null, n + (n === 1 ? " unit" : " units")); opt.value = String(n); ui.unitsSel.appendChild(opt); });
+    if (o && o.units) ui.unitsSel.value = String(o.units);
+  }
+  function applyForm(key, keepUnits) {
+    if (!(S.ev && S.ev.status === "ok" && S.placed)) { setScheme(null); status("The site needs an envelope first (step 3).", "error"); return; }
     clearCmhcPick();
     var cy = parseFloat(ui.courtyardSel.value), rd = parseFloat(ui.rearDepthSel.value);
-    var form = M.formScheme(S.ev, key, cy, rd);
-    S.form = form; setScheme(key); fillForm(); fillRules();
+    var form = (key === "single" ? singleForm(S.ev) : null) || M.formScheme(S.ev, key, cy, rd);
+    S.form = form; S.unitsOption = null; setScheme(key); fillRules();
     report(M.formLines(form, S.ev));
     if (form.status !== "ok") {
-      S.formBases = null; drawForm(); drawSectionMarker(); markDirty(); setReady();
+      S.formBases = null; fillForm(); drawForm(); drawSectionMarker(); markDirty(); ui.unitsPanel.innerHTML = ""; setReady();
       ui.formNote.textContent = form.reason || form.status;
-      status(form.name + ": " + (form.reason || form.status), form.status === "single" ? "ok" : "error"); report([""]); return;
+      status(form.name + ": " + (form.reason || form.status), "error"); report([""]); return;
     }
+    // the unit configuration for this form: dwellings, tenure and ground-floor use from the Units fields
+    var opts = unitOpts(); if (!keepUnits) opts.units = undefined;
+    var o = R1Units.configure(form, S.ev, opts);
+    S.unitsOption = o.blocks.length ? o : null;
+    if (S.unitsOption) trimForm(form, o);   // buildings trimmed to FSR by the configurator are redrawn at that depth
+    fillUnitsSelect(o);
     S.formBases = M.formBases(S.res, form, envelopeBaseZ());
-    drawForm(); drawSectionMarker(); markDirty(); setReady();
-    ui.formNote.textContent = "Drawn: " + form.buildings.length + " buildings; the blue envelope is hidden while a form is shown.";
-    report(["  Drawn on the map; envelope hidden while this form is shown.", ""]);
-    status("Form '" + form.name + "' drawn: " + form.buildings.length + " buildings in amber; envelope hidden.", "ok");
+    fillForm(); drawForm(); drawSectionMarker(); markDirty(); setReady();
+    if (S.unitsOption) { showUnits(o); report(R1Units.optionLines(o).concat([""])); }
+    ui.formNote.textContent = S.unitsOption ? (o.ok ? "" : "Check: " + o.reason) : (o.reason || "");
+    status("Form '" + form.name + "' drawn" + (S.unitsOption ? ": " + o.units + " units (" + R1Cmhc.unitMix(o) + ")" : "") + ". The envelope is hidden while a form is shown.", S.unitsOption && !o.ok ? "error" : "ok");
   }
   function onFormClear() {
     var wasCmhc = S.form && S.form.scheme === "cmhc";
     clearCmhcPick();
-    S.form = null; S.formBases = null; setScheme(null); fillForm(); fillRules(); drawForm(); drawSectionMarker(); markDirty(); setReady();
+    S.form = null; S.formBases = null; S.unitsOption = null; ui.unitsPanel.innerHTML = ""; setScheme(null); fillForm(); fillRules(); drawForm(); drawSectionMarker(); markDirty(); setReady();
     ui.formNote.textContent = ""; status((wasCmhc ? "Catalogue massing" : "Form option") + " removed; the permitted envelope is shown again.", "ok");
   }
 
   // ------------------------------------------------------------------ step 6: CMHC catalogue fits
   function clearCmhcPick() {
-    S.cmhcPick = null; ui.cmhcUnits.innerHTML = ""; ui.btnCmhcPlans.disabled = true;
-    if (map) map.closePopup();
-    Array.prototype.forEach.call(ui.cmhcTable.querySelectorAll("tr.pick"), function (tr) { tr.classList.remove("on"); });
-  }
-  // schematic floor plans of the drawn catalogue option, as a popup on the map at the front building
-  function showFloorPlans() {
-    if (!(S.cmhcPick && S.form && S.form.scheme === "cmhc" && S.form.status === "ok")) { status("Draw a catalogue option first (click a fitting row in step 6).", "error"); return; }
-    var o = S.cmhcPick, plans = R1Cmhc.floorPlansSvg(o), b0 = S.form.buildings[0];
-    var html = '<div class="planpop-body"><h3>' + esc(o.name) + ": schematic floor plans</h3>" +
-      '<p class="muted">' + o.units + " units (" + esc(R1Cmhc.unitMix(o)) + "). Unit extents follow the catalogue's floor layout; the rooms are a schematic programme (entry and living toward the street, kitchen to the rear, bedrooms upstairs) sized to each unit. CMHC's own room plans: " +
-      o.blocks.map(function (b) { return '<a href="' + R1Cmhc.url(b.design) + '" target="_blank" rel="noopener">' + esc(b.design.name) + "</a>"; }).filter(function (x, i, arr) { return arr.indexOf(x) === i; }).join(", ") + ".</p>" +
-      '<div class="planpop-scroll">' + plans.svg + "</div><p class=\"muted planpop-legend\">" + plans.legend + "</p></div>";
-    // the map pane must be visible and laid out before Leaflet measures the popup, or it opens at its minimum width
-    showView("map");
-    setTimeout(function () {
-      map.invalidateSize();
-      var w = Math.min(680, Math.max(300, ui.panes.map.clientWidth - 70)), hgt = Math.max(260, ui.panes.map.clientHeight - 130);
-      L.popup({ minWidth: w, maxWidth: w, maxHeight: hgt, className: "planpop", autoPanPadding: [24, 24], keepInView: true })
-        .setLatLng(ll(b0.centroid)).setContent(html).openOn(map);
-    }, 80);
-    status("Floor plans shown on the map for " + o.name + ". Close the popup or pick another option to dismiss it.", "ok");
+    if (S.cmhcPick) { S.unitsOption = null; ui.unitsPanel.innerHTML = ""; }
+    S.cmhcPick = null; ui.btnCmhcPlans.disabled = true;
+    Array.prototype.forEach.call(ui.cmhcList.querySelectorAll(".opt.on"), function (n) { n.classList.remove("on"); });
   }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
-  function resetCmhc() { S.cmhc = null; clearCmhcPick(); ui.cmhcTable.innerHTML = ""; ui.cmhcNote.textContent = ""; }
+  function resetCmhc() { S.cmhc = null; clearCmhcPick(); ui.cmhcList.innerHTML = ""; ui.cmhcNote.textContent = ""; }
   function onCmhc(quiet) {
     if (!(S.ev && S.ev.status === "ok" && S.placed)) { if (!quiet) status("The site needs an envelope first (step 3).", "error"); return; }
-    S.cmhc = R1Cmhc.fits(S.ev); clearCmhcPick(); fillCmhcTable();
+    S.cmhc = R1Cmhc.fits(S.ev); clearCmhcPick(); fillCmhcList();
     report(R1Cmhc.fitLines(S.cmhc, S.ev).concat([""]));
     var ok = S.cmhc.options.filter(function (o) { return o.ok; });
     ui.cmhcNote.textContent = (ok.length ? ok.length + " of " + S.cmhc.options.length + " catalogue options fit this site. Click a fitting option to draw it as the massing (units in colour) and see its unit configuration; the rest list the failing rule."
@@ -675,37 +735,41 @@ var App = (function () {
     if (!quiet) status(ok.length + " of " + S.cmhc.options.length + " catalogue options fit this site. Click one to draw it.", ok.length ? "ok" : "error");
     setReady();
   }
-  function fillCmhcTable() {
-    var t = ui.cmhcTable; t.innerHTML = "";
-    var thead = el("thead"), tr = el("tr");
-    ["Design", "Units", "Block(s)", "Fit"].forEach(function (h) { tr.appendChild(el("th", null, h)); });
-    thead.appendChild(tr); t.appendChild(thead);
-    var tbody = el("tbody");
+  function fillCmhcList() {
+    var host = ui.cmhcList; host.innerHTML = "";
     R1Cmhc.fitRows(S.cmhc).forEach(function (r) {
-      var row = el("tr", r.ok ? "pick" : "nofit");
-      r.cells.forEach(function (c, i) { row.appendChild(el("td", i === 1 ? "status-cell" : null, c)); });
-      if (r.ok) row.addEventListener("click", function () { applyCmhc(r.option, row); });
-      tbody.appendChild(row);
+      var o = r.option, item = el("div", "opt " + (r.ok ? "fit" : "nofit"));
+      item.appendChild(el("span", "name", o.name));
+      item.appendChild(el("span", "pill " + (r.ok ? "ok" : "no"), r.ok ? "fits" : "no fit"));
+      item.appendChild(el("span", "meta", o.units + " unit" + (o.units === 1 ? "" : "s") + " · " + R1Cmhc.unitMix(o) + " · " + r.cells[2]));
+      if (!r.ok) item.appendChild(el("span", "why", o.reason));
+      if (r.ok) {
+        item.setAttribute("role", "button"); item.tabIndex = 0; item.title = "Draw this option";
+        item.addEventListener("click", function () { applyCmhc(o, item); });
+        item.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); applyCmhc(o, item); } });
+      }
+      host.appendChild(item);
     });
-    t.appendChild(tbody);
   }
-  function applyCmhc(o, row) {
+  function applyCmhc(o, item) {
     var form = R1Cmhc.form(S.ev, o);
-    clearCmhcPick(); if (row) row.classList.add("on");
-    S.form = form; S.cmhcPick = o; setScheme(null); fillForm(); fillRules();
-    if (form.status !== "ok") { S.formBases = null; drawForm(); drawSectionMarker(); markDirty(); setReady(); status(form.reason, "error"); return; }
+    clearCmhcPick(); if (item) item.classList.add("on");
+    S.form = form; S.cmhcPick = o; o.source = "cmhc"; setScheme(null); fillForm(); fillRules();
+    if (form.status !== "ok") { S.formBases = null; S.unitsOption = null; drawForm(); drawSectionMarker(); markDirty(); setReady(); status(form.reason, "error"); return; }
+    S.unitsOption = o;
     S.formBases = M.formBases(S.res, form, envelopeBaseZ());
     drawForm(); drawSectionMarker(); markDirty(); setReady();
-    showCmhcUnits(o); ui.formNote.textContent = ""; ui.btnCmhcPlans.disabled = false;
+    showUnits(o); ui.formNote.textContent = "";
     report(M.formLines(form, S.ev).concat(["  Unit mix: " + R1Cmhc.unitMix(o) + ". Source: " + R1Cmhc.SOURCE.name + ", " + R1Cmhc.SOURCE.url, ""]));
-    status("Catalogue massing drawn: " + o.name + ", " + o.units + " units (" + R1Cmhc.unitMix(o) + "). The envelope is hidden while it is shown.", "ok");
+    status("Catalogue massing drawn: " + o.name + ", " + o.units + " units (" + R1Cmhc.unitMix(o) + "). Open the floor plans, the 3D view or the section.", "ok");
   }
-  function showCmhcUnits(o) {
-    var host = ui.cmhcUnits; host.innerHTML = "";
-    host.appendChild(el("p", "muted", "Unit configuration as drawn in the catalogue (" + o.units + " units: " + R1Cmhc.unitMix(o) + "):"));
+  // the unit panel under both massing sources: the stack diagram, the unit table and the notes of the drawn option
+  function showUnits(o) {
+    var host = ui.unitsPanel; host.innerHTML = "";
+    host.appendChild(el("p", "lbl", (o.source === "cmhc" ? "Units as drawn in the catalogue" : "Unit configuration") + ": " + o.units + " (" + R1Cmhc.unitMix(o) + ")"));
     var wrap = el("div"); wrap.innerHTML = R1Cmhc.unitSvg(o); host.appendChild(wrap);
     var table = el("table"), thead = el("thead"), htr = el("tr"), tbody = el("tbody");
-    ["", "Unit", "Bedrooms", "Bathrooms", "Floors", "Area", "Note"].forEach(function (h) { htr.appendChild(el("th", null, h)); });
+    ["", "Unit", "Bedrooms", "Baths", "Floors", "Area", "Note"].forEach(function (h) { htr.appendChild(el("th", null, h)); });
     thead.appendChild(htr); table.appendChild(thead);
     R1Cmhc.unitRows(o).forEach(function (r) {
       var tr = el("tr"), sw = el("td"), dot = el("span", "unitsw"); dot.style.background = r.color; sw.appendChild(dot); tr.appendChild(sw);
@@ -713,11 +777,18 @@ var App = (function () {
       tbody.appendChild(tr);
     });
     table.appendChild(tbody); host.appendChild(table);
-    host.appendChild(el("p", "muted", "Same colours on the map (ground floor), in 3D (every floor) and in the floor plans. Areas are the unit's share of the footprint on the floors it occupies, not the catalogue's measured areas."));
-    o.blocks.forEach(function (b) {
-      var p = el("p", "muted"); p.appendChild(document.createTextNode((o.blocks.length > 1 ? b.name + ": " : "") + b.design.layout + " "));
-      var a = el("a", null, "Catalogue page"); a.href = R1Cmhc.url(b.design); a.target = "_blank"; a.rel = "noopener"; p.appendChild(a); host.appendChild(p);
-    });
+    if (o.source === "cmhc") {
+      o.blocks.forEach(function (b) {
+        var p = el("p", "muted"); p.appendChild(document.createTextNode((o.blocks.length > 1 ? b.name + ": " : "") + b.design.layout + " "));
+        if (R1Cmhc.url(b.design)) { var a = el("a", null, "Catalogue page"); a.href = R1Cmhc.url(b.design); a.target = "_blank"; a.rel = "noopener"; p.appendChild(a); }
+        host.appendChild(p);
+      });
+    } else {
+      o.blocks.forEach(function (b) { host.appendChild(el("p", "muted", (o.blocks.length > 1 ? b.name + ": " : "") + b.design.layout)); });
+      o.checks.forEach(function (c) { if (!c.ok) host.appendChild(el("p", "muted", "Check: " + c.name + ": " + c.detail + " [" + c.clause + "]")); });
+      o.notes.forEach(function (n) { host.appendChild(el("p", "muted", n)); });
+    }
+    host.appendChild(el("p", "muted", "Same colours on the map (ground floor), in 3D (every floor) and in the floor plans. Areas are shares of the footprint, not measured floor areas."));
   }
 
   // ------------------------------------------------------------------ clear / copy
@@ -738,10 +809,13 @@ var App = (function () {
   // ------------------------------------------------------------------ boot
   function bind() {
     ["address", "cutSide", "btnFetch", "parcelList", "zoning", "edgeSelect", "edgeNote", "edgeFallback", "btnPick", "rules", "assumptions", "chkHide",
-      "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormApply", "btnFormClear", "formTable", "formNote", "formDesc", "report", "btnCopy",
-      "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "btnSaveSite", "siteFile", "presetList", "sourceNote",
-      "btnCmhcClear", "cmhcTable", "cmhcNote", "cmhcUnits", "btnCmhcPlans", "btnPickSite", "modeForms", "modeCmhc", "panelForms", "panelCmhc"].forEach(function (id) { ui[id] = $(id); });
-    ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans);
+      "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "btnFormPlans", "unitParams", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
+      "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "tabPlans", "plansHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
+      "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnPickSite", "modeForms", "modeCmhc", "panelForms", "panelCmhc"].forEach(function (id) { ui[id] = $(id); });
+    ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans); ui.btnFormPlans.addEventListener("click", showFloorPlans);
+    R1Units.TENURES.forEach(function (t) { var o = el("option", null, t.name); o.value = t.key; ui.tenureSel.appendChild(o); });
+    R1Units.GROUND_USES.forEach(function (g) { var o = el("option", null, g.name); o.value = g.key; ui.groundSel.appendChild(o); });
+    ["unitsSel", "tenureSel", "groundSel"].forEach(function (id) { ui[id].addEventListener("change", function () { if (S.scheme && S.form && S.form.scheme !== "cmhc") applyForm(S.scheme, true); }); });
     ui.modeForms.addEventListener("click", function () { setMassingMode("forms"); });
     ui.modeCmhc.addEventListener("click", function () { setMassingMode("cmhc"); });
     // every section collapses from its heading
@@ -761,8 +835,8 @@ var App = (function () {
     ui.btnSaveSite.addEventListener("click", onSaveSite);
     ui.siteFile.addEventListener("change", onOpenSiteFile);
     ui.schemeBtns = { single: $("rbSingle"), courtyard: $("rbCourtyard"), side_by_side: $("rbSide") };
-    ui.tabs = { map: $("tabMap"), "3d": $("tab3d"), section: $("tabSection") };
-    ui.panes = { map: $("paneMap"), "3d": $("pane3d"), section: $("paneSection") };
+    ui.tabs = { map: $("tabMap"), "3d": $("tab3d"), section: $("tabSection"), plans: $("tabPlans") };
+    ui.panes = { map: $("paneMap"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans") };
     ui.stepBadges = Array.prototype.slice.call(document.querySelectorAll(".step .badge"));
     M.CUT_SIDES_M.forEach(function (s) { var o = el("option", null, s + " x " + s + " m"); o.value = String(s); if (s === M.CUT_DEFAULT_SIDE_M) o.selected = true; ui.cutSide.appendChild(o); });
     M.COURTYARDS_M.forEach(function (c) { var o = el("option", null, c + " m"); o.value = String(c); ui.courtyardSel.appendChild(o); });
@@ -774,10 +848,9 @@ var App = (function () {
     ui.btnPick.addEventListener("click", function () { if (!S.parcel) return; pickMode = !pickMode; sitePickMode = false; ui.btnPickSite.classList.remove("on"); ui.btnPick.classList.toggle("on", pickMode); status(pickMode ? "Click on the map near the street-facing edge of the site." : "Pick cancelled.", "info"); });
     ui.edgeSelect.addEventListener("change", function () { S.click = null; if (S.parcel) onGenerate(); else setReady(); });
     ui.chkHide.addEventListener("change", onHideToggle);
-    Object.keys(ui.schemeBtns).forEach(function (k) { ui.schemeBtns[k].addEventListener("click", function () { applyForm(k); }); });
-    ui.courtyardSel.addEventListener("change", function () { if (S.scheme === "courtyard") applyForm("courtyard"); });
-    ui.rearDepthSel.addEventListener("change", function () { if (S.scheme === "courtyard") applyForm("courtyard"); });
-    ui.btnFormApply.addEventListener("click", function () { if (S.scheme) applyForm(S.scheme); else status("Toggle a form first.", "info"); });
+    Object.keys(ui.schemeBtns).forEach(function (k) { ui.schemeBtns[k].addEventListener("click", function () { applyForm(k, S.scheme === k); }); });
+    ui.courtyardSel.addEventListener("change", function () { if (S.scheme === "courtyard") applyForm("courtyard", true); });
+    ui.rearDepthSel.addEventListener("change", function () { if (S.scheme === "courtyard") applyForm("courtyard", true); });
     ui.btnFormClear.addEventListener("click", onFormClear);
     ui.btnCopy.addEventListener("click", onCopy); ui.btnClear.addEventListener("click", onClear);
     ["chkRoads", "chkParcels", "chkBuildings"].forEach(function (id) { ui[id].addEventListener("change", function () { if (S.square) { drawContext(); if (S.placed) { drawEnvelope(); drawForm(); setExistingVisible(!ui.chkHide.checked); } markDirty(); } }); });

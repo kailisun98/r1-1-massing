@@ -13,6 +13,7 @@
 <script src="site.js"></script>
 <script src="massing.js"></script>
 <script src="cmhc.js"></script>
+<script src="units.js"></script>
 <script>
 (function () {
   var out = document.getElementById("out"), fails = 0, total = 0;
@@ -93,6 +94,22 @@
   check("cmhc rooms: a ground flat has entry, living, kitchen, dining, bedroom, bath, laundry filling its 6.8 x 9.9 m", r0.role === "flat" && r0.rooms.map(function (r) { return r.name; }).join() === "Entry,Living,Kitchen,Dining,Bedroom,Bath,Laundry" && close(r0.rooms.reduce(function (s, r) { return s + r.area_m2; }, 0), 6.8 * 9.9, 0.05) && r0.rooms.every(function (r) { return r.x + r.w <= 6.8 + 1e-9 && r.y + r.h <= 9.9 + 1e-9; }), r0);
   check("cmhc rooms: U3 over two levels gets a living level then a bedroom level with three bedrooms and an ensuite", r3.length === 2 && r3[0].role === "living" && r3[1].role === "bedroom" && r3[1].rooms.some(function (r) { return r.name === "Bedroom 3"; }) && r3[1].rooms.some(function (r) { return r.name === "Ensuite"; }) && r3[0].rooms.some(function (r) { return r.name === "Kitchen"; }), r3.map(function (r) { return r.role; }));
   check("cmhc rooms: duplex third level is an attic, Fourplex 02 ground level an entry level with a den", R1Cmhc.levelRoles(3, R1Cmhc.design("duplex")).join() === "living,bedroom,attic" && R1Cmhc.levelRoles(3, R1Cmhc.design("fourplex_02")).join() === "entry,living,bedroom" && R1Cmhc.programme("entry", { beds: 3, baths: 2.5, den: true })[0][2].some(function (r) { return r[0] === "Den"; }));
+  // by-law unit configurations (R1Units) on the same lot: envelope 12.84 x 19.80 x 3 storeys, band 6, area 580.6
+  var evR = C.evaluate(SITE, det.click), sf = { scheme: "single", dims_like: "single", status: "ok", gaps: [], notes: [], buildings: [M.building("single", "Single building", [[-6.42, -14.15], [-6.42, 5.65], [6.42, 5.65], [6.42, -14.15]], 11.5, 3, "3.1.2.5(b)", ev.edges[ev.idx.front])] };
+  check("units: strata allows 6, rental 8 on a 6-band site", R1Units.maxUnits(evR, "other").value === 6 && R1Units.maxUnits(evR, "rental").value === 8 && R1Units.familyMin(8, "rental") === 3 && R1Units.familyMin(6, "other") === 3);
+  var ach = R1Units.achievable(sf, evR, { tenure: "rental" }).map(function (a) { return a.total; });
+  check("units: the single building can hold 1..8 units across the layouts", ach.indexOf(1) >= 0 && ach.indexOf(4) >= 0 && ach.indexOf(6) >= 0 && ach.indexOf(8) >= 0 && ach.every(function (n) { return n <= 8; }), ach);
+  var u6 = R1Units.configure(sf, evR, { tenure: "other", units: 6 });
+  check("units: 6 strata units = stacked flats 2 per floor x 3, depth trimmed to 15.07 m for FSR 1.00, all checks ok, 2.2.8 met", u6.ok && u6.units === 6 && u6.blocks[0].layout === "stacked" && u6.blocks[0].floors.length === 3 && u6.blocks[0].floors[0].units.length === 2 && close(u6.blocks[0].depth_m, 15.07, 0.02) && u6.blocks[0].trimmed_from_m === 19.8 && u6.blocks[0].unit_list.filter(function (u) { return u.beds >= 2; }).length >= 3 && u6.notes.some(function (n) { return /trimmed/.test(n); }), [u6.ok, u6.blocks[0].depth_m, u6.checks]);
+  var u8 = R1Units.configure(sf, evR, { tenure: "rental", units: 8 });
+  check("units: 8 rental units = 4 ground flats under 4 two-level units (2 x 2), every check ok", u8.ok && u8.units === 8 && u8.blocks[0].layout === "flats_over" && u8.blocks[0].floors[0].units.length === 4 && u8.checks.every(function (c) { return c.ok; }), [u8.ok, u8.blocks[0].layout, u8.checks]);
+  var u8s = R1Units.configure(sf, evR, { tenure: "other", units: 8 });
+  check("units: asking for 8 under strata falls back to 6 with a note", u8s.units === 6 && u8s.notes.some(function (n) { return /cannot be laid out|shown/.test(n); }), [u8s.units, u8s.notes]);
+  var ug = R1Units.configure(sf, evR, { tenure: "other", units: 5, ground: "grocery" });
+  check("units: grocery store takes one ground cell, 5 dwellings + store, mix says so", ug.units === 5 && ug.blocks[0].unit_list.some(function (u) { return u.kind === "shop"; }) && ug.blocks[0].floors[0].units.indexOf("G") === 0 && /grocery store/.test(R1Cmhc.unitMix(ug)) && R1Cmhc.unitRooms(ug).some(function (r) { return r.role === "shop" && r.rooms.some(function (x) { return x.name === "Shop floor"; }); }), ug.blocks[0].floors);
+  var uc = R1Units.configure(f6, evR, { tenure: "rental", units: 8 });
+  check("units: the courtyard sixplex form (front 3 st + rear 2 st) holds 8 rental units across both buildings, front trimmed for FSR", uc.units === 8 && uc.blocks.length === 2 && uc.blocks[0].units + uc.blocks[1].units === 8 && close(uc.blocks[0].trimmed_from_m, 11.1, 0.02) && close(uc.blocks[1].depth_m, 7.7) && uc.ok, uc.blocks.map(function (b) { return b.layout + ":" + b.units + ":" + b.depth_m; }).concat([uc.reason]));
+  check("units: floor plans draw for a by-law option with a grocery store and a 5 m scale bar", (function () { var p = R1Cmhc.floorPlansSvg(ug, { k: 14 }); return p.svg.indexOf("Shop floor") > 0 && p.svg.indexOf("5 m") > 0 && p.legend.indexOf("Grocery store") > 0; })());
   var ua = R1Cmhc.unitAreas(byKey.fourplex_01);
   check("cmhc areas: Fourplex 01 ground flats ~67 m2 each, upper units ~134 m2", close(ua["U1@single"], 134.1 / 2, 0.1) && close(ua["U3@single"], 134.1, 0.1), ua);
   var url = R1Site.exportUrl("property-parcel-polygons", R1Site.within(-123.18, 49.25, 161.4));

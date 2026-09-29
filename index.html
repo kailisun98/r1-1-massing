@@ -44,7 +44,10 @@ body { background: var(--page); color: var(--ink); font: 13px/1.45 var(--sans); 
 .status { margin-top: 10px; padding: 7px 10px; border-radius: 4px; background: var(--status-info); font-size: 12.5px; }
 .status.busy { background: var(--status-busy); } .status.ok { background: var(--status-ok); } .status.error { background: var(--status-error); }
 .steps { overflow: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
-.step { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; box-shadow: var(--shadow); }
+.step, .report { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; box-shadow: var(--shadow); }
+.step .actions { margin-top: 8px; }
+.step .row { margin-top: 6px; }
+.step table { margin-top: 8px; }
 .step h2, .report h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; text-wrap: balance; cursor: pointer; user-select: none; }
 .step h2::after, .report h2::after { content: ""; margin-left: auto; width: 7px; height: 7px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg) translate(-2px, -2px); flex: 0 0 auto; }
 .collapsed h2 { margin-bottom: 0; }
@@ -82,7 +85,6 @@ td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top
 td.clause { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
 td.status-cell { font-variant-numeric: tabular-nums; }
 tr.group td { background: var(--group); font-weight: 600; padding: 5px 6px; }
-.report { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
 pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono); background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 8px; white-space: pre; }
 
 .stage { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -103,20 +105,52 @@ tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--group); } tr.p
 #cmhcUnits svg { max-width: 100%; height: auto; display: block; margin-top: 6px; }
 .unitsw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; }
 .unitlbl { position: absolute; white-space: nowrap; font: 600 9px/1 var(--sans); color: #ffffff; text-shadow: 0 0 2px rgba(0,0,0,.5); }
-/* Leaflet popups (the floor-plan popup) */
-.leaflet-popup { position: absolute; text-align: center; margin-bottom: 20px; }
-.leaflet-popup-content-wrapper { padding: 1px; text-align: left; border-radius: 6px; }
-.leaflet-popup-content { margin: 12px 16px; line-height: 1.4; font-size: 12.5px; min-height: 1px; }
-.leaflet-popup-tip-container { width: 40px; height: 20px; position: absolute; left: 50%; margin-top: -1px; margin-left: -20px; overflow: hidden; pointer-events: none; }
-.leaflet-popup-tip { width: 17px; height: 17px; padding: 1px; margin: -10px auto 0; pointer-events: auto; transform: rotate(45deg); }
-.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--panel); color: var(--ink); box-shadow: 0 3px 14px rgba(0,0,0,.3); }
-.leaflet-container a.leaflet-popup-close-button { position: absolute; top: 2px; right: 2px; border: none; text-align: center; width: 24px; height: 24px; font: 16px/24px var(--sans); color: var(--muted); text-decoration: none; background: transparent; }
-.leaflet-container a.leaflet-popup-close-button:hover { color: var(--ink); }
-.leaflet-popup-scrolled { overflow: auto; }
-.planpop-body h3 { margin: 0 0 6px; font-size: 13px; font-weight: 600; }
-.planpop-body .muted { margin: 4px 0 8px; }
-.planpop-scroll { overflow: auto; max-width: 100%; }
-.planpop-legend { font-size: 11px; }
+.legend .l-unit::before { background: linear-gradient(90deg, #2a9d8f 0 33%, #e76f51 33% 66%, #e9c46a 66%); }
+
+/* ---- controls and helpers */
+button.primary { background: var(--ink); color: var(--panel); }
+.lbl { display: block; margin: 8px 0 4px; font-size: 12px; font-weight: 600; }
+.lbl .muted { font-weight: 400; }
+label.chk { display: block; margin: 8px 0 0; font-size: 12px; }
+.callout { margin-top: 8px; padding: 8px 10px; border-radius: 4px; background: var(--status-busy); }
+.callout .muted { margin-top: 0; }
+details.help { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 6px; }
+details.help summary { cursor: pointer; font-size: 12px; color: var(--muted); user-select: none; }
+details.help summary:hover { color: var(--ink); }
+details.help .actions { margin-top: 6px; }
+fieldset.units { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px 2px; margin: 8px 0 0; }
+fieldset.units legend { font-size: 11px; color: var(--muted); padding: 0 4px; letter-spacing: .04em; text-transform: uppercase; }
+fieldset.units:disabled { opacity: .5; }
+.optlist { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.opt { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
+.opt.fit { cursor: pointer; }
+.opt.fit:hover { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 8%, var(--panel)); }
+.opt.on { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 16%, var(--panel)); }
+.opt.nofit { opacity: .75; }
+.opt .name { font-weight: 600; font-size: 12.5px; }
+.opt .meta { color: var(--muted); font-size: 11.5px; grid-column: 1; }
+.opt .why { color: var(--muted); font-size: 11px; grid-column: 1 / -1; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.pill.ok { background: var(--status-ok); color: var(--ink); } .pill.no { background: var(--group); color: var(--muted); }
+.pill.n { background: var(--group); color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ---- the floor-plan sheet */
+#panePlans { overflow: auto; background: var(--page); }
+.sheet { padding: 16px 20px 28px; max-width: 1400px; }
+.sheet .empty { color: var(--muted); }
+.sheet-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.sheet-head p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; max-width: 70ch; }
+.sheet-tools { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 12px 0 10px; }
+.sheet-tools .grp { display: flex; gap: 4px; align-items: center; }
+.sheet-tools .grp span { color: var(--muted); font-size: 11px; margin-right: 4px; text-transform: uppercase; letter-spacing: .04em; }
+.sheet-tools button { padding: 4px 10px; font-size: 12px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
+.sheet-tools button.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.sheet-body { background: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; }
+.sheet-body svg { display: block; }
+.sheet-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; font-size: 12px; }
+.sheet-legend .lg i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.sheet-notes { margin-top: 10px; color: var(--muted); font-size: 12px; max-width: 90ch; }
+.sheet-notes a { color: var(--blue); }
 .step a { color: var(--blue); }
 .legend .l-street::before { background: #8e8e8e; } .legend .l-lane::before { background: #bdbdbd; } .legend .l-topo::before { background: var(--green); } .legend .l-bldg::before { background: #f4f4f2; border-color: #6b7280; }
 
@@ -150,46 +184,52 @@ tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--group); } tr.p
         <div class="stepbody">
           <div class="row"><label for="address">Address</label><input type="text" id="address" placeholder="e.g. 3567 W 27th Ave" autocomplete="street-address" list="presetList"></div>
           <datalist id="presetList"></datalist>
-          <p id="sourceNote" class="muted" style="margin:-2px 0 8px" hidden></p>
+          <p id="sourceNote" class="muted" hidden></p>
+          <div class="actions">
+            <button id="btnFetch" class="primary">Fetch site</button>
+            <button id="btnPickSite" class="secondary" title="Drag the map to any lot and click inside it">Pick a lot on the map</button>
+          </div>
           <div class="row"><label for="cutSide">Site cut</label><select id="cutSide" aria-label="Site cut size"></select></div>
           <div class="row"><label>Show</label>
             <div class="checks">
-              <label><input type="checkbox" id="chkRoads" checked> Roads &amp; lanes</label>
+              <label><input type="checkbox" id="chkRoads" checked> Roads</label>
               <label><input type="checkbox" id="chkParcels" checked> Parcels</label>
               <label><input type="checkbox" id="chkBuildings" checked> Buildings</label>
             </div>
           </div>
-          <div class="actions">
-            <button id="btnFetch">Fetch site data</button>
-            <button id="btnPickSite" class="secondary" title="Drag the map to any lot and click it">Pick a site on the map</button>
-            <button id="btnSaveSite" class="secondary" disabled title="Save the fetched data as a site file that the shared copy of this app can open">Save site file</button>
-            <label class="filebtn" for="siteFile" title="Open a site file saved by this app">Open site file…<input type="file" id="siteFile" accept=".json,application/json"></label>
-          </div>
-          <p class="muted">Site parcel (nearest first; the envelope follows the selection):</p>
-          <select id="parcelList" size="5" aria-label="Site parcel"></select>
+          <label class="lbl" for="parcelList">Site parcel <span class="muted">nearest first; the envelope follows your choice</span></label>
+          <select id="parcelList" size="4" aria-label="Site parcel"></select>
           <p id="zoning" class="zoning"></p>
-          <div id="edgeFallback" hidden>
+          <div id="edgeFallback" class="callout" hidden>
             <p id="edgeNote" class="muted"></p>
             <div class="row"><label for="edgeSelect">Street edge</label><select id="edgeSelect" aria-label="Street edge"></select></div>
             <div class="actions"><button id="btnPick" class="secondary">Pick a point on the map</button></div>
           </div>
+          <details class="help">
+            <summary>Site files</summary>
+            <div class="actions">
+              <button id="btnSaveSite" class="secondary" disabled title="Save the fetched data as a site file that the shared copy of this app can open">Save site file</button>
+              <label class="filebtn" for="siteFile" title="Open a site file saved by this app">Open site file…<input type="file" id="siteFile" accept=".json,application/json"></label>
+            </div>
+            <p class="muted">A site file holds one fetch's portal responses, so the shared copy of this app (which cannot reach the portal) can work on that site.</p>
+          </details>
         </div>
       </section>
 
       <section class="step" id="stepRules" aria-labelledby="h2s">
-        <h2 id="h2s" title="Click to collapse or expand"><span class="badge">2</span> R1-1 District Schedule, s.3.1.2</h2>
+        <h2 id="h2s" title="Click to collapse or expand"><span class="badge">2</span> By-law: R1-1 District Schedule, s.3.1.2</h2>
         <div class="stepbody">
           <table id="rules"></table>
-          <p id="assumptions" class="muted"></p>
+          <details class="help"><summary>Assumptions and source</summary><p id="assumptions" class="muted"></p></details>
         </div>
       </section>
 
       <section class="step" id="stepEnvelope" aria-labelledby="h3s">
         <h2 id="h3s" title="Click to collapse or expand"><span class="badge">3</span> Permitted envelope</h2>
         <div class="stepbody">
-          <p class="muted" style="margin-top:0">Drawn as soon as the site is in: the yard lines with dimension strings outside the lot, the envelope outline and the envelope itself, from the detected street edge.</p>
-          <label><input type="checkbox" id="chkHide" checked> Hide the existing building on the site</label>
           <table id="results"></table>
+          <label class="chk"><input type="checkbox" id="chkHide" checked> Hide the existing building on the site</label>
+          <details class="help"><summary>How it is drawn</summary><p class="muted">Drawn as soon as the site is in: the yard lines with dimension strings outside the lot (values in mm), the envelope outline and the envelope itself, from the detected street edge. Nothing crosses the massing.</p></details>
         </div>
       </section>
 
@@ -201,33 +241,39 @@ tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--group); } tr.p
             <button id="modeCmhc" class="segbtn" role="tab" aria-selected="false">CMHC catalogue</button>
           </div>
           <div id="panelForms">
-            <p class="muted" style="margin-top:0">Toggle a form: it replaces the previous one, drawn in amber; the blue envelope is hidden while a form is shown.</p>
             <div class="actions">
               <button id="rbSingle" class="toggle" aria-pressed="false" disabled>Single building</button>
-              <button id="rbCourtyard" class="toggle" aria-pressed="false" disabled>Courtyard: front + rear</button>
+              <button id="rbCourtyard" class="toggle" aria-pressed="false" disabled>Courtyard</button>
               <button id="rbSide" class="toggle" aria-pressed="false" disabled>Side by side</button>
             </div>
             <p id="formDesc" class="muted"></p>
             <div id="courtyardParams" hidden>
-              <div class="row"><label for="courtyardSel">Courtyard width</label><select id="courtyardSel"></select></div>
-              <div class="row"><label for="rearDepthSel">Rear building depth</label><select id="rearDepthSel"></select></div>
+              <div class="row"><label for="courtyardSel">Courtyard</label><select id="courtyardSel"></select></div>
+              <div class="row"><label for="rearDepthSel">Rear depth</label><select id="rearDepthSel"></select></div>
             </div>
-            <div class="actions"><button id="btnFormApply" class="secondary" disabled>Redraw form</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
+            <fieldset class="units" id="unitParams" disabled>
+              <legend>Units</legend>
+              <div class="row"><label for="unitsSel">Dwellings</label><select id="unitsSel"></select></div>
+              <div class="row"><label for="tenureSel">Tenure</label><select id="tenureSel"></select></div>
+              <div class="row"><label for="groundSel">Ground floor</label><select id="groundSel"></select></div>
+            </fieldset>
+            <div class="actions"><button id="btnFormPlans" class="primary" disabled>Floor plans</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
             <table id="formTable"></table>
             <p id="formNote" class="muted"></p>
           </div>
           <div id="panelCmhc" hidden>
-            <p class="muted" style="margin-top:0">The British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a>, tested against this envelope: width, depth, storeys and height, the unit count this site's band allows, floor area, and the courtyard rules when a design is paired with an accessory dwelling unit behind it. Click a fitting option to draw it (units in colour) and open its floor plans.</p>
-            <div class="actions"><button id="btnCmhcPlans" class="secondary" disabled title="Schematic floor plans of the drawn option, shown on the map">Floor plans</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
-            <table id="cmhcTable"></table>
+            <p class="muted" style="margin-top:0">The British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a>, tested against this envelope. Click a fitting option to draw it.</p>
+            <div id="cmhcList" class="optlist" aria-live="polite"></div>
             <p id="cmhcNote" class="muted"></p>
-            <div id="cmhcUnits"></div>
+            <div class="actions"><button id="btnCmhcPlans" class="primary" disabled>Floor plans</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
+            <details class="help"><summary>What is checked</summary><p class="muted">Width, depth, storeys and height against the envelope; the unit count this site's band allows; floor area against FSR 1.00; and, for a design with an accessory dwelling unit behind it, the courtyard rules (3.1.2.4(a), 3.1.2.8(a), 3.1.2.11(c), 3.1.2.5(a)). Options that do not fit say which rule they fail.</p></details>
           </div>
+          <div id="unitsPanel"></div>
         </div>
       </section>
 
       <section class="report" aria-labelledby="hrep">
-        <h2 id="hrep" title="Click to collapse or expand">Report (every number with its clause)</h2>
+        <h2 id="hrep" title="Click to collapse or expand">Report</h2>
         <div class="stepbody">
           <pre id="report"></pre>
           <div class="actions"><button id="btnCopy" class="secondary">Copy report</button><button id="btnClear" class="secondary">Clear massing</button></div>
@@ -241,6 +287,7 @@ tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--group); } tr.p
       <button id="tabMap" role="tab" aria-selected="true">Plan / map</button>
       <button id="tab3d" role="tab" aria-selected="false" disabled>3D</button>
       <button id="tabSection" role="tab" aria-selected="false" disabled>Site section</button>
+      <button id="tabPlans" role="tab" aria-selected="false" disabled>Floor plans</button>
       <span class="hint">City of Vancouver Open Data · dimensions in mm</span>
     </div>
     <div id="paneMap" class="pane">
@@ -248,13 +295,14 @@ tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--group); } tr.p
       <div class="legend" aria-hidden="true">
         <span class="l-site">Site boundary</span><span class="l-setback">Setback</span>
         <span class="l-env">Permitted envelope</span><span class="l-form">Form option</span>
-        <span class="l-cmhc">Catalogue massing</span><span></span>
+        <span class="l-cmhc">Catalogue massing</span><span class="l-unit">Units (ground floor)</span>
         <span class="l-street">Street</span><span class="l-lane">Lane</span>
         <span class="l-topo">Site cut</span><span class="l-bldg">Buildings</span>
       </div>
     </div>
     <div id="pane3d" class="pane" hidden><div id="threeHost"></div></div>
     <div id="paneSection" class="pane" hidden><div id="sectionHost"></div></div>
+    <div id="panePlans" class="pane" hidden><div id="plansHost" class="sheet"><p class="empty">Draw a massing option in step 4, then open its floor plans.</p></div></div>
   </main>
 </div>
 
@@ -266,6 +314,7 @@ tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--group); } tr.p
 <script src="site.js"></script>
 <script src="massing.js"></script>
 <script src="cmhc.js"></script>
+<script src="units.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

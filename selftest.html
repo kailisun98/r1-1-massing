@@ -83,6 +83,14 @@
   check("cmhc form: single block centred, 6.8 x 19.8, dimension plan of two strings", f4.status === "ok" && close(f4.buildings[0].width_m, 6.8) && close(f4.buildings[0].depth_m, 19.8) && close(R1Site.centroid(f4.buildings[0].pts)[0], 0, 0.01) && M.formDimensionPlan(ev, f4, 6).length === 2, f4.buildings[0]);
   check("cmhc: section through the sixplex form has two buildings and a COURTYARD dim", (function () { var sp = M.sectionPlan(ev, f6, { front: 0, rear: 0 }, 0, 2.4); return sp.buildings.length === 2 && sp.dims.some(function (d) { return d.name === "COURTYARD"; }); })());
   check("cmhc: unit rows and svg", R1Cmhc.unitRows(byKey.fourplex_01).length === 4 && R1Cmhc.unitSvg(byKey.courtyard_sixplex).indexOf("<svg") === 0 && R1Cmhc.unitMix(byKey.courtyard_sixplex) === "2 x 1-bed, 2 x 2-bed, 2 x 3-bed", R1Cmhc.unitMix(byKey.courtyard_sixplex));
+  var v6 = R1Cmhc.unitVolumes(byKey.courtyard_sixplex, f6), v4 = R1Cmhc.unitVolumes(byKey.fourplex_01, f4), v2 = R1Cmhc.unitVolumes(byKey.fourplex_02, R1Cmhc.form(ev, byKey.fourplex_02));
+  check("cmhc volumes: sixplex 10 boxes (3 floors x 2 + 2 x 2), fourplex 02 12 boxes of 5.65 x 9.65", v6.length === 10 && v2.length === 12 && close(C.polygonArea(v2[0].pts), 5.65 * 9.65, 0.3), [v6.length, v2.length, v2[0] && C.polygonArea(v2[0].pts)]);
+  check("cmhc volumes: Fourplex 01 ground units front and back, U3/U4 above with the same colour on both floors, floors 11 / 3 m high", v4.length === 6 && v4[0].unit === "U1" && v4[1].unit === "U2" && close(v4[0].centroid[1] + 9.9, v4[1].centroid[1], 0.05) && v4[0].centroid[1] < 0 &&
+    v4[2].color === v4[4].color && v4[2].color !== v4[0].color && close(v4[5].z1, 11.0) && close(v4[0].z1, 11 / 3), v4.map(function (v) { return v.unit + v.floor_index + ":" + v.centroid.map(function (c) { return c.toFixed(1); }); }));
+  var fp = R1Cmhc.floorPlansSvg(byKey.courtyard_sixplex);
+  check("cmhc floor plans: an svg with the five floor plans, unit labels and both street/courtyard sides", fp.svg.indexOf("<svg") === 0 && (fp.svg.match(/(Ground|Second|Third) floor<\/text>/g) || []).length === 5 && fp.svg.indexOf(">U5<") > 0 && fp.svg.indexOf("COURTYARD SIDE") > 0 && fp.svg.indexOf("STREET SIDE") > 0 && fp.legend.indexOf("U6") > 0, [fp.width, fp.height]);
+  var ua = R1Cmhc.unitAreas(byKey.fourplex_01);
+  check("cmhc areas: Fourplex 01 ground flats ~67 m2 each, upper units ~134 m2", close(ua["U1@single"], 134.1 / 2, 0.1) && close(ua["U3@single"], 134.1, 0.1), ua);
   var url = R1Site.exportUrl("property-parcel-polygons", R1Site.within(-123.18, 49.25, 161.4));
   check("tapeKey blanks the encoded radius", R1Site.tapeKey(url).indexOf("%2C%20Rm)") > 0 && R1Site.tapeKey(url) === R1Site.tapeKey(url.replace("161m", "232m")), R1Site.tapeKey(url));
   var frame0 = new R1Site.LocalFrame(49.25, -123.18), far = frame0.toLonLat(300, 0), near = frame0.toLonLat(10, 0), near2 = frame0.toLonLat(20, 0);

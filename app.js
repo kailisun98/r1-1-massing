@@ -80,7 +80,7 @@ var App = (function () {
     var bylawUp = !!(S.form && S.form.status === "ok" && S.form.scheme !== "cmhc");
     ui.btnFormClear.disabled = !bylawUp; ui.unitParams.disabled = !bylawUp; ui.btnFormPlans.disabled = !(bylawUp && S.unitsOption);
     ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc"); ui.btnCmhcPlans.disabled = !S.cmhcPick;
-    ui.tab3d.disabled = !haveModel; ui.tabSection.disabled = !haveSite; ui.tabPlans.disabled = !S.unitsOption;
+    ui.tab3d.disabled = !haveModel; ui.tabSection.disabled = !haveSite; ui.tabPlans.disabled = !S.unitsOption; ui.btnRightToggle.disabled = !haveEnv;
     ui.stepBadges.forEach(function (b, i) {
       var done = [haveModel, !!S.ev, haveEnv, !!(S.form && S.form.status === "ok")][i];
       b.classList.toggle("done", !!done);
@@ -478,7 +478,7 @@ var App = (function () {
     var head = el("div", "sheet-head");
     head.appendChild(el("h2", null, (o.source === "cmhc" ? "CMHC " : "") + o.name + ": schematic floor plans"));
     head.appendChild(el("p", null, (S.address ? S.address + " · " : "") + o.units + " units (" + R1Cmhc.unitMix(o) + "). " +
-      (o.source === "cmhc" ? "Unit extents follow the catalogue's floor layout; the rooms, walls, doors, windows and fittings are generated to suit each unit." : "Units, rooms, walls, doors, windows and fittings are generated to suit the by-law form.") + " Street side at the bottom of each plan; a red triangle marks an entry; dimensions in mm."));
+      (o.source === "cmhc" ? "Unit extents follow the catalogue's floor layout; the rooms, walls, doors, windows and fittings are generated to suit each unit." : "Units, rooms, walls, doors, windows and fittings are generated to suit the by-law form.") + " Street at the top of the sheet and the lane at the bottom, as on the site; a red arrow marks an entry; dimensions in mm."));
     host.appendChild(head);
     var tools = el("div", "sheet-tools"), g1 = el("div", "grp"), g2 = el("div", "grp");
     g1.appendChild(el("span", null, "Floor"));
@@ -840,9 +840,13 @@ var App = (function () {
     ["address", "cutSide", "btnFetch", "parcelList", "zoning", "edgeSelect", "edgeNote", "edgeFallback", "btnPick", "rules", "assumptions", "chkHide",
       "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "btnFormPlans", "unitParams", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
       "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "tabPlans", "plansHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
-      "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnPickSite", "modeForms", "modeCmhc", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightOpen"].forEach(function (id) { ui[id] = $(id); });
+      "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnPickSite", "modeForms", "modeCmhc", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightToggle", "btnLeftToggle", "sidePanel"].forEach(function (id) { ui[id] = $(id); });
     ui.btnRightClose.addEventListener("click", function () { openRight(false); });
-    ui.btnRightOpen.addEventListener("click", function () { openRight(true); });
+    ui.btnRightToggle.addEventListener("click", function () { openRight(ui.rightPanel.hidden); });
+    ui.btnLeftToggle.addEventListener("click", function () {
+      ui.sidePanel.hidden = !ui.sidePanel.hidden; ui.btnLeftToggle.setAttribute("aria-pressed", ui.sidePanel.hidden ? "false" : "true"); ui.btnLeftToggle.classList.toggle("on", !ui.sidePanel.hidden);
+      setTimeout(function () { map.invalidateSize(); if (three) three.resize(); if (!ui.panes.section.hidden) drawSection(); }, 30);
+    });
     ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans); ui.btnFormPlans.addEventListener("click", showFloorPlans);
     R1Units.TENURES.forEach(function (t) { var o = el("option", null, t.name); o.value = t.key; ui.tenureSel.appendChild(o); });
     R1Units.GROUND_USES.forEach(function (g) { var o = el("option", null, g.name); o.value = g.key; ui.groundSel.appendChild(o); });
@@ -873,7 +877,7 @@ var App = (function () {
     M.COURTYARDS_M.forEach(function (c) { var o = el("option", null, c + " m"); o.value = String(c); ui.courtyardSel.appendChild(o); });
     M.REAR_DEPTHS_M.forEach(function (d) { var o = el("option", null, d + " m"); o.value = String(d); if (d === M.REAR_DEPTH_DEFAULT_M) o.selected = true; ui.rearDepthSel.appendChild(o); });
     ui.assumptions.textContent = "Assumed, not checked: " + core.RULES.assumptions.join(" ") + " The multiple-building rows are used only by the massing options in step 4; " + M.FORM_RULES.source.note;
-    $("sourceLine").textContent = core.RULES.source.document + ". " + core.RULES.source.version + ", accessed " + core.RULES.source.accessed + ". By-law values in metres; drawn values in mm.";
+    $("sourceLine").textContent = core.RULES.source.document + ", " + core.RULES.source.version + " (accessed " + core.RULES.source.accessed + "). City of Vancouver Open Data. By-law values in metres, drawn values in mm.";
     ui.btnFetch.addEventListener("click", onFetch);
     ui.address.addEventListener("keydown", function (e) { if (e.key === "Enter") onFetch(); });
     ui.btnPick.addEventListener("click", function () { if (!S.parcel) return; pickMode = !pickMode; sitePickMode = false; ui.btnPickSite.classList.remove("on"); ui.btnPick.classList.toggle("on", pickMode); status(pickMode ? "Click on the map near the street-facing edge of the site." : "Pick cancelled.", "info"); });
@@ -901,8 +905,9 @@ var App = (function () {
   }
   // the massing options live in the panel on the right; it opens when the site has its envelope
   function openRight(show) {
-    ui.rightPanel.hidden = !show; ui.btnRightOpen.hidden = show || !S.placed;
-    setTimeout(function () { map.invalidateSize(); if (three) three.resize(); }, 30);
+    ui.rightPanel.hidden = !show; ui.btnRightToggle.classList.toggle("on", show); ui.btnRightToggle.setAttribute("aria-pressed", show ? "true" : "false");
+    ui.btnRightToggle.disabled = !S.placed && !show;
+    setTimeout(function () { map.invalidateSize(); if (three) three.resize(); if (!ui.panes.section.hidden) drawSection(); }, 30);
   }
   // step 4 has two sources of massing: the by-law form options and the CMHC catalogue
   var massingMode = "forms";

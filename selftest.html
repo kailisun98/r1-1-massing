@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>R1-1 Massing web self-test</title>
+<style>body{font:13px/1.5 Consolas,monospace;padding:16px} .ok{color:#1a7f3c} .fail{color:#b00020;font-weight:bold}</style>
+</head>
+<body>
+<h1>R1-1 Massing web app: offline self-test</h1>
+<p>Ports of the headless checks in tests/test_massing_headless.py on the same synthetic 15.24 x 38.10 m lot.</p>
+<pre id="out"></pre>
+<script src="core.js"></script>
+<script src="site.js"></script>
+<script src="massing.js"></script>
+<script>
+(function () {
+  var out = document.getElementById("out"), fails = 0, total = 0;
+  function check(name, cond, detail) { total++; if (!cond) fails++; out.innerHTML += '<span class="' + (cond ? "ok" : "fail") + '">' + (cond ? "PASS" : "FAIL") + "</span>  " + name + (cond ? "" : "  -- " + JSON.stringify(detail)) + "\n"; }
+  function close(a, b, tol) { return Math.abs(a - b) <= (tol || 0.005); }
+  function rect(cx, cy, w, d) { return [[cx - w / 2, cy - d / 2], [cx + w / 2, cy - d / 2], [cx + w / 2, cy + d / 2], [cx - w / 2, cy + d / 2]]; }
+  var W = 15.24, D = 38.10, SITE = rect(0, 0, W, D), STREET = 20, LANE = 6;
+  function parcel(ring, civic) { return { civic: civic, street: "TEST ST", site_id: null, tax_coord: null, ring: ring, centroid: R1Site.centroid(ring) }; }
+  var block = [parcel(SITE, "1560"), parcel(rect(-W, 0, W, D), "1570"), parcel(rect(W, 0, W, D), "1550")];
+  [-W, 0, W].forEach(function (cx) { block.push(parcel(rect(cx, -(D + STREET), W, D), "s")); block.push(parcel(rect(cx, D + LANE, W, D), "n")); });
+  var M = R1Massing, C = R1Core;
+
+  check("compass", ["N", "E", "S", "W", "NE"].join() === [[0, 1], [1, 0], [0, -1], [-1, 0], [1, 1]].map(function (d) { return M.compass(d[0], d[1]); }).join());
+  var choices = M.parcelChoices({ parcels: block, target: block[0] });
+  check("parcelChoices nearest first", choices[0].parcel === block[0] && choices[0].label.indexOf("15.2 x 38.1 m") > 0, choices[0].label);
+  var det = M.detectFrontage(SITE, block, 150, block[0]);
+  check("detect: street south ~20 m, lane north ~6 m, high confidence", det.front && det.front.facing === "S" && det.front.gap_m >= 19 && det.front.gap_m <= 21 &&
+    det.rear && det.rear.facing === "N" && det.rear.gap_m >= 5.5 && det.rear.gap_m <= 7 && det.confidence === "high", det);
+  var ev = C.evaluate(SITE, det.click);
+  check("evaluate: ok, 6-unit band, envelope 12.84 x 19.80, max depth controls", ev.status === "ok" && ev.band.max_units === 6 && close(ev.env_width, 12.84) && close(ev.env_depth, 19.8) && ev.depth_controlled_by === "max building depth", ev.status);
+  check("report renders in mm", C.reportLines(ev, "mm").some(function (l) { return l.indexOf(" mm (") > 0; }));
+  var pts = []; for (var x = -30; x <= 30; x += 2) for (var y = -30; y <= 30; y += 2) pts.push([x, y, 40 + 0.1 * x]);
+  var resTopo = { topo_points: pts, z0: 40 };
+  check("groundAt follows the slope", close(M.groundAt(pts, 10, 4), 41, 0.15));
+  var base = M.envelopeBase(resTopo, ev.env_pts);
+  check("envelopeBase mean ~0, range ~1.28", base && close(base.mean, 0, 0.05) && base.range >= 1.1 && base.range <= 1.5, base);
+  var sq = M.siteSquare(block[0], 200);
+  check("siteSquare axis-aligned, corners +/-100", close(sq.angle_deg, 0, 1e-6) && M.squareRing(sq).length === 4);
+  check("clipRing straddle -> area 50", close(C.polygonArea(M.clipRing(rect(100, 0, 10, 10), sq)), 50));
+  var pieces = M.clipPolyline(rect(100, 0, 10, 10), sq, true), kept = 0;
+  pieces.forEach(function (pc) { for (var i = 0; i < pc.length - 1; i++) kept += R1Site.dist(pc[i], pc[i + 1]); });
+  check("clipPolyline keeps 20 of 40 m", close(kept, 20), kept);
+  var rings = block.map(function (p) { return p.ring; });
+  var sp = M.roadPieces([[-40, -(D / 2 + STREET / 2)], [40, -(D / 2 + STREET / 2)]], rings, "street");
+  check("roadPieces: street 20 m wide", sp.length === 1 && close(sp[0].width, STREET, 0.1), sp[0] && sp[0].width);
+  var segs = M.setbackSegments(ev), fr = segs.filter(function (s) { return s.kind === "FRONT"; })[0];
+  check("setbackSegments: front yard line at y = -14.15 across the site", close(fr.a[1], -D / 2 + 4.9) && close(Math.abs(fr.a[0] - fr.b[0]), W), fr);
+  var ep = M.envelopeDimensionPlan(ev, 6);
+  check("envelopeDimensionPlan: six dims, depth string 6 m west", ep.length === 6 && ep.filter(function (d) { return d.string === "depth"; }).every(function (d) { return close(d.line[0][0], -W / 2 - 6); }), ep.map(function (d) { return d.line[0]; }));
+  var fc = M.formScheme(ev, "courtyard");
+  var by = {}; fc.buildings.forEach(function (b) { by[b.key] = b; });
+  check("formScheme courtyard: rear 10.65..18.15, front -14.15..4.55, sep 6.1", fc.status === "ok" && close(by.rear.depth_m, 7.5) && close(by.front.depth_m, 18.7) &&
+    close(fc.gaps[0].value_m, 6.1) && by.rear.height_m === 8.5 && by.rear.storeys === 2, fc);
+  var fss = M.formScheme(ev, "side_by_side");
+  check("formScheme side by side: 5.22 m wide each, gap 2.4", fss.status === "ok" && fss.buildings.every(function (b) { return close(b.width_m, 5.22); }) && close(fss.gaps[0].value_m, 2.4), fss);
+  check("formScheme courtyard refused on a 32 m lot", M.formScheme(C.evaluate(rect(0, 0, W, 32), [0, -16]), "courtyard").status === "not_permitted");
+  var fp = M.formDimensionPlan(ev, fc, 6);
+  check("formDimensionPlan courtyard: four dims beside side 1 (east)", fp.length === 4 && fp.every(function (d) { return close(d.line[0][0], W / 2 + 6); }));
+  var sec = M.sectionPlan(ev, fc, { front: 0.2, rear: -0.3 }, 0, 2.4);
+  check("sectionPlan courtyard: string 4900|18700|6100|7500|900 + two heights", sec.dims.map(function (d) { return Math.round(d.value_m * 1000); }).join() === "4900,18700,6100,7500,900,11500,8500", sec.dims);
+  var sec2 = M.sectionPlan(ev, fss, { A: 0, B: 0 }, 0, 2.4);
+  check("sectionPlan side by side: cut through building A", sec2.buildings.length === 1 && sec2.buildings[0].key === "A" && close(sec2.c[0], 3.81));
+  var groups = M.rulesGroups(ev, fc);
+  check("rulesGroups: 7 categories, 17 rows", groups.length === 7 && groups.reduce(function (n, g) { return n + g.rows.length; }, 0) === 17, groups.map(function (g) { return g.title; }));
+  check("rulesRows status: band applied, courtyard 6.10 m", M.rulesRows(ev, fc).some(function (r) { return r[3].indexOf("band applied") >= 0; }) && M.rulesRows(ev, fc).some(function (r) { return r[3] === "courtyard 6.10 m"; }));
+  check("formRows: FSR estimate", M.formRows(fc, ev).some(function (r) { return r[1].indexOf("FSR 1.57") >= 0; }), M.formRows(fc, ev));
+  check("resultsRows: envelope width row", M.resultsRows(ev, base, { district: "R1-1" }, block[0]).some(function (r) { return r[0] === "Envelope width"; }));
+  check("normaliseAddress", R1Site.normaliseAddress("1560 W 13th Ave").join("|") === "1560|W 13TH AV");
+  var url = R1Site.exportUrl("property-parcel-polygons", R1Site.within(-123.18, 49.25, 161.4));
+  check("tapeKey blanks the encoded radius", R1Site.tapeKey(url).indexOf("%2C%20Rm)") > 0 && R1Site.tapeKey(url) === R1Site.tapeKey(url.replace("161m", "232m")), R1Site.tapeKey(url));
+  var frame0 = new R1Site.LocalFrame(49.25, -123.18), far = frame0.toLonLat(300, 0), near = frame0.toLonLat(10, 0), near2 = frame0.toLonLat(20, 0);
+  var tapeIn = {}, k1 = R1Site.tapeKey(url), k2 = R1Site.tapeKey(R1Site.exportUrl("elevation-contour-lines-1-metre-contours", R1Site.within(-123.18, 49.25, 181)));   // tapes are keyed by the blanked URL
+  tapeIn[k1] = { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "Polygon", coordinates: [[[-123.18, 49.25], [-123.1799, 49.25], [-123.1799, 49.2501], [-123.18, 49.25]]] }, properties: { civic_number: "1", streetname: "X", site_id: "s", tax_coord: "t", geo_point_2d: { lon: 0, lat: 0 } } }] };
+  tapeIn[k2] = { type: "FeatureCollection", features: [{ type: "Feature", geometry: { type: "LineString", coordinates: [far, near, near2, far] }, properties: { elevation: 40, geo_point_2d: {} } }] };
+  var slim = R1Site.slimTape(tapeIn, 49.25, -123.18, 100), sp = slim[k1].features[0], sc = slim[k2].features[0];
+  check("slimTape keeps only the read properties and rounds coordinates", Object.keys(sp.properties).join() === "civic_number,streetname,site_id,tax_coord" && sp.geometry.coordinates[0][1][0] === -123.1799, sp);
+  check("slimTape cuts a contour to the run inside keepR", sc.geometry.type === "MultiLineString" && sc.geometry.coordinates.length === 1 && sc.geometry.coordinates[0].length === 2, sc.geometry);
+  // replay through the tape gives the live response back, whatever the requested radius (async: getJSON returns a promise)
+  R1Site.useTape(slim); var replay = R1Site.getJSON(url.replace("161m", "126m")); R1Site.useTape(null);
+  replay.then(function (j) { check("getJSON replays a tape key at another radius", j && j.features.length === 1, j); },
+    function (e) { check("getJSON replays a tape key at another radius", false, e.message); }).then(function () {
+    out.innerHTML += "\n" + (fails ? fails + " FAILED of " + total : "ALL " + total + " CHECKS PASSED");
+    window.selftest = { fails: fails, total: total };
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,655 @@
+/* app.js -- the R1-1 Massing web app: the five-step sidebar, the map/plan, the 3D view and
+   the site section. Same workflow as the Revit panel (lib/r1_1_massing_ui.py). */
+var App = (function () {
+  "use strict";
+  var core = R1Core, site = R1Site, M = R1Massing;
+
+  var COLORS = { site: "#c81e1e", parcel: "#7d8590", street: "#8e8e8e", lane: "#bdbdbd", building: "#f4f4f2", buildingLine: "#6b7280",
+    topo: "#9fb07f", cut: "#4a4a4a", setback: "#b42828", envelope: "#3c8cdc", form: "#d99a2b", dim: "#2c3e50", section: "#2c3e50" };
+  var EXAMPLE_ADDRESS = "3567 W 27th Ave", PLAN_SCALE = 500, SECTION_SCALE = 200;
+  // The shared (artifact) copy cannot reach the City portal or the map tile server: it replays site files stored
+  // with the page (data/index.json lists them) and reads tiles from tiles/{z}/{x}/{y}.png. See tools/build_artifact.py.
+  var BUNDLED = !!window.R1_BUNDLED, BLANK_TILE = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+  var presets = [], bundles = {}, openedFile = null, activePreset = null, tileHalfM = 180;
+
+  var S = {};           // workflow state
+  var ui = {};          // DOM handles
+  var map, layers = {}, tileLayer = null, three = null, pickMode = false, sectionDirty = true, threeDirty = true;
+
+  // ------------------------------------------------------------------ small helpers
+  function $(id) { return document.getElementById(id); }
+  function fmt(x, d) { return Number(x).toFixed(d); }
+  function mm(x) { return Math.round(x * 1000); }
+  function el(tag, cls, text) { var e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }
+  function ll(p) { return S.res.frame.toLatLng(p); }
+  function unit(d) { var L = Math.hypot(d[0], d[1]); return [d[0] / L, d[1] / L]; }
+
+  function resetState() {
+    S = { res: null, zone: null, choices: [], parcel: null, square: null, det: null, click: null, ev: null, base: null, placed: false,
+      form: null, formBases: null, scheme: null, existingIds: [], cutSide: M.CUT_DEFAULT_SIDE_M };
+  }
+
+  // ------------------------------------------------------------------ status / report
+  function status(text, level) {
+    ui.status.textContent = text;
+    ui.status.className = "status " + (level || "info");
+  }
+  function report(lines) {
+    if (typeof lines === "string") lines = [lines];
+    ui.report.textContent += lines.join("\n") + "\n";
+    ui.report.scrollTop = ui.report.scrollHeight;
+  }
+  function reportReset() {
+    var R = core.RULES.source;
+    ui.report.textContent = "";
+    report(["R1-1 MASSING", "Source: " + R.document, "Version: " + R.version + " | Accessed: " + R.accessed, "URL: " + R.url, "NOTE: " + R.note, ""]);
+  }
+
+  // ------------------------------------------------------------------ tables
+  function fillTable(table, header, rows, opts) {
+    opts = opts || {};
+    table.innerHTML = "";
+    var thead = el("thead"), tr = el("tr");
+    header.forEach(function (h) { tr.appendChild(el("th", null, h)); });
+    thead.appendChild(tr); table.appendChild(thead);
+    var tbody = el("tbody");
+    rows.forEach(function (r) {
+      var row = el("tr");
+      if (r.header) { row.className = "group"; var td = el("td", null, r.header); td.colSpan = header.length; row.appendChild(td); tbody.appendChild(row); return; }
+      r.forEach(function (c, i) {
+        var td = el("td", i === opts.clauseCol ? "clause" : (i === opts.statusCol ? "status-cell" : null), c === null || c === undefined ? "" : String(c));
+        row.appendChild(td);
+      });
+      tbody.appendChild(row);
+    });
+    table.appendChild(tbody);
+  }
+  function fillRules() {
+    var form = S.form && S.form.status === "ok" ? S.form : null, rows = [];
+    M.rulesGroups(S.ev, form).forEach(function (g) { rows.push({ header: g.title }); g.rows.forEach(function (r) { rows.push(r); }); });
+    fillTable(ui.rules, ["Regulation", "R1-1", "Clause", "This site"], rows, { clauseCol: 2, statusCol: 3 });
+  }
+  function fillResults() { fillTable(ui.results, ["Item", "Value"], M.resultsRows(S.ev, S.base, S.zone, S.parcel)); }
+  function fillForm() { fillTable(ui.formTable, ["Item", "Value"], S.form ? M.formRows(S.form, S.ev) : []); }
+
+  // ------------------------------------------------------------------ enabling by state
+  function setReady() {
+    var haveSite = !!S.parcel, haveModel = !!S.square, haveEnv = !!(S.ev && S.ev.status === "ok" && S.placed);
+    ui.edgeSelect.disabled = !haveSite; ui.btnPick.disabled = !haveSite; ui.btnGenerate.disabled = !haveSite;
+    ui.btnImport.disabled = !S.choices.length;
+    ["single", "courtyard", "side_by_side"].forEach(function (k) { ui.schemeBtns[k].disabled = !haveEnv; });
+    ui.btnFormApply.disabled = !haveEnv; ui.btnFormClear.disabled = !haveEnv;
+    ui.tab3d.disabled = !haveModel; ui.tabSection.disabled = !haveSite;
+    ui.stepBadges.forEach(function (b, i) {
+      var done = [haveModel, !!S.click || (S.det && S.det.front), !!S.ev, haveEnv, !!(S.form && S.form.status === "ok")][i];
+      b.classList.toggle("done", !!done);
+    });
+  }
+  function setScheme(key) {
+    S.scheme = key;
+    Object.keys(ui.schemeBtns).forEach(function (k) { ui.schemeBtns[k].classList.toggle("on", k === key); ui.schemeBtns[k].setAttribute("aria-pressed", k === key ? "true" : "false"); });
+    ui.courtyardParams.hidden = key !== "courtyard";
+    var s = M.SCHEMES.filter(function (x) { return x.key === key; })[0];
+    ui.formDesc.textContent = s ? s.desc : "";
+  }
+
+  // ------------------------------------------------------------------ map drawing
+  function initMap() {
+    map = L.map("map", { zoomControl: true, attributionControl: true, maxBoundsViscosity: 1.0 }).setView([49.2483, -123.1841], 17);
+    tileLayer = BUNDLED
+      ? L.tileLayer("tiles/{z}/{x}/{y}.png", { minZoom: 15, maxNativeZoom: 18, maxZoom: 20, errorTileUrl: BLANK_TILE, bounds: siteBox(null), attribution: "&copy; OpenStreetMap contributors (tiles stored with this page for the preloaded sites)" })
+      : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 20, attribution: "&copy; OpenStreetMap contributors" });
+    tileLayer.addTo(map);
+    ["topo", "roads", "parcels", "buildings", "cut", "site", "envelope", "forms", "dims", "section"].forEach(function (k) { layers[k] = L.layerGroup().addTo(map); });
+    map.on("click", function (e) {
+      if (!pickMode || !S.parcel) return;
+      var xy = S.res.frame.toXY(e.latlng.lng, e.latlng.lat);
+      pickMode = false; ui.btnPick.classList.remove("on");
+      var E = S.det ? S.det.edges : M.edges(S.parcel.ring), best = 0, bestD = Infinity;
+      E.forEach(function (ed, i) { var d = site.pointToSegment(xy, ed.a, ed.b); if (d < bestD) { bestD = d; best = i; } });
+      ui.edgeSelect.value = String(best); S.click = E[best].mid;
+      ui.edgeNote.textContent = "Street edge picked on the map: edge " + E[best].i + " (faces " + E[best].facing + "). Generate the envelope.";
+      status("Street edge picked. Generate the envelope (step 4).", "ok"); setReady();
+    });
+  }
+  function clearLayers(keys) { keys.forEach(function (k) { layers[k].clearLayers(); }); }
+  function poly(pts, style, layer) { var p = L.polygon(pts.map(ll), style); p.addTo(layers[layer]); return p; }
+  function line(pts, style, layer) { var p = L.polyline(pts.map(ll), style); p.addTo(layers[layer]); return p; }
+  function label(p, text, angleDeg, cls, layer) {
+    var html = '<div class="' + (cls || "maplbl") + '" style="transform:translate(-50%,-50%) rotate(' + (-angleDeg || 0) + 'deg)">' + text + "</div>";
+    L.marker(ll(p), { icon: L.divIcon({ className: "lblwrap", html: html, iconSize: [0, 0] }), interactive: false }).addTo(layers[layer]);
+  }
+  function angleOf(d) { return Math.atan2(d[1], d[0]) * 180 / Math.PI; }
+
+  function drawContext() {
+    clearLayers(["topo", "roads", "parcels", "buildings", "cut", "site"]);
+    var res = S.res, sq = S.square;
+    // the site square: a green ground plate, clipped drawing on top
+    poly(M.squareRing(sq), { color: COLORS.cut, weight: 2, fillColor: COLORS.topo, fillOpacity: 0.55, interactive: false }, "topo");
+    if (ui.chkRoads.checked && res.roads) {
+      res.roads.segments.forEach(function (seg) {
+        var col = seg.kind === "street" ? COLORS.street : COLORS.lane;
+        seg.pieces.forEach(function (pc) { var q = M.clipRing(pc.quad, sq); if (q.length) poly(q, { stroke: false, fillColor: col, fillOpacity: 0.9, interactive: false }, "roads"); });
+        M.clipPolyline(seg.pts, sq).forEach(function (pl) { line(pl, { color: "#555", weight: 1, dashArray: "6 3 1 3", interactive: false }, "roads"); });
+        if (seg.kind === "street") {
+          var best = null;
+          seg.pieces.forEach(function (pc) { M.clipPolyline([pc.a, pc.b], sq).forEach(function (pl) { var Ln = site.dist(pl[0], pl[pl.length - 1]); if (!best || Ln > best[0]) best = [Ln, pl[0], pl[pl.length - 1], pc]; }); });
+          if (best && best[0] >= M.ROAD_NAME_MIN_LEN_M) label(core.mid(best[1], best[2]), seg.name, angleOf(best[3].d) > 90 || angleOf(best[3].d) < -90 ? angleOf(best[3].d) + 180 : angleOf(best[3].d), "streetlbl", "roads");
+        }
+      });
+    }
+    if (ui.chkParcels.checked) res.parcels.forEach(function (p) {
+      if (p === S.parcel) return;
+      M.clipPolyline(p.ring, sq, true).forEach(function (pl) { line(pl, { color: COLORS.parcel, weight: 1, interactive: false }, "parcels"); });
+    });
+    S.existingIds = [];
+    if (ui.chkBuildings.checked) res.buildings.forEach(function (b, i) {
+      var onSite = S.parcel && site.pointInRing(b.centroid, S.parcel.ring), ring = M.clipRing(b.ring, sq);
+      if (!ring.length) return;
+      var p = poly(ring, { color: COLORS.buildingLine, weight: 1, fillColor: COLORS.building, fillOpacity: 0.95, interactive: false }, "buildings");
+      if (onSite) { S.existingIds.push(i); p._r1Existing = true; if (S.placed && ui.chkHide.checked) p.remove(); }
+    });
+    var ring = S.parcel.ring;
+    poly(ring, { color: COLORS.site, weight: 3, fill: false, interactive: false }, "site");
+    zoomToSite();
+  }
+  function zoomToSite() {
+    if (!S.parcel) return;
+    map.invalidateSize();
+    if (map.getSize().y < 50) { setTimeout(zoomToSite, 400); return; }   // the pane is not laid out (or hidden) yet
+    var b = L.latLngBounds(S.parcel.ring.map(ll)).pad(1.2);
+    map.fitBounds(b, { padding: [24, 24], maxZoom: 19, animate: false });
+  }
+  function setExistingVisible(show) {
+    layers.buildings.eachLayer(function (p) { if (p._r1Existing) { if (show) { if (!map.hasLayer(p)) p.addTo(layers.buildings); } else p.remove(); } });
+  }
+
+  // dimensions: refs -> geometry in metres; the dimension line is spec.line (position + direction)
+  function resolveRef(ref, ctx) {
+    var kind = ref[0];
+    if (kind === "boundary") { var e = ctx.edges[ref[1]]; return { line: [e.a, e.d] }; }
+    if (kind === "setback") { var sg = ctx.setbacks[ref[1]]; return sg ? { line: [sg.a, ctx.edges[ref[1]].d] } : null; }
+    if (kind === "outline_pt") return { pt: ref[1] };
+    if (kind === "form") { var b = ctx.form[ref[1]]; if (!b) return null; var j = ref[2], p = b.pts[j], q = b.pts[(j + 1) % b.pts.length]; return { line: [p, unit([q[0] - p[0], q[1] - p[1]])] }; }
+    if (kind === "form_pt") return { pt: ref[2] };
+    return null;
+  }
+  function refPoint(r) { return r.pt || r.line[0]; }
+  function drawDimension(spec, ctx, layer, opts) {
+    opts = opts || {};
+    var ra = resolveRef(spec.refs[0], ctx), rb = resolveRef(spec.refs[1], ctx);
+    if (!ra || !rb) return null;
+    var q = spec.line[0], d = unit([spec.line[1][0] - spec.line[0][0], spec.line[1][1] - spec.line[0][1]]), n = [-d[1], d[0]];
+    function proj(p) { return (p[0] - q[0]) * d[0] + (p[1] - q[1]) * d[1]; }
+    var ta = proj(refPoint(ra)), tb = proj(refPoint(rb));
+    if (ta > tb) { var tmp = ta; ta = tb; tb = tmp; var r = ra; ra = rb; rb = r; }
+    var A = [q[0] + d[0] * ta, q[1] + d[1] * ta], B = [q[0] + d[0] * tb, q[1] + d[1] * tb];
+    var value = tb - ta, col = opts.color || COLORS.dim;
+    line([A, B], { color: col, weight: 1, interactive: false }, layer);
+    [[A, ra], [B, rb]].forEach(function (pair) {
+      var tick = pair[0], ref = pair[1], foot;
+      if (ref.pt) foot = ref.pt; else foot = core.intersect(tick, n, ref.line[0], ref.line[1]) || tick;
+      line([tick, foot], { color: col, weight: 0.8, opacity: 0.7, interactive: false }, layer);
+      var t = 0.5; line([[tick[0] - (d[0] + n[0]) * t, tick[1] - (d[1] + n[1]) * t], [tick[0] + (d[0] + n[0]) * t, tick[1] + (d[1] + n[1]) * t]], { color: col, weight: 1.5, interactive: false }, layer);
+    });
+    var ang = angleOf(d); if (ang > 90 || ang < -90) ang += 180;
+    label(core.mid(A, B), mm(value), ang, "dimlbl", layer);
+    return value;
+  }
+  function dimContext() {
+    var ctx = { edges: S.ev.edges, setbacks: {}, form: {} };
+    M.setbackSegments(S.ev).forEach(function (sg) { ctx.setbacks[sg.edge] = sg; });
+    if (S.form && S.form.status === "ok") S.form.buildings.forEach(function (b) { ctx.form[b.key] = b; });
+    return ctx;
+  }
+
+  function drawEnvelope() {
+    clearLayers(["envelope", "dims"]);
+    var ev = S.ev, ctx = dimContext(), off = M.dimOffsetM(PLAN_SCALE);
+    M.setbackSegments(ev).forEach(function (sg) { line([sg.a, sg.b], { color: COLORS.setback, weight: 1.5, dashArray: "8 5", interactive: false }, "envelope"); });
+    S.envelopeLayer = poly(ev.env_pts, { color: COLORS.envelope, weight: 2, fillColor: COLORS.envelope, fillOpacity: 0.35, interactive: false }, "envelope");
+    M.envelopeDimensionPlan(ev, off).forEach(function (spec) { drawDimension(spec, ctx, "dims"); });
+  }
+  function drawForm() {
+    clearLayers(["forms"]);
+    if (!(S.form && S.form.status === "ok")) { if (S.envelopeLayer && !map.hasLayer(S.envelopeLayer)) S.envelopeLayer.addTo(layers.envelope); return; }
+    var ctx = dimContext(), off = M.dimOffsetM(PLAN_SCALE);
+    S.form.buildings.forEach(function (b) { poly(b.pts, { color: COLORS.form, weight: 2, fillColor: COLORS.form, fillOpacity: 0.55, interactive: false }, "forms"); });
+    M.formDimensionPlan(S.ev, S.form, off).forEach(function (spec) { drawDimension(spec, ctx, "forms", { color: COLORS.dim }); });
+    if (S.envelopeLayer) S.envelopeLayer.remove();     // the envelope would show through where the form is smaller
+  }
+  function drawSectionMarker() {
+    clearLayers(["section"]);
+    if (!S.ev || S.ev.status !== "ok") return;
+    var sp = M.sectionPlan(S.ev, S.form && S.form.status === "ok" ? S.form : null, S.formBases, envelopeBaseZ(), M.dimOffsetM(SECTION_SCALE));
+    if (!sp) return;
+    var c = sp.c, d = sp.dir, half = (sp.lot[1] - sp.lot[0]) / 2 + 15;
+    var a = [c[0] - d[0] * half, c[1] - d[1] * half], b = [c[0] + d[0] * half, c[1] + d[1] * half];
+    line([a, b], { color: COLORS.section, weight: 1.5, dashArray: "10 6", interactive: false }, "section");
+    label(a, "A", 0, "seclbl", "section"); label(b, "A", 0, "seclbl", "section");
+  }
+
+  // ------------------------------------------------------------------ section (SVG)
+  function envelopeBaseZ() { return S.base ? S.base.mean : 0; }
+  function drawSection() {
+    var host = ui.sectionHost;
+    host.innerHTML = "";
+    if (!S.ev || S.ev.status !== "ok") { host.appendChild(el("p", "empty", S.parcel ? "Generate the envelope to cut the section." : "Import a site, then generate the envelope to cut the section.")); return; }
+    var form = S.form && S.form.status === "ok" ? S.form : null;
+    var sp = M.sectionPlan(S.ev, form, S.formBases, envelopeBaseZ(), M.dimOffsetM(SECTION_SCALE));
+    if (!sp) { host.appendChild(el("p", "empty", "The section line misses the lot.")); return; }
+    var margin = 15, half = (sp.lot[1] - sp.lot[0]) / 2 + margin, mid = (sp.lot[0] + sp.lot[1]) / 2;
+    var s0 = mid - half, s1 = mid + half, zLo = sp.z_low - 1, zHi = sp.z_high;
+    var prof = [];
+    for (var s = s0; s <= s1 + 1e-9; s += 1) prof.push([s, M.groundZ(S.res, sp.c[0] + sp.dir[0] * s, sp.c[1] + sp.dir[1] * s)]);
+    var gmin = Math.min.apply(null, prof.map(function (p) { return p[1]; })), gmax = Math.max.apply(null, prof.map(function (p) { return p[1]; }));
+    zLo = Math.min(zLo, gmin - 3); zHi = Math.max(zHi, gmax + 2);
+    var W = host.clientWidth || 800, pad = 36, k = (W - 2 * pad) / (s1 - s0), H = (zHi - zLo) * k + 2 * pad;
+    var svgNS = "http://www.w3.org/2000/svg", svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("width", "100%"); svg.style.maxWidth = "100%";
+    function X(sv) { return pad + (sv - s0) * k; } function Y(z) { return pad + (zHi - z) * k; }
+    function add(tag, attrs, text) { var e = document.createElementNS(svgNS, tag); Object.keys(attrs).forEach(function (a) { e.setAttribute(a, attrs[a]); }); if (text !== undefined) e.textContent = text; svg.appendChild(e); return e; }
+    // ground block
+    var pts = prof.map(function (p) { return X(p[0]) + "," + Y(p[1]); });
+    add("polygon", { points: pts.join(" ") + " " + X(s1) + "," + Y(zLo) + " " + X(s0) + "," + Y(zLo), fill: "#5e6a4a", stroke: "none" });
+    add("polyline", { points: pts.join(" "), fill: "none", stroke: "#3f4733", "stroke-width": 1.2 });
+    // buildings
+    sp.buildings.forEach(function (b) {
+      var col = b.key === "envelope" ? COLORS.envelope : COLORS.form;
+      add("rect", { x: X(b.s0), y: Y(b.z1), width: (b.s1 - b.s0) * k, height: (b.z1 - b.z0) * k, fill: col, "fill-opacity": 0.75, stroke: "#5b4a1e", "stroke-width": 1 });
+    });
+    // reference lines
+    sp.lines.forEach(function (ln) {
+      var st = ln.style === "site" ? { stroke: COLORS.site, "stroke-width": 1.5 } : ln.style === "setback" ? { stroke: COLORS.setback, "stroke-width": 1, "stroke-dasharray": "6 4" } : { stroke: "#6b7280", "stroke-width": 0.8 };
+      var a = { x1: X(ln.a[0]), y1: Y(ln.a[1]), x2: X(ln.b[0]), y2: Y(ln.b[1]) }; Object.keys(st).forEach(function (kk) { a[kk] = st[kk]; });
+      add("line", a);
+    });
+    // dimensions
+    sp.dims.forEach(function (dm) {
+      if (dm.vertical) {
+        var x = X(dm.s), y0 = Y(dm.z[0]), y1 = Y(dm.z[1]);
+        add("line", { x1: x, y1: y0, x2: x, y2: y1, stroke: COLORS.dim, "stroke-width": 1 });
+        [y0, y1].forEach(function (yy) { add("line", { x1: x - 4, y1: yy + 4, x2: x + 4, y2: yy - 4, stroke: COLORS.dim, "stroke-width": 1.5 }); });
+        var t = add("text", { x: x + 6, y: (y0 + y1) / 2, "font-size": 11, "text-anchor": "middle", transform: "rotate(-90 " + (x + 6) + " " + ((y0 + y1) / 2) + ")", "dominant-baseline": "auto", "class": "secdim" }, mm(dm.value_m));
+      } else {
+        var xa = X(dm.s[0]), xb = X(dm.s[1]), y = Y(dm.z);
+        add("line", { x1: xa, y1: y, x2: xb, y2: y, stroke: COLORS.dim, "stroke-width": 1 });
+        [xa, xb].forEach(function (xx) { add("line", { x1: xx - 4, y1: y + 4, x2: xx + 4, y2: y - 4, stroke: COLORS.dim, "stroke-width": 1.5 }); });
+        add("text", { x: (xa + xb) / 2, y: y - 4, "font-size": 11, "text-anchor": "middle", "class": "secdim" }, mm(dm.value_m));
+      }
+    });
+    // street / lane names at the ends
+    if (S.res.roads) {
+      var pf = [sp.c[0] + sp.dir[0] * (sp.lot[0] - 8), sp.c[1] + sp.dir[1] * (sp.lot[0] - 8)], pr = [sp.c[0] + sp.dir[0] * (sp.lot[1] + 4), sp.c[1] + sp.dir[1] * (sp.lot[1] + 4)];
+      var sf = M.roadNameNear(S.res.roads, pf), sr = M.roadNameNear(S.res.roads, pr);
+      if (sf) add("text", { x: X(sp.lot[0] - 8), y: Y(zLo) + 16, "font-size": 11, "text-anchor": "middle", "class": "seclbl" }, sf.name);
+      if (sr) add("text", { x: X(sp.lot[1] + 4), y: Y(zLo) + 16, "font-size": 11, "text-anchor": "middle", "class": "seclbl" }, sr.name);
+    }
+    add("text", { x: pad, y: 18, "font-size": 12, "class": "sectitle" }, "Section A-A through the site, street on the left  ·  1:" + SECTION_SCALE + " proportions, mm");
+    host.appendChild(svg);
+    sectionDirty = false;
+  }
+
+  // ------------------------------------------------------------------ 3D (three.js)
+  function init3D() {
+    var host = ui.threeHost;
+    THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1);
+    var renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    host.appendChild(renderer.domElement);
+    var scene = new THREE.Scene(); scene.background = new THREE.Color(0xf7f8fa);
+    var camera = new THREE.PerspectiveCamera(40, 1, 1, 5000);
+    var controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    var sun = new THREE.DirectionalLight(0xffffff, 0.8); sun.position.set(-120, -160, 220); scene.add(sun);
+    var group = new THREE.Group(); scene.add(group);
+    three = { renderer: renderer, scene: scene, camera: camera, controls: controls, group: group };
+    function resize() { var w = host.clientWidth || 800, h = host.clientHeight || 500; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
+    window.addEventListener("resize", resize); resize();
+    (function loop() { requestAnimationFrame(loop); if (!ui.threeHost.parentElement.hidden) { controls.update(); renderer.render(scene, camera); } })();
+    three.resize = resize;
+  }
+  function extrude(ring, z0, h, color, opacity) {
+    var shape = new THREE.Shape(ring.map(function (p) { return new THREE.Vector2(p[0], p[1]); }));
+    var geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
+    var mat = new THREE.MeshLambertMaterial({ color: color, transparent: opacity < 1, opacity: opacity });
+    var mesh = new THREE.Mesh(geo, mat); mesh.position.z = z0;
+    var edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x3b3b3b, transparent: true, opacity: 0.5 }));
+    edges.position.z = z0;
+    var g = new THREE.Group(); g.add(mesh); g.add(edges); return g;
+  }
+  function build3D() {
+    if (!three) init3D();
+    var G = three.group;
+    while (G.children.length) G.remove(G.children[0]);
+    if (!S.square) return;
+    var sq = S.square, res = S.res, N = 40, h = sq.half;
+    // terrain heightfield over the square, with a skirt down to a flat base
+    var pos = [], idx = [], zs = [];
+    for (var j = 0; j <= N; j++) for (var i = 0; i <= N; i++) {
+      var p = M.fromUV(sq, [-h + 2 * h * i / N, -h + 2 * h * j / N]), z = M.groundZ(res, p[0], p[1]);
+      pos.push(p[0], p[1], z); zs.push(z);
+    }
+    for (j = 0; j < N; j++) for (i = 0; i < N; i++) { var a = j * (N + 1) + i, b = a + 1, c = a + N + 1, d = c + 1; idx.push(a, b, d, a, d, c); }
+    var zBase = Math.min.apply(null, zs) - 4;
+    var geo = new THREE.BufferGeometry(); geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); geo.setIndex(idx); geo.computeVertexNormals();
+    G.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: 0x9fb07f, side: THREE.DoubleSide })));
+    var ring = M.squareRing(sq), skirt = [], sidx = [];
+    ring.forEach(function (p, k) {
+      var q = ring[(k + 1) % 4], n = 20;
+      for (var t = 0; t <= n; t++) {
+        var x = p[0] + (q[0] - p[0]) * t / n, y = p[1] + (q[1] - p[1]) * t / n, z = M.groundZ(res, x, y), base = skirt.length / 3;
+        skirt.push(x, y, z, x, y, zBase);
+        if (t > 0) sidx.push(base - 2, base, base + 1, base - 2, base + 1, base - 1);
+      }
+    });
+    var sg = new THREE.BufferGeometry(); sg.setAttribute("position", new THREE.Float32BufferAttribute(skirt, 3)); sg.setIndex(sidx); sg.computeVertexNormals();
+    G.add(new THREE.Mesh(sg, new THREE.MeshLambertMaterial({ color: 0x5e6a4a, side: THREE.DoubleSide })));
+    var bottom = new THREE.Shape(ring.map(function (p) { return new THREE.Vector2(p[0], p[1]); }));
+    var bm = new THREE.Mesh(new THREE.ShapeGeometry(bottom), new THREE.MeshLambertMaterial({ color: 0x4d573d, side: THREE.DoubleSide })); bm.position.z = zBase; G.add(bm);
+    // roads draped 0.1 m above the ground
+    if (ui.chkRoads.checked && res.roads) {
+      var rp = [], ri = [];
+      res.roads.segments.forEach(function (seg) {
+        seg.pieces.forEach(function (pc) {
+          var nSub = Math.max(1, Math.ceil(pc.len / 8));
+          for (var k = 0; k < nSub; k++) {
+            var t0 = k / nSub, t1 = (k + 1) / nSub;
+            function st(t) { var cx = pc.a[0] + (pc.b[0] - pc.a[0]) * t, cy = pc.a[1] + (pc.b[1] - pc.a[1]) * t; return [[cx + pc.n[0] * pc.left, cy + pc.n[1] * pc.left], [cx - pc.n[0] * pc.right, cy - pc.n[1] * pc.right]]; }
+            var s0 = st(t0), s1 = st(t1), quad = M.clipRing([s0[0], s0[1], s1[1], s1[0]], sq);
+            if (!quad.length) continue;
+            var base = rp.length / 3;
+            quad.forEach(function (p) { rp.push(p[0], p[1], M.groundZ(res, p[0], p[1]) + 0.1); });
+            for (var m = 1; m < quad.length - 1; m++) ri.push(base, base + m, base + m + 1);
+          }
+        });
+      });
+      var rg = new THREE.BufferGeometry(); rg.setAttribute("position", new THREE.Float32BufferAttribute(rp, 3)); rg.setIndex(ri); rg.computeVertexNormals();
+      G.add(new THREE.Mesh(rg, new THREE.MeshLambertMaterial({ color: 0x777777, side: THREE.DoubleSide })));
+    }
+    if (ui.chkBuildings.checked) res.buildings.forEach(function (b) {
+      var onSite = S.parcel && site.pointInRing(b.centroid, S.parcel.ring);
+      if (onSite && S.placed && ui.chkHide.checked) return;
+      var r = M.clipRing(b.ring, sq); if (!r.length) return;
+      G.add(extrude(r, site.localZ(res, b.base_geodetic), b.height_m, 0xf1f1ee, 1));
+    });
+    if (S.parcel) {
+      var lp = S.parcel.ring.map(function (p) { return new THREE.Vector3(p[0], p[1], M.groundZ(res, p[0], p[1]) + 0.2); }); lp.push(lp[0].clone());
+      G.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(lp), new THREE.LineBasicMaterial({ color: 0xc81e1e })));
+    }
+    var formUp = S.form && S.form.status === "ok";
+    if (S.ev && S.ev.status === "ok" && S.placed && !formUp) G.add(extrude(S.ev.env_pts, envelopeBaseZ(), S.ev.height, 0x3c8cdc, 0.4));
+    if (formUp) S.form.buildings.forEach(function (b) { G.add(extrude(b.pts, S.formBases[b.key], b.height_m, 0xd99a2b, 0.6)); });
+    var c = S.parcel ? S.parcel.centroid : sq.c, cz = M.groundZ(res, c[0], c[1]);
+    three.controls.target.set(c[0], c[1], cz);
+    three.camera.position.set(c[0] + 90, c[1] - 110, cz + 90);
+    three.controls.update(); three.resize();
+    threeDirty = false;
+  }
+
+  // ------------------------------------------------------------------ tabs
+  function showView(name) {
+    ["map", "3d", "section"].forEach(function (k) {
+      var pane = ui.panes[k], on = k === name;
+      pane.hidden = !on; ui.tabs[k].classList.toggle("on", on); ui.tabs[k].setAttribute("aria-selected", on ? "true" : "false");
+    });
+    if (name === "map") setTimeout(function () { map.invalidateSize(); if (S.parcel && map.getZoom() < 14) zoomToSite(); }, 30);
+    if (name === "3d" && S.square) { if (threeDirty) build3D(); else three.resize(); }
+    if (name === "section" && sectionDirty) drawSection();
+  }
+  function markDirty() { threeDirty = true; sectionDirty = true; if (!ui.panes.section.hidden) drawSection(); if (!ui.panes["3d"].hidden && S.square) build3D(); }
+
+  // ------------------------------------------------------------------ data source: live portal, opened site file, or preloaded site
+  // The stored tiles cover centre +/- tileHalfM of each preloaded site: the tile layer only asks for tiles in that
+  // box (no requests for tiles that do not exist) and the map cannot be dragged out of it. No centre: no tiles.
+  function siteBox(centre) {
+    if (!centre) return L.latLngBounds([[0, 0], [0, 0]]);
+    var dl = tileHalfM / 111320, dn = dl / Math.cos(centre[0] * Math.PI / 180);
+    return L.latLngBounds([[centre[0] - dl, centre[1] - dn], [centre[0] + dl, centre[1] + dn]]);
+  }
+  function useSiteBox(centre) {
+    if (!BUNDLED) return;
+    tileLayer.options.bounds = siteBox(centre);
+    map.setMaxBounds(centre ? siteBox(centre) : null);
+  }
+  function prepareSource(text) {
+    var na = site.normaliseAddress(text), civic = na[0], street = na[1];
+    function matches(o) { return !!o && String(o.civic) === String(civic) && o.street === street; }
+    activePreset = null;
+    if (matches(openedFile)) { site.useTape(openedFile.requests); site.record(false); return Promise.resolve("file"); }
+    if (!BUNDLED) { site.useTape(null); site.record(true); return Promise.resolve("live"); }
+    var p = presets.filter(matches)[0];
+    activePreset = p || null;
+    if (!p) return Promise.reject(new Error("'" + text + "' is not one of the sites stored with this page. Pick a preloaded site from the address list, or open a site file saved from the app run locally."));
+    var load = bundles[p.file] ? Promise.resolve(bundles[p.file])
+      : fetch(p.file).then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status + " loading " + p.file); return r.json(); }).then(function (b) { bundles[p.file] = b; return b; });
+    return load.then(function (b) { site.useTape(b.requests); site.record(false); return "preset"; });
+  }
+  function loadPresets() {
+    if (!BUNDLED) return Promise.resolve();
+    return fetch("data/index.json").then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); }).then(function (idx) {
+      presets = idx.sites || []; tileHalfM = idx.tile_half_m || tileHalfM;
+      presets.forEach(function (p) { var o = el("option"); o.value = p.address; if (p.label) o.label = p.label; ui.presetList.appendChild(o); });
+      var p0 = presets.filter(function (p) { return p.address === EXAMPLE_ADDRESS; })[0] || presets[0];
+      if (p0 && p0.centre) { useSiteBox(p0.centre); map.setView(p0.centre, 17); }
+      ui.sourceNote.hidden = false;
+      ui.sourceNote.textContent = "Shared copy: " + presets.length + " sites are stored with this page (" + presets.map(function (p) { return p.address; }).join("; ") +
+        "). Pick one from the address list. For any other Vancouver address, run the app locally and open the site file it saves.";
+    }).catch(function (e) { presets = []; ui.sourceNote.hidden = false; ui.sourceNote.textContent = "No preloaded sites found (" + e.message + "). Open a site file saved from the app run locally."; });
+  }
+  function exportSite() {
+    if (!S.res || !S.siteTape) return null;
+    var na = site.normaliseAddress(S.address), t = S.res.target, wd = t ? site.approxDims(t.ring) : null;
+    return { format: "r1-1-site/1", app: "R1-1 Massing web app", saved: new Date().toISOString(), address: S.address, civic: na[0], street: na[1],
+      centre: S.res.centre, radius_m: S.res.radius_m, zoning: S.zone ? S.zone.district : null, local_area: S.hit ? S.hit.local_area : null,
+      label: t ? t.civic + " " + t.street + (wd ? " (" + fmt(wd[0], 1) + " x " + fmt(wd[1], 1) + " m)" : "") : null,
+      requests: site.slimTape(S.siteTape, S.res.centre[0], S.res.centre[1], S.res.radius_m + 25) };
+  }
+  function onSaveSite() {
+    var obj = exportSite();
+    if (!obj) { status("Fetch a site first.", "error"); return; }
+    var name = "r1-1-site-" + (obj.civic + "-" + obj.street).toLowerCase().replace(/[^a-z0-9]+/g, "-") + ".json";
+    var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(obj)], { type: "application/json" })); a.download = name;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a); setTimeout(function () { URL.revokeObjectURL(a.href); }, 5000);
+    status("Site file saved: " + name + ". Open it in the shared copy of this app to work on this site there.", "ok");
+  }
+  function onOpenSiteFile(ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () {
+      var obj;
+      try { obj = JSON.parse(rd.result); if (obj.format !== "r1-1-site/1" || !obj.requests || !obj.address) throw new Error("not an R1-1 site file"); }
+      catch (e) { status("Could not read " + f.name + ": " + e.message, "error"); return; }
+      openedFile = obj; ui.address.value = obj.address;
+      report(["Site file opened: " + f.name + " (saved " + (obj.saved || "?").slice(0, 16).replace("T", " ") + ")"]);
+      onFetch();
+    };
+    rd.readAsText(f); ev.target.value = "";
+  }
+
+  // ------------------------------------------------------------------ step 1: fetch + import
+  function onFetch() {
+    var text = ui.address.value.trim();
+    if (!text) { status("Type an address first.", "error"); return; }
+    var side = parseFloat(ui.cutSide.value), radius = M.fetchRadiusFor(side);
+    status("Fetching City of Vancouver Open Data within " + Math.round(radius) + " m for a " + side + " m square ...", "busy");
+    ui.btnFetch.disabled = true;
+    var log = function (m) { report([m]); };
+    prepareSource(text).then(function (src) {
+      if (src !== "live") report(["Data source: " + (src === "file" ? "site file " : "preloaded site ") + text + " (portal responses replayed, not fetched live)."]);
+      return site.geocode(text);
+    }).then(function (hit) {
+      if (!hit) throw new Error("No address '" + text + "' found in " + site.DATASETS.addresses.id + ".");
+      report(["Address: " + hit.civic_number + " " + hit.std_street + " (" + hit.local_area + "), site_id " + hit.site_id + "  ->  lat " + hit.lat.toFixed(6) + ", lon " + hit.lon.toFixed(6)]);
+      return site.fetchArea(hit.lat, hit.lon, radius, log).then(function (res) {
+        return Promise.all([M.zoningAt(hit.lat, hit.lon).catch(function (e) { report(["Note: zoning lookup failed (" + e.message + ")."]); return null; }),
+          M.fetchRoads(res).catch(function (e) { report(["Note: roads lookup failed (" + e.message + ")."]); return null; })]).then(function (both) {
+          res.roads = both[1]; return { res: res, zone: both[0], hit: hit };
+        });
+      });
+    }).then(function (out) {
+      resetState(); S.res = out.res; S.zone = out.zone; S.cutSide = side; S.hit = out.hit; S.address = text;
+      S.siteTape = site.tapeContents(); site.record(false);   // a live fetch was recorded: "Save site file" can store it
+      report(site.reportLines(S.res)); var zl = M.zoningLines(S.zone); report(zl.concat([""]));
+      if (S.res.roads) report(M.roadsLines(S.res.roads).concat([""]));
+      ui.zoning.textContent = zl[0]; ui.zoning.className = "zoning " + (S.zone && (S.zone.district || "").indexOf(M.R1_1_PREFIX) === 0 ? "ok" : "warn");
+      S.choices = M.parcelChoices(S.res);
+      ui.parcelList.innerHTML = "";
+      S.choices.forEach(function (ch, i) { var o = el("option", null, ch.label); o.value = String(i); if (ch.parcel === S.res.target) o.selected = true; ui.parcelList.appendChild(o); });
+      clearLayers(Object.keys(layers)); fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true;
+      useSiteBox(activePreset ? activePreset.centre : null);   // a site file opened in the shared copy has no tiles at all
+      map.setView([S.res.centre[0], S.res.centre[1]], 17);
+      var roads = S.res.roads ? S.res.roads.segments.length : 0;
+      status(S.res.parcels.length + " parcels, " + S.res.buildings.length + " buildings, " + roads + " road segments, " + S.res.topo_points.length + " elevation points fetched. Select the site parcel and import it.", "ok");
+    }).catch(function (e) {
+      status("Fetch failed: " + e.message, "error"); report(["STOP: data fetch failed: " + e.message]);
+    }).then(function () { ui.btnFetch.disabled = false; ui.btnSaveSite.disabled = !S.siteTape; setReady(); });
+  }
+  function onImport() {
+    var i = parseInt(ui.parcelList.value, 10);
+    if (!S.res || isNaN(i)) { status("Fetch the site data and select the parcel first.", "error"); return; }
+    S.parcel = S.choices[i].parcel; S.square = M.siteSquare(S.parcel, S.cutSide);
+    S.ev = null; S.base = null; S.placed = false; S.form = null; S.formBases = null; S.click = null; S.envelopeLayer = null;
+    clearLayers(["envelope", "forms", "dims", "section"]);
+    drawContext();
+    report(M.siteLines(S.parcel)); report(M.cutLines(S.square).concat([""]));
+    S.det = M.detectFrontage(S.parcel.ring, S.res.parcels, S.res.radius_m, S.parcel);
+    report(M.frontageLines(S.det).concat([""]));
+    fillEdges(); fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true; markDirty(); setReady();
+    status("Site shown on the map, cut to a " + S.cutSide + " m square. Confirm the street edge (step 2), then generate the envelope (step 4).", "ok");
+  }
+  function fillEdges() {
+    ui.edgeSelect.innerHTML = "";
+    var choices = M.edgeChoices(S.parcel.ring, S.det, S.res.roads);
+    choices.forEach(function (ch, i) { var o = el("option", null, ch.label); o.value = String(i); ui.edgeSelect.appendChild(o); });
+    if (S.det.front) {
+      ui.edgeSelect.value = String(S.det.edges.indexOf(S.det.front));
+      var note = "Detected: front faces " + S.det.front.facing + " (" + S.det.confidence + " confidence).";
+      if (S.det.rear && S.det.rear.gap_m !== null) note += " Rear faces " + S.det.rear.facing + " (" + fmt(S.det.rear.gap_m, 1) + " m gap = lane).";
+      S.det.notes.forEach(function (n) { note += " " + n; });
+      ui.edgeNote.textContent = note;
+    } else { ui.edgeSelect.value = ""; ui.edgeNote.textContent = "Street edge not detected: choose the edge that faces the street, or pick a point on the map."; }
+  }
+  function streetClick() {
+    var i = parseInt(ui.edgeSelect.value, 10);
+    if (!isNaN(i) && S.parcel) { var E = S.det ? S.det.edges : M.edges(S.parcel.ring); if (i < E.length) return E[i].mid; }
+    return S.click;
+  }
+
+  // ------------------------------------------------------------------ step 4: envelope
+  function onGenerate() {
+    if (!S.parcel) { status("Import a site first.", "error"); return; }
+    var click = streetClick();
+    if (!click) { status("Choose the street edge (or pick a point on the map) first.", "error"); return; }
+    var ev = core.evaluate(S.parcel.ring, click);
+    var base = ev.status === "ok" ? M.envelopeBase(S.res, ev.env_pts) : null;
+    S.ev = ev; S.base = base; S.form = null; S.formBases = null; setScheme(null); clearLayers(["forms"]);
+    fillRules(); fillResults(); fillForm();
+    report(core.reportLines(ev, "mm").concat([""]).concat(M.groundLines(base)).concat([""]));
+    if (ev.status !== "ok") { S.placed = false; markDirty(); setReady(); status("No envelope: " + (ev.controlling || ev.status) + ". See the report and the by-law table.", "error"); return; }
+    S.placed = true;
+    drawEnvelope(); setExistingVisible(!ui.chkHide.checked); drawSectionMarker(); markDirty();
+    ui.formSection.hidden = false; setReady();
+    status("Envelope placed: " + fmt(ev.env_width, 2) + " x " + fmt(ev.env_depth, 2) + " m, " + ev.height + " m high, up to " + ev.band.max_units + " units" +
+      (ui.chkHide.checked && S.existingIds.length ? "; existing building hidden" : "") + ". Toggle a form in step 5, or open the 3D view or the section.", "ok");
+  }
+  function onHideToggle() { if (!S.placed) return; setExistingVisible(!ui.chkHide.checked); markDirty(); status("Existing building on the site " + (ui.chkHide.checked ? "hidden." : "shown again."), "ok"); }
+
+  // ------------------------------------------------------------------ step 5: forms
+  function applyForm(key) {
+    if (!(S.ev && S.ev.status === "ok" && S.placed)) { setScheme(null); status("Generate the permitted envelope first (step 4).", "error"); return; }
+    var cy = parseFloat(ui.courtyardSel.value), rd = parseFloat(ui.rearDepthSel.value);
+    var form = M.formScheme(S.ev, key, cy, rd);
+    S.form = form; setScheme(key); fillForm(); fillRules();
+    report(M.formLines(form, S.ev));
+    if (form.status !== "ok") {
+      S.formBases = null; drawForm(); drawSectionMarker(); markDirty(); setReady();
+      ui.formNote.textContent = form.reason || form.status;
+      status(form.name + ": " + (form.reason || form.status), form.status === "single" ? "ok" : "error"); report([""]); return;
+    }
+    S.formBases = M.formBases(S.res, form, envelopeBaseZ());
+    drawForm(); drawSectionMarker(); markDirty(); setReady();
+    ui.formNote.textContent = "Drawn: " + form.buildings.length + " buildings; the blue envelope is hidden while a form is shown.";
+    report(["  Drawn on the map; envelope hidden while this form is shown.", ""]);
+    status("Form '" + form.name + "' drawn: " + form.buildings.length + " buildings in amber; envelope hidden.", "ok");
+  }
+  function onFormClear() {
+    S.form = null; S.formBases = null; setScheme(null); fillForm(); fillRules(); drawForm(); drawSectionMarker(); markDirty(); setReady();
+    ui.formNote.textContent = ""; status("Form option removed; the permitted envelope is shown again.", "ok");
+  }
+
+  // ------------------------------------------------------------------ clear / copy
+  function onClear() {
+    clearLayers(Object.keys(layers));
+    var res = S.res, zone = S.zone, choices = S.choices, cut = S.cutSide, tape = S.siteTape, hit = S.hit, address = S.address;
+    resetState(); S.res = res; S.zone = zone; S.choices = choices; S.cutSide = cut; S.siteTape = tape; S.hit = hit; S.address = address;
+    fillRules(); fillResults(); fillForm(); setScheme(null); ui.formSection.hidden = true; ui.edgeSelect.innerHTML = ""; ui.edgeNote.textContent = "Import a site to list its edges.";
+    markDirty(); setReady(); status("Cleared. The fetched site data is kept; import again or fetch another site.", "ok");
+  }
+  function onCopy() {
+    var text = ui.report.textContent;
+    function fallback() { var r = document.createRange(); r.selectNodeContents(ui.report); var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r); status("Report selected; press Ctrl+C to copy.", "info"); }
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { status("Report copied to the clipboard.", "ok"); }).catch(fallback);
+    else fallback();
+  }
+
+  // ------------------------------------------------------------------ boot
+  function bind() {
+    ["address", "cutSide", "btnFetch", "parcelList", "zoning", "btnImport", "edgeSelect", "edgeNote", "btnPick", "rules", "assumptions", "btnGenerate", "chkHide",
+      "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormApply", "btnFormClear", "formTable", "formNote", "formDesc", "report", "btnCopy",
+      "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "btnSaveSite", "siteFile", "presetList", "sourceNote"].forEach(function (id) { ui[id] = $(id); });
+    ui.btnSaveSite.hidden = BUNDLED;   // the shared copy cannot save files (and has nothing new to save)
+    ui.btnSaveSite.addEventListener("click", onSaveSite);
+    ui.siteFile.addEventListener("change", onOpenSiteFile);
+    ui.schemeBtns = { single: $("rbSingle"), courtyard: $("rbCourtyard"), side_by_side: $("rbSide") };
+    ui.tabs = { map: $("tabMap"), "3d": $("tab3d"), section: $("tabSection") };
+    ui.panes = { map: $("paneMap"), "3d": $("pane3d"), section: $("paneSection") };
+    ui.stepBadges = Array.prototype.slice.call(document.querySelectorAll(".step .badge"));
+    M.CUT_SIDES_M.forEach(function (s) { var o = el("option", null, s + " x " + s + " m"); o.value = String(s); if (s === M.CUT_DEFAULT_SIDE_M) o.selected = true; ui.cutSide.appendChild(o); });
+    M.COURTYARDS_M.forEach(function (c) { var o = el("option", null, c + " m"); o.value = String(c); ui.courtyardSel.appendChild(o); });
+    M.REAR_DEPTHS_M.forEach(function (d) { var o = el("option", null, d + " m"); o.value = String(d); if (d === M.REAR_DEPTH_DEFAULT_M) o.selected = true; ui.rearDepthSel.appendChild(o); });
+    ui.assumptions.textContent = "Assumed, not checked: " + core.RULES.assumptions.join(" ") + " The multiple-building rows are used only by the form options in step 5; " + M.FORM_RULES.source.note;
+    $("sourceLine").textContent = core.RULES.source.document + ". " + core.RULES.source.version + ", accessed " + core.RULES.source.accessed + ". By-law values in metres; drawn values in mm.";
+    ui.btnFetch.addEventListener("click", onFetch);
+    ui.address.addEventListener("keydown", function (e) { if (e.key === "Enter") onFetch(); });
+    ui.btnImport.addEventListener("click", onImport);
+    ui.btnPick.addEventListener("click", function () { if (!S.parcel) return; pickMode = !pickMode; ui.btnPick.classList.toggle("on", pickMode); status(pickMode ? "Click on the map near the street-facing edge of the site." : "Pick cancelled.", "info"); });
+    ui.edgeSelect.addEventListener("change", function () { S.click = null; setReady(); });
+    ui.btnGenerate.addEventListener("click", onGenerate);
+    ui.chkHide.addEventListener("change", onHideToggle);
+    Object.keys(ui.schemeBtns).forEach(function (k) { ui.schemeBtns[k].addEventListener("click", function () { applyForm(k); }); });
+    ui.courtyardSel.addEventListener("change", function () { if (S.scheme === "courtyard") applyForm("courtyard"); });
+    ui.rearDepthSel.addEventListener("change", function () { if (S.scheme === "courtyard") applyForm("courtyard"); });
+    ui.btnFormApply.addEventListener("click", function () { if (S.scheme) applyForm(S.scheme); else status("Toggle a form first.", "info"); });
+    ui.btnFormClear.addEventListener("click", onFormClear);
+    ui.btnCopy.addEventListener("click", onCopy); ui.btnClear.addEventListener("click", onClear);
+    ["chkRoads", "chkParcels", "chkBuildings"].forEach(function (id) { ui[id].addEventListener("change", function () { if (S.square) { drawContext(); if (S.placed) { drawEnvelope(); drawForm(); setExistingVisible(!ui.chkHide.checked); } markDirty(); } }); });
+    Object.keys(ui.tabs).forEach(function (k) { ui.tabs[k].addEventListener("click", function () { showView(k); }); });
+    window.addEventListener("resize", function () { if (!ui.panes.section.hidden) drawSection(); });
+  }
+  function start() {
+    resetState(); bind(); initMap(); reportReset(); fillRules(); fillResults(); fillForm(); setScheme(null); setReady(); showView("map");
+    loadPresets().then(function () {
+      if (BUNDLED && !presets.some(function (p) { return p.address === EXAMPLE_ADDRESS; })) {
+        status(presets.length ? "Pick a preloaded site from the address list and fetch it." : "Open a site file to start.", "info"); return;
+      }
+      ui.address.value = EXAMPLE_ADDRESS;
+      status("Example site loading: " + EXAMPLE_ADDRESS + " (an R1-1 lot in Dunbar). Type your own address to start over.", "busy");
+      // a working state at rest: run the example through to the envelope
+      onFetch();
+      var wait = setInterval(function () {
+        if (!S.res || ui.btnFetch.disabled) return;
+        clearInterval(wait);
+        if (!S.choices.length) return;
+        onImport();
+        if (S.det && S.det.front) { onGenerate(); status("Example: " + EXAMPLE_ADDRESS + " fetched, imported and its envelope generated. Toggle a form in step 5, open 3D or Section, or " + (BUNDLED ? "pick another preloaded site." : "type another address."), "ok"); }
+      }, 300);
+    });
+  }
+
+  return { start: start, state: function () { return S; }, map: function () { return map; }, zoomToSite: zoomToSite, showView: showView,
+    applyForm: applyForm, onFetch: onFetch, onImport: onImport, onGenerate: onGenerate, exportSite: exportSite, bundled: BUNDLED };
+})();
+if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", App.start); else App.start();

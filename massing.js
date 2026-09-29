@@ -589,12 +589,24 @@ var R1Massing = (function () {
     if (ss.length < 2) return null;
     return [Math.min.apply(null, ss), Math.max.apply(null, ss)];
   }
-  function sectionPlan(ev, form, bases, baseZ, off) {
+  /* sectionPlan(ev, form, bases, baseZ, off, option): the section line runs front to rear through the site; with a
+     unit option it passes through the middle of the first building's first ground-floor cell (never along a party
+     wall), and the result carries one box per unit per floor that the line cuts, the exterior stair and walkways
+     it crosses, the property lines, the yard lines of the schedule and the height limits, all labelled. */
+  function sectionPlan(ev, form, bases, baseZ, off, option) {
     if (!ev || ev.status !== "ok") return null;
     baseZ = baseZ || 0; off = off || 2.4;
-    var E = ev.edges, f = ev.idx.front, nIn = E[f].n, c = site.centroid(ev.pts);
+    var E = ev.edges, f = ev.idx.front, nIn = E[f].n, c = site.centroid(ev.pts), R = core.RULES, FR = FORM_RULES;
     var hasForm = form && form.status === "ok" && form.buildings && form.buildings.length, like = hasForm ? (form.dims_like || form.scheme) : null;
+    var units = [], access = [], cellOf = null;
     if (hasForm && like === "side_by_side") c = form.buildings[0].centroid;
+    if (hasForm && option && typeof R1Cmhc !== "undefined") {
+      var b0 = form.buildings[0], blk = option.blocks.filter(function (x) { return x.key === b0.key; })[0];
+      if (blk && blk.floors.length) {
+        var cells = R1Cmhc.unitCells(blk.floors[0].units, blk.floors[0].split, blk.floors[0].cols), c0 = cells[0];
+        c = R1Cmhc.bilinear(b0.pts, (c0.a0 + c0.a1) / 2, 0.5); cellOf = { block: b0.key, unit: c0.key };
+      }
+    }
     var lot = lineSpan(c, nIn, ev.pts);
     if (!lot) return null;
     var blds = [], gapName = "GAP";
@@ -603,30 +615,65 @@ var R1Massing = (function () {
       form.buildings.forEach(function (b) {
         var span = lineSpan(c, nIn, b.pts); if (!span) return;
         var z0 = bases && bases[b.key] !== undefined ? bases[b.key] : baseZ;
-        blds.push({ key: b.key, name: b.name.toUpperCase(), s0: span[0], s1: span[1], z0: z0, z1: z0 + b.height_m });
+        blds.push({ key: b.key, name: b.name.toUpperCase(), s0: span[0], s1: span[1], z0: z0, z1: z0 + b.height_m, storeys: b.storeys, max_h: b.key === "rear" ? FR.rear_building_height_m.value : R.max_height_m.value,
+          max_clause: (b.key === "rear" ? FR.rear_building_height_m.clause : R.max_height_m.clause).split(" ")[0] });
       });
+      if (option && typeof R1Cmhc !== "undefined") {
+        R1Cmhc.unitVolumes(option, form).forEach(function (v) {
+          var span = lineSpan(c, nIn, v.pts); if (!span || span[1] - span[0] < 0.3) return;
+          var z0 = bases && bases[v.block] !== undefined ? bases[v.block] : baseZ, u = R1Cmhc.unitOf(R1Cmhc.blockOf(option, v.block), v.unit) || {};
+          units.push({ block: v.block, unit: v.unit, floor_index: v.floor_index, s0: span[0], s1: span[1], z0: z0 + v.z0, z1: z0 + v.z1, color: v.color, kind: v.kind || null,
+            label: v.unit, sub: v.kind ? (u.name || "").toUpperCase() : v.beds + " BED" });
+        });
+        if (typeof R1Access !== "undefined") {
+          var ap = R1Access.plan(option);
+          form.buildings.forEach(function (bld) {
+            var B = ap.blocks[bld.key], span = lineSpan(c, nIn, bld.pts); if (!B || !span) return;
+            var z0 = bases && bases[bld.key] !== undefined ? bases[bld.key] : baseZ;
+            var ax = bld.pts[3][0] - bld.pts[0][0], ay = bld.pts[3][1] - bld.pts[0][1], xa = ((c[0] - bld.pts[0][0]) * ax + (c[1] - bld.pts[0][1]) * ay) / (ax * ax + ay * ay) * B.width_m;   // where across the block the line runs
+            B.walkways.forEach(function (w) {
+              if (xa < w.x0 || xa > w.x1) return;
+              access.push({ kind: "walkway", block: bld.key, face: w.face, floor_index: w.floor_index, s0: w.face === "rear" ? span[1] + (w.y0 - B.depth_m) : span[0] + w.y0, s1: w.face === "rear" ? span[1] + (w.y1 - B.depth_m) : span[0] + w.y1, z: z0 + w.z });
+            });
+            B.stairs.forEach(function (st) {
+              if (xa < st.x0 || xa > st.x1) return;
+              access.push({ kind: "stair", block: bld.key, face: st.face, s0: st.face === "rear" ? span[1] + (st.y0 - B.depth_m) : span[0] + st.y0, s1: st.face === "rear" ? span[1] + (st.y1 - B.depth_m) : span[0] + st.y1, z0: z0, z1: z0 + st.z_top + R1Access.GUARD_H });
+            });
+          });
+        }
+      }
     } else {
       var span2 = lineSpan(c, nIn, ev.env_pts);
-      if (span2) blds.push({ key: "envelope", name: "ENVELOPE", s0: span2[0], s1: span2[1], z0: baseZ, z1: baseZ + ev.height });
+      if (span2) blds.push({ key: "envelope", name: "ENVELOPE", s0: span2[0], s1: span2[1], z0: baseZ, z1: baseZ + ev.height, storeys: ev.storeys, max_h: R.max_height_m.value, max_clause: R.max_height_m.clause.split(" ")[0] });
     }
     blds.sort(function (a, b) { return a.s0 - b.s0; });
-    var zTop = Math.max.apply(null, blds.map(function (b) { return b.z1; }).concat([baseZ])), zString = zTop + off;
+    var zTop = Math.max.apply(null, blds.map(function (b) { return Math.max(b.z1, b.z0 + b.max_h); }).concat([baseZ])), zString = zTop + off;
     var zLow = Math.min.apply(null, blds.map(function (b) { return b.z0; }).concat([baseZ])) - SECTION_HEAD_M;
-    var lines = [], dims = [];
+    var lines = [], dims = [], marks = [];
     function vline(key, s, style) { lines.push({ key: key, style: style, a: [s, zLow], b: [s, zString + off * 0.4] }); }
     vline("v|lot_front", lot[0], "site"); vline("v|lot_rear", lot[1], "site");
-    var prevKey = "v|lot_front", prevS = lot[0];
+    marks.push({ kind: "property", s: lot[0], label: "PROPERTY LINE" }, { kind: "property", s: lot[1], label: "PROPERTY LINE" });
+    // the yard lines of the schedule (independent of where the buildings stand)
+    var fy = R.front_yard_m.value, ry = R.rear_yard_m.value;
+    marks.push({ kind: "setback", s: lot[0] + fy, label: "FRONT YARD " + fy + " m", clause: R.front_yard_m.clause.split(" ")[0] });
+    marks.push({ kind: "setback", s: lot[1] - ry, label: "REAR YARD " + ry + " m" + (blds.some(function (b) { return b.key === "rear"; }) ? ", single building" : ""), clause: R.rear_yard_m.clause.split(" ")[0] });
+    if (blds.some(function (b) { return b.key === "rear"; })) marks.push({ kind: "setback", s: lot[1] - FR.courtyard_rear_yard_m.value, label: "REAR YARD " + FR.courtyard_rear_yard_m.value + " m, rear building", clause: FR.courtyard_rear_yard_m.clause.split(" ")[0] });
+    var prevS = lot[0];
     blds.forEach(function (b, i) {
-      vline("v|" + b.key + "|0", b.s0, "setback"); vline("v|" + b.key + "|1", b.s1, "setback");
+      vline("v|" + b.key + "|0", b.s0, "face"); vline("v|" + b.key + "|1", b.s1, "face");
       lines.push({ key: "h|" + b.key + "|base", style: "marks", a: [b.s1, b.z0], b: [b.s1 + off, b.z0] });
       lines.push({ key: "h|" + b.key + "|top", style: "marks", a: [b.s1, b.z1], b: [b.s1 + off, b.z1] });
+      marks.push({ kind: "height", s0: b.s0 - off * 0.3, s1: b.s1 + off * 0.3, z: b.z0 + b.max_h, label: "MAX HEIGHT " + b.max_h + " m", clause: b.max_clause });
       if (b.s0 - prevS > 0.05) dims.push({ name: i === 0 ? "FRONT YARD" : gapName, s: [prevS, b.s0], z: zString, value_m: b.s0 - prevS });
       dims.push({ name: b.name, s: [b.s0, b.s1], z: zString, value_m: b.s1 - b.s0 });
-      prevKey = "v|" + b.key + "|1"; prevS = b.s1;
+      prevS = b.s1;
     });
     if (lot[1] - prevS > 0.05) dims.push({ name: "REAR YARD", s: [prevS, lot[1]], z: zString, value_m: lot[1] - prevS });
-    blds.forEach(function (b) { dims.push({ name: b.name + " HEIGHT", s: b.s1 + off * 0.6, z: [b.z0, b.z1], value_m: b.z1 - b.z0, vertical: true }); });
-    return { c: c, dir: nIn, lot: lot, buildings: blds, lines: lines, dims: dims, z_low: zLow, z_high: zString + off * 0.4 + SECTION_HEAD_M, z_string: zString };
+    blds.forEach(function (b) {   // the height string stands behind the building and behind any stair or walkway on its rear face
+      var behind = Math.max.apply(null, [b.s1].concat(access.filter(function (a) { return a.block === b.key && a.s1 > b.s1; }).map(function (a) { return a.s1; })));
+      dims.push({ name: b.name + " HEIGHT", s: behind + off * 0.6, z: [b.z0, b.z1], value_m: b.z1 - b.z0, vertical: true });
+    });
+    return { c: c, dir: nIn, lot: lot, buildings: blds, units: units, access: access, marks: marks, cell: cellOf, lines: lines, dims: dims, z_low: zLow, z_high: zString + off * 0.4 + SECTION_HEAD_M, z_string: zString };
   }
 
   // ------------------------------------------------------------------ tables

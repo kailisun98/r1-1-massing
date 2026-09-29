@@ -1,32 +1,37 @@
 /* plans.js -- architectural floor plans of a unit option (catalogue design or by-law configuration).
    Takes the rooms of every unit on every floor (R1Cmhc.unitRooms) and draws them the way a plan is drawn:
-   exterior walls, party walls between units, partitions, an entry door per unit, interior doors from the
-   circulation rooms into the served rooms, windows on the exterior walls of habitable rooms, stairs with
-   their direction, kitchens with counters, sinks and stoves, bathrooms with fixtures, beds, tables and sofas,
-   room names with areas, and overall dimensions. Everything is in metres and scaled by k px per metre. */
+   exterior walls, party walls between units, partitions, an entry door per unit on the face it is reached from,
+   interior doors from the circulation rooms into the served rooms, windows on the exterior walls of habitable
+   rooms, stairs with their direction, kitchens with counters, sinks and stoves, bathrooms with fixtures, beds,
+   tables and sofas, room names with areas, overall dimensions, and the exterior exit stairs and open walkways
+   that reach the upper units (R1Access). Walls are drawn as segments with the openings left out of them, so a
+   door or a cased opening is a real gap. Everything is in metres and scaled by k px per metre. */
 var R1Plans = (function () {
   "use strict";
   var C = R1Cmhc;
   function fmt(x, d) { return Number(x).toFixed(d); }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function r2(v) { return Math.round(v * 100) / 100; }
 
-  var WALL = { ext: 0.30, party: 0.25, int: 0.12 }, DOOR = 0.9, EPS = 0.02, HALO = ' paint-order="stroke" stroke="#ffffff" stroke-width="3" stroke-linejoin="round"';
-  var INK = "#1f2933", WALL_FILL = "#2c3e50", FLOOR = "#ffffff", GLASS = "#8fc1e3", FIX = "#4b5563", LIGHT = "#9aa4b1";
+  var WALL = { ext: 0.30, party: 0.25, int: 0.12 }, DOOR = 0.9, EPS = 0.02;
+  var INK = "#1f2933", WALL_FILL = "#2c3e50", FLOOR = "#ffffff", GLASS = "#8fc1e3", FIX = "#4b5563", LIGHT = "#9aa4b1", WALK = "#e9ebe6", STAIR = "#f1f2ef";
   var CIRC = ["Entry", "Lobby, mail", "Living", "Dining", "Hall", "Landing", "Kitchen", "Stair", "Shop floor", "Common room", "Play room", "Kitchenette"];
   var OPEN_PAIRS = [["Entry", "Living"], ["Living", "Dining"], ["Dining", "Kitchen"], ["Entry", "Stair"], ["Living", "Stair"], ["Hall", "Stair"], ["Landing", "Stair"], ["Landing", "Hall"], ["Hall", "Hall"],
     ["Entry", "Lobby, mail"], ["Lobby, mail", "Common room"], ["Common room", "Kitchenette"], ["Entry", "Play room"], ["Play room", "Play room"], ["Living", "Kitchen"], ["Dining", "Hall"], ["Entry", "Hall"], ["Living", "Living"], ["Living", "Hall"], ["Kitchen", "Hall"]];
-  var DOOR_PRIORITY_EXTRA = ["Landing"];
   var HABITABLE = ["Living", "Dining", "Kitchen", "Bedroom", "Bedroom 1", "Bedroom 2", "Bedroom 3", "Primary bedroom", "Study", "Den", "Office", "Play room", "Nap room", "Common room", "Shop floor", "Flex room", "Kitchenette"];
   var OUTDOOR = ["Terrace", "Patio"], SMALL_WINDOW = ["Bath", "Ensuite", "WC", "Laundry"];
   var SHORT = { "Primary bedroom": "Primary bed", "Bedroom 1": "Bed 1", "Bedroom 2": "Bed 2", "Bedroom 3": "Bed 3", "Ensuite": "Ens.", "Mechanical": "Mech.", "Lobby, mail": "Lobby", "Back of house": "Back", "Kitchenette": "Kit'ette", "Storage": "Stor.", "Laundry": "Ldry", "Kitchen": "Kit.", "Dining": "Din.", "Living": "Liv.", "Hall": "H", "Shop floor": "Shop", "Common room": "Common", "Play room": "Play", "Nap room": "Nap", "Flex room": "Flex", "Terrace": "Terr.", "Bedroom": "Bed" };
   var SHORTER = { "Primary bedroom": "P.bed", "Ensuite": "Ens", "Bath": "Bath", "WC": "WC", "Laundry": "L", "Storage": "S", "Kitchen": "K", "Dining": "D", "Living": "L", "Entry": "E", "Hall": "H", "Study": "St", "Den": "Den", "Office": "Off", "Bedroom": "Bed", "Bedroom 1": "B1", "Bedroom 2": "B2", "Bedroom 3": "B3" };
   var DOOR_PRIORITY = ["Hall", "Landing", "Entry", "Living", "Dining", "Kitchen", "Lobby, mail", "Common room", "Play room", "Shop floor", "Primary bedroom", "Stair"];
+  var FLOOR_WORD = ["ground", "second", "third", "fourth"];
 
   function isOpen(a, b) { return OPEN_PAIRS.some(function (p) { return (p[0] === a && p[1] === b) || (p[0] === b && p[1] === a); }); }
   function isCirc(n) { return CIRC.indexOf(n) >= 0; }
   function isOutdoor(n) { return OUTDOOR.indexOf(n) >= 0; }
   function isBed(n) { return /bedroom/i.test(n); }
   function habitable(n) { return HABITABLE.indexOf(n) >= 0; }
+  // the floor colour of a unit: its colour at 13% over white (labels and stair text are haloed in it, never in white)
+  function tint(hex) { var n = parseInt(hex.slice(1), 16), f = function (v) { return Math.round(255 + (v - 255) * 0.13); }; return "rgb(" + f((n >> 16) & 255) + "," + f((n >> 8) & 255) + "," + f(n & 255) + ")"; }
 
   // shared edge of two axis-aligned rectangles (metres): {side: "v"|"h", at, from, to} or null
   function sharedEdge(r, s) {
@@ -42,7 +47,7 @@ var R1Plans = (function () {
     return null;
   }
 
-  /* openings of one unit level: entry door, interior doors, open connections, windows */
+  /* openings of one unit level: entry door (on the face the unit is reached from), interior doors, open connections, windows */
   function openings(ur, ext) {
     var rooms = ur.rooms, out = [], doorsInto = {};
     function pushDoor(from, to, e, kind) {
@@ -80,17 +85,18 @@ var R1Plans = (function () {
       rooms.forEach(function (s) { if (s === r || isOutdoor(s.name) || /Bath|WC|Storage|Stair|Mech/.test(s.name)) return; var e = sharedEdge(r, s); if (e && (e.to - e.from) > bestLen) { bestLen = e.to - e.from; best = { s: s, e: e }; } });
       if (best) pushDoor(best.s, r, best.e, "door");
     });
-    // the entry door on the level a unit is entered on, from the exterior
+    // the entry door on the level a unit is entered on, from the exterior: on the face R1Access chose (the street,
+    // the walkway or the side path), else the first exterior face the entry touches
     if (ur.level_index === 0) {
-      var entry = rooms.filter(function (r) { return r.name === "Entry" || r.name === "Lobby, mail" || r.name === "Shop floor"; })[0] || rooms[0];
-      var faces = [];
-      if (ext.front && entry.y < EPS) faces.push({ side: "h", at: 0, from: entry.x, to: entry.x + entry.w });
-      if (ext.left && entry.x < EPS) faces.push({ side: "v", at: 0, from: entry.y, to: entry.y + entry.h });
-      if (ext.right && Math.abs(entry.x + entry.w - ur.width_m) < EPS) faces.push({ side: "v", at: ur.width_m, from: entry.y, to: entry.y + entry.h });
-      if (ext.rear && Math.abs(entry.y + entry.h - ur.depth_m) < EPS) faces.push({ side: "h", at: ur.depth_m, from: entry.x, to: entry.x + entry.w });
-      if (faces.length) {
-        var f = faces[0], mid = (f.from + f.to) / 2, w = Math.min(DOOR, Math.max(0.85, f.to - f.from - 0.1));
-        out.push({ kind: "entry", side: f.side, at: f.at, from: mid - w / 2, to: mid + w / 2, room: entry, other: null });
+      var entry = rooms.filter(function (r) { return r.name === "Entry" || r.name === "Lobby, mail" || r.name === "Shop floor"; })[0] || rooms[0], cand = {};
+      if (ext.front && entry.y < EPS) cand.front = { side: "h", at: 0, from: entry.x, to: entry.x + entry.w };
+      if (ext.rear && Math.abs(entry.y + entry.h - ur.depth_m) < EPS) cand.rear = { side: "h", at: ur.depth_m, from: entry.x, to: entry.x + entry.w };
+      if (ext.left && entry.x < EPS) cand.left = { side: "v", at: 0, from: entry.y, to: entry.y + entry.h };
+      if (ext.right && Math.abs(entry.x + entry.w - ur.width_m) < EPS) cand.right = { side: "v", at: ur.width_m, from: entry.y, to: entry.y + entry.h };
+      var order = [ur.entry_face, "front", "left", "right", "rear"].filter(function (f, i, a) { return f && a.indexOf(f) === i; }), face = order.filter(function (f) { return cand[f]; })[0];
+      if (face) {
+        var f = cand[face], mid = (f.from + f.to) / 2, w = Math.min(DOOR, Math.max(0.85, f.to - f.from - 0.1));
+        out.push({ kind: "entry", side: f.side, at: f.at, from: mid - w / 2, to: mid + w / 2, room: entry, other: null, face: face });
       }
     }
     // windows on exterior walls
@@ -191,32 +197,69 @@ var R1Plans = (function () {
     return F;
   }
 
-  /* sheet(option, opts): the drawing. opts.k px/m (default 20), opts.floors names, opts.block key. */
+  /* wall segments of one unit level with the openings cut out of them: each wall {x1,y1,x2,y2,th} is
+     axis-aligned in unit metres; an opening {side, at, from, to} on the same line removes its range. Pieces that
+     end at the wall's own end keep half a wall thickness beyond it so corners close. */
+  function wallPieces(walls, ops) {
+    var out = [];
+    walls.forEach(function (w) {
+      var horiz = Math.abs(w.y1 - w.y2) < 1e-6, at = horiz ? w.y1 : w.x1, lo = horiz ? Math.min(w.x1, w.x2) : Math.min(w.y1, w.y2), hi = horiz ? Math.max(w.x1, w.x2) : Math.max(w.y1, w.y2);
+      var cuts = ops.filter(function (op) { return op.side === (horiz ? "h" : "v") && Math.abs(op.at - at) < 0.03 && op.to > lo + 1e-6 && op.from < hi - 1e-6; })
+        .map(function (op) { return [Math.max(lo, op.from), Math.min(hi, op.to)]; }).sort(function (a, b) { return a[0] - b[0]; });
+      var s = lo, cap = w.th / 2;
+      function piece(a, b, capA, capB) {
+        var pa = a - (capA ? cap : 0), pb = b + (capB ? cap : 0);
+        out.push(Object.assign({}, w, horiz ? { x1: pa, x2: pb } : { y1: pa, y2: pb }));
+      }
+      cuts.forEach(function (c) { if (c[0] > s + 0.01) piece(s, c[0], s === lo, false); s = Math.max(s, c[1]); });
+      if (hi > s + 0.01) piece(s, hi, s === lo, true);
+    });
+    return out;
+  }
+  // the sheet reads left to right as the site plan does (a rotation of the map, never a reflection): when side 1 lies
+  // on the right of the street-up view, cells and rooms are mirrored across the block
+  function mirrorCells(cells) { return cells.map(function (c) { return { key: c.key, a0: r2(1 - c.a1), a1: r2(1 - c.a0), b0: c.b0, b1: c.b1 }; }); }
+  function mirrorUnit(ur) {
+    var w = ur.width_m, swap = { left: "right", right: "left" };
+    return Object.assign({}, ur, { rooms: ur.rooms.map(function (r) { return Object.assign({}, r, { x: r2(w - r.x - r.w) }); }),
+      cell: { key: ur.cell.key, a0: r2(1 - ur.cell.a1), a1: r2(1 - ur.cell.a0), b0: ur.cell.b0, b1: ur.cell.b1 }, entry_face: swap[ur.entry_face] || ur.entry_face });
+  }
+
+  /* sheet(option, opts): the drawing. opts.k px/m (default 20), opts.floors names, opts.block key, opts.mirror. */
   function sheet(o, opts) {
     opts = opts || {};
-    var k = opts.k || 20, pad = 26, gapX = Math.round(k * 2.2), parts = [], y = pad, width = 0, areas = C.unitAreas(o);
-    var fs = Math.max(7, k * 0.42), fs2 = Math.max(6, k * 0.34), byCell = {};
+    var k = opts.k || 20, pad = 26, gapX = Math.round(k * 2.2), parts = [], y = pad, width = 0, areas = C.unitAreas(o), mirror = !!opts.mirror;
+    var fs = Math.max(7, k * 0.42), fs2 = Math.max(6, k * 0.34), byCell = {}, access = (typeof R1Access !== "undefined") ? R1Access.plan(o) : { blocks: {}, entries: {}, notes: [] };
     C.unitRooms(o).forEach(function (r) { byCell[r.block + "|" + r.floor_index + "|" + r.unit] = r; });
-    function px(v) { return (v * k).toFixed(2); }
     function rectSvg(x, y0, w, h, style) { return '<rect x="' + x.toFixed(2) + '" y="' + y0.toFixed(2) + '" width="' + w.toFixed(2) + '" height="' + h.toFixed(2) + '" ' + style + "/>"; }
+    function lineSvg(a, b, style) { return '<line x1="' + a[0].toFixed(2) + '" y1="' + a[1].toFixed(2) + '" x2="' + b[0].toFixed(2) + '" y2="' + b[1].toFixed(2) + '" ' + style + "/>"; }
+    function textSvg(x, y0, s, style) { return '<text x="' + x.toFixed(2) + '" y="' + y0.toFixed(2) + '" ' + style + ">" + esc(s) + "</text>"; }
     o.blocks.forEach(function (b) {
       if (opts.block && b.key !== opts.block) return;
       var floors = b.floors.map(function (f, i) { return { f: f, i: i }; }).filter(function (x) { return !opts.floors || opts.floors.indexOf(x.f.name) >= 0; });
       if (!floors.length) return;
+      var A = access.blocks[b.key] || { walkways: [], stairs: [] }, Wm = b.width_m, Dm = b.depth_m;
+      // how far the exterior stairs and walkways stand off the front and the rear face (metres)
+      var topExtra = 0, botExtra = 0;
+      A.walkways.forEach(function (w) { if (w.face === "front") topExtra = Math.max(topExtra, -w.y0); else botExtra = Math.max(botExtra, w.y1 - Dm); });
+      A.stairs.forEach(function (s) { if (s.face === "front") topExtra = Math.max(topExtra, -s.y0); else botExtra = Math.max(botExtra, s.y1 - Dm); });
       // orientation: the street at the top of the sheet, the lane at the bottom, so a front building's street
       // face is its top edge and a rear building's courtyard face its top edge (its lane face the bottom)
-      var W = b.width_m * k, D = b.depth_m * k, x = pad + 26, y0 = y + fs * 5.2 + 6, isRear = b.key === "rear";
+      var W = Wm * k, D = Dm * k, x = pad + 26, yTop = y + fs * 5.2 + 6, y0 = yTop + topExtra * k, isRear = b.key === "rear";
       var topCaption = isRear ? "COURTYARD" : "STREET", botCaption = isRear ? "LANE" : (o.blocks.some(function (z) { return z.key === "rear"; }) ? "COURTYARD" : "REAR YARD");
-      parts.push('<text x="' + x + '" y="' + (y + 4) + '" font-size="' + (fs + 3) + '" font-weight="700" fill="' + INK + '">' + esc(b.name) + "</text>");
-      parts.push('<text x="' + (x + (fs + 3) * 0.62 * (b.name.length + 1)) + '" y="' + (y + 4) + '" font-size="' + fs + '" fill="' + LIGHT + '">' + fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m, " + b.storeys + " storeys, " + b.units + " unit" + (b.units === 1 ? "" : "s") + "</text>");
+      parts.push(textSvg(x, y + 4, b.name, 'font-size="' + (fs + 3) + '" font-weight="700" fill="' + INK + '"'));
+      parts.push(textSvg(x + (fs + 3) * 0.62 * (b.name.length + 1), y + 4, fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m, " + b.storeys + " storeys, " + b.units + " unit" + (b.units === 1 ? "" : "s"), 'font-size="' + fs + '" fill="' + LIGHT + '"'));
       floors.forEach(function (fx, col) {
-        var f = fx.f, fi = fx.i, x0 = x + col * (W + gapX), cells = C.unitCells ? C.unitCells(f.units, f.split, f.cols) : null;
+        var f = fx.f, fi = fx.i, x0 = x + col * (W + gapX), cells0 = C.unitCells ? C.unitCells(f.units, f.split, f.cols) : [], cells = mirror ? mirrorCells(cells0) : cells0;
+        function BX(mx) { return x0 + (mirror ? Wm - mx : mx) * k; }   // block metres -> px (mirrored when the sheet is)
+        function blockRect(xa, xb, ya, yb) { var p = BX(xa), q = BX(xb); return [Math.min(p, q), y0 + ya * k, Math.abs(q - p), (yb - ya) * k]; }
         // 1. floors and rooms
-        var walls = [], openingsAll = [];
         parts.push(rectSvg(x0, y0, W, D, 'fill="' + FLOOR + '"'));
-        (cells || []).forEach(function (c) {
+        var perCell = [];
+        cells.forEach(function (c) {
           var cx = x0 + c.a0 * W, cw = (c.a1 - c.a0) * W, ch = (c.b1 - c.b0) * D, cy = y0 + c.b0 * D, col2 = C.unitColor(o, c.key, b.key);
-          var ur = byCell[b.key + "|" + fi + "|" + c.key]; if (!ur) return;
+          var ur0 = byCell[b.key + "|" + fi + "|" + c.key]; if (!ur0) return;
+          var ur = mirror ? mirrorUnit(ur0) : ur0, walls = [];
           var ext = { front: c.b0 < EPS, rear: c.b1 > 1 - EPS, left: c.a0 < EPS, right: c.a1 > 1 - EPS };
           function P(mx, my) { return [cx + mx * k, cy + my * k]; }   // unit metres -> px (the unit's front at the top)
           parts.push(rectSvg(cx, cy, cw, ch, 'fill="' + col2 + '" fill-opacity="0.13"'));
@@ -224,72 +267,111 @@ var R1Plans = (function () {
             var p0 = P(r.x, r.y);
             if (isOutdoor(r.name)) parts.push(rectSvg(p0[0], p0[1], r.w * k, r.h * k, 'fill="#eef3ea"'));
             // partitions: each room outline as a thin wall (shared edges draw twice, harmlessly)
-            walls.push({ x1: r.x, y1: r.y, x2: r.x + r.w, y2: r.y, th: WALL.int, P: P, outdoor: isOutdoor(r.name) });
-            walls.push({ x1: r.x, y1: r.y + r.h, x2: r.x + r.w, y2: r.y + r.h, th: WALL.int, P: P, outdoor: isOutdoor(r.name) });
-            walls.push({ x1: r.x, y1: r.y, x2: r.x, y2: r.y + r.h, th: WALL.int, P: P, outdoor: isOutdoor(r.name) });
-            walls.push({ x1: r.x + r.w, y1: r.y, x2: r.x + r.w, y2: r.y + r.h, th: WALL.int, P: P, outdoor: isOutdoor(r.name) });
+            walls.push({ x1: r.x, y1: r.y, x2: r.x + r.w, y2: r.y, th: WALL.int, outdoor: isOutdoor(r.name) });
+            walls.push({ x1: r.x, y1: r.y + r.h, x2: r.x + r.w, y2: r.y + r.h, th: WALL.int, outdoor: isOutdoor(r.name) });
+            walls.push({ x1: r.x, y1: r.y, x2: r.x, y2: r.y + r.h, th: WALL.int, outdoor: isOutdoor(r.name) });
+            walls.push({ x1: r.x + r.w, y1: r.y, x2: r.x + r.w, y2: r.y + r.h, th: WALL.int, outdoor: isOutdoor(r.name) });
           });
-          // fixtures
+          // fixtures (text haloed in the floor tint, never white)
+          var halo = ' paint-order="stroke" stroke="' + tint(col2) + '" stroke-width="3" stroke-linejoin="round"';
           ur.rooms.forEach(function (r) {
             fixtures(r, ur, ext).forEach(function (g) {
               var stroke = g.light ? LIGHT : FIX, sw = g.thick ? 1.4 : 0.9;
               if (g.t === "rect") { var q = P(r.x + g.x, r.y + g.y); parts.push(rectSvg(q[0], q[1], g.w * k, g.h * k, 'fill="' + (g.counter ? "#f3f4f6" : "none") + '" stroke="' + stroke + '" stroke-width="' + sw + '"' + (g.rx ? ' rx="' + g.rx * k + '"' : ""))); }
               else if (g.t === "circle") { var q2 = P(r.x + g.x, r.y + g.y); parts.push('<circle cx="' + q2[0].toFixed(2) + '" cy="' + q2[1].toFixed(2) + '" r="' + (g.r * k).toFixed(2) + '" fill="none" stroke="' + stroke + '" stroke-width="' + sw + '"/>'); }
-              else if (g.t === "line") { var a = P(r.x + g.x1, r.y + g.y1), b2 = P(r.x + g.x2, r.y + g.y2); parts.push('<line x1="' + a[0].toFixed(2) + '" y1="' + a[1].toFixed(2) + '" x2="' + b2[0].toFixed(2) + '" y2="' + b2[1].toFixed(2) + '" stroke="' + stroke + '" stroke-width="' + sw + '"' + (g.arrow ? ' marker-end="url(#arr)"' : "") + "/>"); }
-              else if (g.t === "text") { var q3 = P(r.x + g.x, r.y + g.y); parts.push('<text x="' + q3[0].toFixed(2) + '" y="' + q3[1].toFixed(2) + '" text-anchor="middle" font-size="' + (g.small ? fs2 : fs) + '" fill="' + FIX + '"' + HALO + ">" + esc(g.s) + "</text>"); }
+              else if (g.t === "line") { parts.push(lineSvg(P(r.x + g.x1, r.y + g.y1), P(r.x + g.x2, r.y + g.y2), 'stroke="' + stroke + '" stroke-width="' + sw + '"' + (g.arrow ? ' marker-end="url(#arr)"' : ""))); }
+              else if (g.t === "text") { var q3 = P(r.x + g.x, r.y + g.y); parts.push(textSvg(q3[0], q3[1], g.s, 'text-anchor="middle" font-size="' + (g.small ? fs2 : fs) + '" fill="' + FIX + '"' + halo)); }
             });
           });
           // party walls of the cell (thicker), exterior walls thickest
           [["h", 0, ext.front], ["h", ur.depth_m, ext.rear], ["v", 0, ext.left], ["v", ur.width_m, ext.right]].forEach(function (e) {
             var th = e[2] ? WALL.ext : WALL.party;
-            if (e[0] === "h") walls.push({ x1: 0, y1: e[1], x2: ur.width_m, y2: e[1], th: th, P: P, ext: !!e[2] }); else walls.push({ x1: e[1], y1: 0, x2: e[1], y2: ur.depth_m, th: th, P: P, ext: !!e[2] });
+            if (e[0] === "h") walls.push({ x1: 0, y1: e[1], x2: ur.width_m, y2: e[1], th: th, ext: !!e[2] }); else walls.push({ x1: e[1], y1: 0, x2: e[1], y2: ur.depth_m, th: th, ext: !!e[2] });
           });
-          openings(ur, ext).forEach(function (op) { op.P = P; op.cellW = ur.width_m; op.cellD = ur.depth_m; openingsAll.push(op); });
+          var ops = openings(ur, ext);
+          perCell.push({ ur: ur, c: c, P: P, walls: wallPieces(walls, ops), ops: ops, cx: cx, cy: cy, cw: cw, col: col2 });
           // unit tag
           var tagW = Math.min(cw - 6, fs * 5.2);
           parts.push(rectSvg(cx + 4, cy + 4, tagW, fs * 1.6, 'fill="' + col2 + '" rx="2"'));
-          parts.push('<text x="' + (cx + 7) + '" y="' + (cy + 4 + fs * 1.2) + '" font-size="' + fs + '" font-weight="700" fill="#ffffff">' + esc(c.key) + "</text>");
+          parts.push(textSvg(cx + 7, cy + 4 + fs * 1.2, c.key, 'font-size="' + fs + '" font-weight="700" fill="#ffffff"'));
           var uu = b.unit_list.filter(function (z) { return z.key === c.key; })[0];
-          if (uu && cw > tagW + fs * 9) parts.push('<text x="' + (cx + tagW + 8) + '" y="' + (cy + 4 + fs * 1.2) + '" font-size="' + fs2 + '" fill="' + INK + '"' + HALO + ">" + (uu.kind ? esc(uu.name) : uu.beds + " bed / " + uu.baths + " bath, ~" + Math.round(areas[c.key + "@" + b.key] || 0) + " m2") + "</text>");
+          if (uu && cw > tagW + fs * 9) parts.push(textSvg(cx + tagW + 8, cy + 4 + fs * 1.2, uu.kind ? uu.name : uu.beds + " bed / " + uu.baths + " bath, ~" + Math.round(areas[c.key + "@" + b.key] || 0) + " m2", 'font-size="' + fs2 + '" fill="' + INK + '"'));
         });
-        // 2. walls: thin partitions first, then party and exterior walls; outdoor edges dashed
-        walls.sort(function (a, b2) { return a.th - b2.th; });
-        walls.forEach(function (wl) {
-          var a = wl.P(wl.x1, wl.y1), b2 = wl.P(wl.x2, wl.y2);
-          parts.push('<line x1="' + a[0].toFixed(2) + '" y1="' + a[1].toFixed(2) + '" x2="' + b2[0].toFixed(2) + '" y2="' + b2[1].toFixed(2) + '" stroke="' + WALL_FILL + '" stroke-width="' + (wl.th * k).toFixed(2) + '"' + (wl.outdoor && !wl.ext ? ' stroke-dasharray="' + (0.3 * k) + " " + (0.2 * k) + '"' : "") + ' stroke-linecap="square"/>');
+        // 2. walls: thin partitions first, then party and exterior walls; outdoor edges dashed; openings are gaps
+        var allWalls = [];
+        perCell.forEach(function (pc) { pc.walls.forEach(function (wl) { allWalls.push({ wl: wl, P: pc.P }); }); });
+        allWalls.sort(function (a, b2) { return a.wl.th - b2.wl.th; });
+        allWalls.forEach(function (w) {
+          var wl = w.wl;
+          parts.push(lineSvg(w.P(wl.x1, wl.y1), w.P(wl.x2, wl.y2), 'stroke="' + WALL_FILL + '" stroke-width="' + (wl.th * k).toFixed(2) + '"' + (wl.outdoor && !wl.ext ? ' stroke-dasharray="' + (0.3 * k) + " " + (0.2 * k) + '"' : "") + ' stroke-linecap="butt"'));
         });
-        // 3. openings: erase the wall, then the door leaf and swing, or the window
-        openingsAll.forEach(function (op) {
-          var th = op.kind === "window" || op.kind === "entry" ? WALL.ext : WALL.int, P = op.P;
-          var a = op.side === "h" ? P(op.from, op.at) : P(op.at, op.from), b2 = op.side === "h" ? P(op.to, op.at) : P(op.at, op.to);
-          var isExt = op.kind === "entry" || op.kind === "window";
-          var thick = (isExt ? WALL.ext : ((op.at < EPS || Math.abs(op.at - op.cellW) < EPS || Math.abs(op.at - op.cellD) < EPS) ? WALL.party : WALL.int)) * k + 1.5;
-          parts.push('<line x1="' + a[0].toFixed(2) + '" y1="' + a[1].toFixed(2) + '" x2="' + b2[0].toFixed(2) + '" y2="' + b2[1].toFixed(2) + '" stroke="' + FLOOR + '" stroke-width="' + thick.toFixed(2) + '"/>');
-          if (op.kind === "window") {
-            parts.push('<line x1="' + a[0].toFixed(2) + '" y1="' + a[1].toFixed(2) + '" x2="' + b2[0].toFixed(2) + '" y2="' + b2[1].toFixed(2) + '" stroke="' + GLASS + '" stroke-width="' + (WALL.ext * k * 0.5).toFixed(2) + '"/>');
-            parts.push('<line x1="' + a[0].toFixed(2) + '" y1="' + a[1].toFixed(2) + '" x2="' + b2[0].toFixed(2) + '" y2="' + b2[1].toFixed(2) + '" stroke="' + INK + '" stroke-width="0.8"/>');
-          } else if (op.kind === "open" || op.kind === "join") {
-            // a cased opening, or the join between the two parts of one room: nothing but the erased wall
-          } else {   // door: hinge at `from`, leaf swings into the room it serves
-            var r = op.room, w = op.to - op.from, into;
-            if (op.side === "h") into = (r.y + r.h / 2 > op.at) ? 1 : -1; else into = (r.x + r.w / 2 > op.at) ? 1 : -1;
-            var hinge = op.side === "h" ? P(op.from, op.at) : P(op.at, op.from);
-            var leafEnd = op.side === "h" ? P(op.from, op.at + into * w) : P(op.at + into * w, op.from);
-            var arcEnd = op.side === "h" ? P(op.to, op.at) : P(op.at, op.to);
-            var sweep = (op.side === "h" ? (into > 0 ? 0 : 1) : (into > 0 ? 1 : 0));
-            parts.push('<line x1="' + hinge[0].toFixed(2) + '" y1="' + hinge[1].toFixed(2) + '" x2="' + leafEnd[0].toFixed(2) + '" y2="' + leafEnd[1].toFixed(2) + '" stroke="' + INK + '" stroke-width="1.1"/>');
-            parts.push('<path d="M ' + leafEnd[0].toFixed(2) + " " + leafEnd[1].toFixed(2) + " A " + (w * k).toFixed(2) + " " + (w * k).toFixed(2) + " 0 0 " + sweep + " " + arcEnd[0].toFixed(2) + " " + arcEnd[1].toFixed(2) + '" fill="none" stroke="' + LIGHT + '" stroke-width="0.7"/>');
-            if (op.kind === "entry") {   // a red arrow outside the door, pointing in
-              var m = op.side === "h" ? P((op.from + op.to) / 2, op.at - into * 0.5) : P(op.at - into * 0.5, (op.from + op.to) / 2);
-              if (op.side === "h") parts.push('<path d="M ' + (m[0] - 4).toFixed(2) + " " + (m[1] - into * 4).toFixed(2) + " l 4 " + (into * 7) + " l 4 " + (-into * 7) + ' z" fill="#c81e1e"/>');
-              else parts.push('<path d="M ' + (m[0] - into * 4).toFixed(2) + " " + (m[1] - 4).toFixed(2) + " l " + (into * 7) + " 4 l " + (-into * 7) + ' 4 z" fill="#c81e1e"/>');
+        // 3. openings: the door leaf and swing in the gap, or the window
+        perCell.forEach(function (pc) {
+          var P = pc.P;
+          pc.ops.forEach(function (op) {
+            var a = op.side === "h" ? P(op.from, op.at) : P(op.at, op.from), b2 = op.side === "h" ? P(op.to, op.at) : P(op.at, op.to);
+            if (op.kind === "window") {
+              parts.push(lineSvg(a, b2, 'stroke="' + GLASS + '" stroke-width="' + (WALL.ext * k * 0.5).toFixed(2) + '"'));
+              parts.push(lineSvg(a, b2, 'stroke="' + INK + '" stroke-width="0.8"'));
+            } else if (op.kind === "open" || op.kind === "join") {
+              // a cased opening, or the join between the two parts of one room: nothing but the gap
+            } else {   // door: hinge at `from`, leaf swings into the room it serves
+              var r = op.room, w = op.to - op.from, into;
+              if (op.side === "h") into = (r.y + r.h / 2 > op.at) ? 1 : -1; else into = (r.x + r.w / 2 > op.at) ? 1 : -1;
+              var hinge = op.side === "h" ? P(op.from, op.at) : P(op.at, op.from);
+              var leafEnd = op.side === "h" ? P(op.from, op.at + into * w) : P(op.at + into * w, op.from);
+              var arcEnd = op.side === "h" ? P(op.to, op.at) : P(op.at, op.to);
+              var sweep = (op.side === "h" ? (into > 0 ? 0 : 1) : (into > 0 ? 1 : 0));
+              parts.push(lineSvg(hinge, leafEnd, 'stroke="' + INK + '" stroke-width="1.1"'));
+              parts.push('<path d="M ' + leafEnd[0].toFixed(2) + " " + leafEnd[1].toFixed(2) + " A " + (w * k).toFixed(2) + " " + (w * k).toFixed(2) + " 0 0 " + sweep + " " + arcEnd[0].toFixed(2) + " " + arcEnd[1].toFixed(2) + '" fill="none" stroke="' + LIGHT + '" stroke-width="0.7"/>');
+              if (op.kind === "entry") {   // a red arrow outside the door, pointing in
+                var m = op.side === "h" ? P((op.from + op.to) / 2, op.at - into * 0.5) : P(op.at - into * 0.5, (op.from + op.to) / 2);
+                if (op.side === "h") parts.push('<path d="M ' + (m[0] - 4).toFixed(2) + " " + (m[1] - into * 4).toFixed(2) + " l 4 " + (into * 7) + " l 4 " + (-into * 7) + ' z" fill="#c81e1e"/>');
+                else parts.push('<path d="M ' + (m[0] - into * 4).toFixed(2) + " " + (m[1] - 4).toFixed(2) + " l " + (into * 7) + " 4 l " + (-into * 7) + ' 4 z" fill="#c81e1e"/>');
+              }
             }
+          });
+        });
+        // 4. the exterior exit stairs and walkways that reach the upper units: the walkway of this floor with the
+        // stair flights, the walkway above shown dashed on the ground floor
+        A.walkways.forEach(function (w) {
+          var R = blockRect(w.x0, w.x1, w.y0, w.y1), outerY = w.face === "front" ? R[1] : R[1] + R[3];
+          if (w.floor_index === fi) {
+            parts.push(rectSvg(R[0], R[1], R[2], R[3], 'fill="' + WALK + '" stroke="' + INK + '" stroke-width="0.8"'));
+            parts.push(lineSvg([R[0], outerY], [R[0] + R[2], outerY], 'stroke="' + INK + '" stroke-width="1.6"'));   // the guard
+            if (R[2] > fs * 6) parts.push(textSvg(R[0] + R[2] / 2, R[1] + R[3] / 2 + fs2 * 0.38, "WALKWAY", 'text-anchor="middle" font-size="' + fs2 + '" fill="' + FIX + '" letter-spacing="1"'));
+          } else if (fi === 0 && w.floor_index === Math.min.apply(null, A.walkways.filter(function (z) { return z.face === w.face; }).map(function (z) { return z.floor_index; }))) {
+            parts.push(rectSvg(R[0], R[1], R[2], R[3], 'fill="none" stroke="' + LIGHT + '" stroke-width="0.8" stroke-dasharray="4 3"'));
+            if (R[2] > fs * 8) parts.push(textSvg(R[0] + R[2] / 2, R[1] + R[3] / 2 + fs2 * 0.38, "WALKWAY OVER", 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="' + LIGHT + '" letter-spacing="1"'));
           }
         });
-        // 4. room names and areas (top-left of each room, clear of the fixtures against the far walls)
-        (cells || []).forEach(function (c) {
-          var ur = byCell[b.key + "|" + fi + "|" + c.key]; if (!ur) return;
-          var cx = x0 + c.a0 * W, cy = y0 + c.b0 * D;
+        A.stairs.forEach(function (st) {
+          var onFloor = st.floors.indexOf(fi) >= 0, top = fi === st.top_floor, R = blockRect(st.x0, st.x1, st.y0, st.y1);
+          if (!onFloor && fi !== 0 && fi > st.top_floor) return;   // above the stair: nothing
+          parts.push(rectSvg(R[0], R[1], R[2], R[3], 'fill="' + STAIR + '" stroke="' + INK + '" stroke-width="0.9"'));
+          var outerY = st.face === "front" ? R[1] : R[1] + R[3];
+          parts.push(lineSvg([R[0], outerY], [R[0] + R[2], outerY], 'stroke="' + INK + '" stroke-width="1.6"'));   // the guard along the outside
+          [st.land0, st.land1].forEach(function (L) { var Q = blockRect(L[0], L[1], st.y0, st.y1); parts.push(rectSvg(Q[0], Q[1], Q[2], Q[3], 'fill="' + WALK + '" stroke="' + LIGHT + '" stroke-width="0.6"')); });
+          var sepY = y0 + (st.face === "rear" ? st.inner[1] : st.inner[0]) * k;   // between the two flights
+          parts.push(lineSvg([R[0], sepY], [R[0] + R[2], sepY], 'stroke="' + LIGHT + '" stroke-width="0.6"'));
+          function flight(strip, mode) {   // treads across the strip along the run; mode: "up" | "dn" | "below" | "over"
+            var Q = blockRect(st.run[0], st.run[1], strip[0], strip[1]), n = Math.max(4, Math.round((st.run[1] - st.run[0]) / 0.27));
+            for (var t = 0; t <= n; t++) { var xt = Q[0] + Q[2] * t / n; parts.push(lineSvg([xt, Q[1]], [xt, Q[1] + Q[3]], 'stroke="' + (mode === "over" ? LIGHT : FIX) + '" stroke-width="0.7"' + (mode === "over" ? ' stroke-dasharray="2 2"' : ""))); }
+            if (mode === "up" || mode === "dn") {
+              var dirPx = (st.dir > 0) !== mirror ? 1 : -1, ya = Q[1] + Q[3] / 2, xa = dirPx > 0 ? Q[0] + 3 : Q[0] + Q[2] - 3, xb = dirPx > 0 ? Q[0] + Q[2] - 5 : Q[0] + 5;
+              parts.push(lineSvg([xa, ya], [xb, ya], 'stroke="' + FIX + '" stroke-width="0.9" marker-end="url(#arr)"'));
+              parts.push(textSvg(dirPx > 0 ? Q[0] + 2 : Q[0] + Q[2] - 2, ya - 2, mode.toUpperCase(), 'text-anchor="' + (dirPx > 0 ? "start" : "end") + '" font-size="' + fs2 + '" fill="' + FIX + '" paint-order="stroke" stroke="' + STAIR + '" stroke-width="3"'));
+            }
+          }
+          if (fi === 0) { flight(st.outer, "up"); flight(st.inner, "over"); }
+          else if (onFloor) { flight(st.inner, "dn"); flight(st.outer, top ? "below" : "up"); }
+          else { flight(st.inner, "below"); flight(st.outer, "below"); }
+          var lx = (blockRect(st.land1[0], st.land1[1], st.y0, st.y1)), label = "EXIT STAIR";
+          if (R[3] > fs2 * 2.2 && R[2] > fs2 * 9) parts.push(textSvg(lx[0] + lx[2] / 2, lx[1] + lx[3] / 2 + fs2 * 0.38, label, 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="' + FIX + '" letter-spacing=".5" transform="rotate(-90 ' + (lx[0] + lx[2] / 2).toFixed(2) + " " + (lx[1] + lx[3] / 2 + fs2 * 0.38).toFixed(2) + ')"'));
+        });
+        // 5. room names and areas (top-left of each room, clear of the fixtures against the far walls)
+        perCell.forEach(function (pc) {
+          var ur = pc.ur, cx = pc.cx, cy = pc.cy;
           ur.rooms.forEach(function (r) {
             if (r.part || r.name === "Stair" || r.name === "Landing") return;   // no name on the second part of an L-shaped room, the stair or its landing
             var small = r.name === "Hall", size = small ? fs2 : fs;
@@ -301,34 +383,35 @@ var R1Plans = (function () {
             if (est(nm) > avail) nm = SHORT[r.name] || nm;
             if (est(nm) > avail) nm = SHORTER[r.name] || (nm.length > 3 ? nm.slice(0, 3) + "." : nm);
             if (est(nm) > avail) return;
-            parts.push('<text x="' + tx.toFixed(2) + '" y="' + ty.toFixed(2) + '" font-size="' + size + '" font-weight="600" fill="' + INK + '"' + HALO + ">" + esc(nm) + "</text>");
-            if (!small && nm === r.name && r.h >= 2.3 && r.h * k > size * 3.4 && est(fmt(r.area_m2, 1) + " m2") <= avail) parts.push('<text x="' + tx.toFixed(2) + '" y="' + (ty + size * 1.15).toFixed(2) + '" font-size="' + fs2 + '" fill="' + LIGHT + '"' + HALO + ">" + fmt(r.area_m2, 1) + " m2</text>");
+            parts.push(textSvg(tx, ty, nm, 'font-size="' + size + '" font-weight="600" fill="' + INK + '"'));
+            if (!small && nm === r.name && r.h >= 2.3 && r.h * k > size * 3.4 && est(fmt(r.area_m2, 1) + " m2") <= avail) parts.push(textSvg(tx, ty + size * 1.15, fmt(r.area_m2, 1) + " m2", 'font-size="' + fs2 + '" fill="' + LIGHT + '"'));
           });
         });
-        // 5. captions (what lies beyond the top and bottom edges), floor name, dimensions
-        parts.push('<text x="' + (x0 + W / 2) + '" y="' + (y0 - fs * 3.9) + '" text-anchor="middle" font-size="' + fs2 + '" fill="' + LIGHT + '" letter-spacing="1">' + topCaption + "</text>");
-        parts.push('<text x="' + (x0 + W / 2) + '" y="' + (y0 + D + fs * 1.2) + '" text-anchor="middle" font-size="' + fs2 + '" fill="' + LIGHT + '" letter-spacing="1">' + botCaption + "</text>");
-        parts.push('<text x="' + (x0 + W / 2) + '" y="' + (y0 + D + fs * 2.8) + '" text-anchor="middle" font-size="' + (fs + 2) + '" font-weight="700" fill="' + INK + '">' + esc(f.name) + " floor</text>");
+        // 6. captions (what lies beyond the top and bottom edges), floor name, dimensions
+        var yBot = y0 + D + botExtra * k;
+        parts.push(textSvg(x0 + W / 2, yTop - fs * 3.9, topCaption, 'text-anchor="middle" font-size="' + fs2 + '" fill="' + LIGHT + '" letter-spacing="1"'));
+        parts.push(textSvg(x0 + W / 2, yBot + fs * 1.2, botCaption, 'text-anchor="middle" font-size="' + fs2 + '" fill="' + LIGHT + '" letter-spacing="1"'));
+        parts.push(textSvg(x0 + W / 2, yBot + fs * 2.8, f.name + " floor", 'text-anchor="middle" font-size="' + (fs + 2) + '" font-weight="700" fill="' + INK + '"'));
         if (col === 0) {
           // overall width along the top, depth along the left, with ticks
-          var dy = y0 - fs * 1.1, dx = x0 - fs * 1.4;
+          var dy = yTop - fs * 1.1, dx = x0 - fs * 1.4;
           parts.push('<line x1="' + x0 + '" y1="' + dy + '" x2="' + (x0 + W) + '" y2="' + dy + '" stroke="' + INK + '" stroke-width="0.8"/><line x1="' + x0 + '" y1="' + (dy - 4) + '" x2="' + x0 + '" y2="' + (dy + 4) + '" stroke="' + INK + '" stroke-width="0.8"/><line x1="' + (x0 + W) + '" y1="' + (dy - 4) + '" x2="' + (x0 + W) + '" y2="' + (dy + 4) + '" stroke="' + INK + '" stroke-width="0.8"/>');
-          parts.push('<text x="' + (x0 + W / 2) + '" y="' + (dy - 3) + '" text-anchor="middle" font-size="' + fs2 + '" fill="' + INK + '">' + Math.round(b.width_m * 1000) + "</text>");
+          parts.push(textSvg(x0 + W / 2, dy - 3, String(Math.round(b.width_m * 1000)), 'text-anchor="middle" font-size="' + fs2 + '" fill="' + INK + '"'));
           parts.push('<line x1="' + dx + '" y1="' + y0 + '" x2="' + dx + '" y2="' + (y0 + D) + '" stroke="' + INK + '" stroke-width="0.8"/><line x1="' + (dx - 4) + '" y1="' + y0 + '" x2="' + (dx + 4) + '" y2="' + y0 + '" stroke="' + INK + '" stroke-width="0.8"/><line x1="' + (dx - 4) + '" y1="' + (y0 + D) + '" x2="' + (dx + 4) + '" y2="' + (y0 + D) + '" stroke="' + INK + '" stroke-width="0.8"/>');
           parts.push('<text x="' + (dx - 3) + '" y="' + (y0 + D / 2) + '" text-anchor="middle" font-size="' + fs2 + '" fill="' + INK + '" transform="rotate(-90 ' + (dx - 3) + " " + (y0 + D / 2) + ')">' + Math.round(b.depth_m * 1000) + "</text>");
           // unit widths above the overall width (the cells on the top edge)
-          if (cells && cells.length > 1 && cells[0].b0 < EPS) {
-            var by = y0 - fs * 2.5;
+          if (cells.length > 1 && cells.some(function (c) { return c.b0 < EPS; })) {
+            var by = yTop - fs * 2.5;
             cells.filter(function (c) { return c.b0 < EPS; }).forEach(function (c) {
               var a1 = x0 + c.a0 * W, a2 = x0 + c.a1 * W;
               parts.push('<line x1="' + a1 + '" y1="' + by + '" x2="' + a2 + '" y2="' + by + '" stroke="' + LIGHT + '" stroke-width="0.7"/><line x1="' + a1 + '" y1="' + (by - 3) + '" x2="' + a1 + '" y2="' + (by + 3) + '" stroke="' + LIGHT + '" stroke-width="0.7"/><line x1="' + a2 + '" y1="' + (by - 3) + '" x2="' + a2 + '" y2="' + (by + 3) + '" stroke="' + LIGHT + '" stroke-width="0.7"/>');
-              parts.push('<text x="' + ((a1 + a2) / 2) + '" y="' + (by - 2) + '" text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="' + LIGHT + '">' + Math.round((c.a1 - c.a0) * b.width_m * 1000) + "</text>");
+              parts.push(textSvg((a1 + a2) / 2, by - 2, String(Math.round((c.a1 - c.a0) * b.width_m * 1000)), 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="' + LIGHT + '"'));
             });
           }
         }
         width = Math.max(width, x0 + W + pad);
       });
-      y = y0 + D + fs * 3.6 + 16;
+      y = y0 + D + botExtra * k + fs * 3.6 + 16;
     });
     // scale bar
     parts.push('<line x1="' + (pad + 26) + '" y1="' + (y - 4) + '" x2="' + (pad + 26 + 5 * k) + '" y2="' + (y - 4) + '" stroke="' + INK + '" stroke-width="2"/>');
@@ -337,17 +420,19 @@ var R1Plans = (function () {
     y += 12;
     var totalW = Math.max(width, 300), totalH = y;
     var legend = o.blocks.map(function (b) { return b.unit_list.map(function (u) { return '<span class="lg"><i style="background:' + C.unitColor(o, u.key, b.key) + '"></i>' + esc(u.key) + " " + (u.kind ? esc(u.name) : u.beds + " bed / " + u.baths + " bath") + ", ~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2</span>"; }).join(""); }).join("") +
-      '<span class="lg"><i style="background:#c81e1e"></i>entry</span><span class="lg"><i style="background:' + GLASS + '"></i>window</span>';
+      '<span class="lg"><i style="background:#c81e1e"></i>entry</span><span class="lg"><i style="background:' + GLASS + '"></i>window</span>' +
+      (R1Access && R1Access.hasStairs(access) ? '<span class="lg"><i style="background:' + WALK + ';border:1px solid ' + INK + '"></i>open walkway</span><span class="lg"><i style="background:' + STAIR + ';border:1px solid ' + INK + '"></i>exterior exit stair</span>' : "");
     var defs = '<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="' + FIX + '"/></marker></defs>';
-    return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + " " + totalH + '" role="img" aria-label="Floor plans">' + defs + parts.join("") + "</svg>", legend: legend, width: totalW, height: totalH };
+    return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + " " + totalH + '" role="img" aria-label="Floor plans">' + defs + parts.join("") + "</svg>", legend: legend, width: totalW, height: totalH, access: access };
   }
 
   /* check(option): what the drawn plans still fail to provide: a room without a door from a circulation room,
-     a door narrower than 0.85 m, a bedroom, bath, WC, hall, kitchen or stair below its minimum, or a stair
-     that does not stack between the levels of a unit. Empty when the plans meet all of them. */
+     a door narrower than 0.85 m, a bedroom, bath, WC, hall, kitchen or stair below its minimum, a stair that
+     does not stack between the levels of a unit, or a unit with no way in (no entry door on the face it is
+     reached from, or an upper entry level with no walkway and exit stair). Empty when the plans meet all of them. */
   function check(o) {
     var issues = [], MIN = (typeof R1Rooms !== "undefined") ? R1Rooms.MIN : { hall: 0.95, bath_w: 1.5, wc_w: 0.9, bed_w: 2.7, bed_area: 7, kitchen: 2.1, stair_w: 0.95, stair_l: 3.4, door: 0.85 };
-    var stairs = {};
+    var stairs = {}, access = (typeof R1Access !== "undefined") ? R1Access.plan(o) : null;
     C.unitRooms(o).forEach(function (ur) {
       var c = ur.cell, ext = { front: c.b0 < EPS, rear: c.b1 > 1 - EPS, left: c.a0 < EPS, right: c.a1 > 1 - EPS }, ops = openings(ur, ext), doored = {};
       var where = ur.unit + ", " + ur.floor.toLowerCase() + " floor";
@@ -366,6 +451,15 @@ var R1Plans = (function () {
         }
       });
       ops.forEach(function (op) { if ((op.kind === "door" || op.kind === "entry") && op.to - op.from < MIN.door - 0.01) issues.push(where + ": the door to " + op.room.name.toLowerCase() + " is " + fmt(op.to - op.from, 2) + " m (doors need " + MIN.door + " m)"); });
+      if (ur.level_index === 0) {
+        var ent = ops.filter(function (op) { return op.kind === "entry"; })[0];
+        if (!ent) issues.push(where + ": no entry door on the " + (ur.entry_face || "exterior") + " face");
+        else if (ur.entry_face && ent.face !== ur.entry_face) issues.push(where + ": the entry door is on the " + ent.face + " face, not the " + ur.entry_face + " face it is reached from");
+        if (ur.floor_index > 0) {
+          var A = access ? access.blocks[ur.block] : null, served = A && A.walkways.some(function (w) { return w.floor_index === ur.floor_index && w.units.indexOf(ur.unit) >= 0; }) && A.stairs.some(function (s) { return s.floors.indexOf(ur.floor_index) >= 0 && s.face === ur.entry_face; });
+          if (!served) issues.push(ur.unit + " is entered on the " + FLOOR_WORD[ur.floor_index] + " floor but no exit stair and walkway reach it");
+        }
+      }
     });
     Object.keys(stairs).forEach(function (k) {
       var st = stairs[k];
@@ -374,5 +468,5 @@ var R1Plans = (function () {
     return issues;
   }
 
-  return { sheet: sheet, openings: openings, fixtures: fixtures, check: check, WALL: WALL };
+  return { sheet: sheet, openings: openings, fixtures: fixtures, wallPieces: wallPieces, check: check, WALL: WALL };
 })();

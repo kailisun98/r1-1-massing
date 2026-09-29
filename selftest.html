@@ -14,8 +14,10 @@
 <script src="massing.js"></script>
 <script src="cmhc.js"></script>
 <script src="units.js"></script>
+<script src="access.js"></script>
 <script src="rooms.js"></script>
 <script src="plans.js"></script>
+<script src="siteplan.js"></script>
 <script>
 (function () {
   var out = document.getElementById("out"), fails = 0, total = 0;
@@ -121,6 +123,48 @@
   var sheet = R1Plans.sheet(byKey.fourplex_01, { k: 20 }), ops = R1Plans.openings(R1Cmhc.unitRooms(byKey.fourplex_01)[0], { front: true, left: true, right: true, rear: false });
   check("plans: the sheet has doors (arcs), windows, wall lines, fixtures and mm dimensions", sheet.svg.indexOf("<svg") === 0 && (sheet.svg.match(/ A [\d.]+ [\d.]+ 0 0 [01] /g) || []).length >= 8 && sheet.svg.indexOf("#8fc1e3") > 0 && sheet.svg.indexOf(">6800<") > 0 && sheet.svg.indexOf(">19800<") > 0 && sheet.svg.indexOf("<circle") > 0, [sheet.width, sheet.height]);
   check("plans: a ground flat gets an entry door on the street face, doors into the bedroom, bath and laundry from the hall, windows for living and bedroom", ops.some(function (x) { return x.kind === "entry" && x.side === "h" && x.at === 0; }) && ops.some(function (x) { return x.kind === "door" && x.room.name === "Bedroom" && x.other.name === "Hall"; }) && ops.some(function (x) { return x.kind === "door" && x.room.name === "Bath"; }) && ops.some(function (x) { return x.kind === "door" && x.room.name === "Laundry"; }) && ops.filter(function (x) { return x.kind === "window"; }).length >= 2, ops.map(function (x) { return x.kind + ":" + (x.room ? x.room.name : "") + "<" + (x.other ? x.other.name : ""); }));
+  // access: exterior exit stairs and walkways for the units entered on an upper floor
+  var ap8 = R1Access.plan(u8), e8 = ap8.entries, B8 = ap8.blocks.single;
+  check("access: 8 rental units (2 x 2 flats under 2 x 2 two-level units): front-row upper units from a front walkway, rear-row from a rear walkway, one stair per face, ground rear units from the side paths",
+    e8["U5@single"] && e8["U5@single"].face === "front" && e8["U5@single"].walkway && e8["U7@single"].face === "rear" && e8["U7@single"].floor_index === 1 && B8.stairs.length === 2 && B8.walkways.length === 2 &&
+    B8.stairs.filter(function (s) { return s.face === "rear"; })[0].at_side === 1 && B8.stairs.filter(function (s) { return s.face === "front"; })[0].at_side === 2 && e8["U1@single"].face === "front" && e8["U3@single"].face === "left" && e8["U4@single"].face === "right",
+    { entries: Object.keys(e8).map(function (k) { return k + ":" + e8[k].face + "@" + e8[k].floor_index; }), stairs: B8.stairs.map(function (s) { return s.face + s.at_side; }) });
+  check("access: the stair is a 1.2 + 1.2 m switchback along the face, 5.1 m long for 3.83 m floors, standing 3.6 m off the face with its walkway", close(R1Access.stairLength(11.5 / 3), 5.1) && close(B8.stairs[0].y1 - B8.stairs[0].y0, 2.4) && close(Math.abs(B8.stairs.filter(function (s) { return s.face === "rear"; })[0].y1 - B8.depth_m), 3.6), B8.stairs);
+  var ap4 = R1Access.plan(byKey.fourplex_01), ap6 = R1Access.plan(byKey.courtyard_sixplex);
+  check("access: Fourplex 01 U3 (front cell) from a front stair, U4 (rear cell) from a rear stair; the sixplex front building's U3/U4 from a courtyard-side walkway, the rear building's townhouses at grade",
+    ap4.entries["U3@single"].face === "front" && ap4.entries["U4@single"].face === "rear" && ap4.blocks.single.stairs.length === 2 && ap6.blocks.front.stairs.length === 1 && ap6.blocks.front.stairs[0].face === "rear" && ap6.blocks.rear.stairs.length === 0 && ap6.entries["U5@rear"].face === "front" && ap6.entries["U5@rear"].floor_index === 0,
+    [ap4.entries, ap6.blocks.front.stairs, ap6.entries]);
+  var ur8 = R1Cmhc.unitRooms(u8), u7 = ur8.filter(function (r) { return r.unit === "U7" && r.level_index === 0; })[0], u4g = ur8.filter(function (r) { return r.unit === "U4"; })[0];
+  check("rooms flip to the entry face: U7's entry sits on the rear face (walkway), U4's on the right face (side path)", u7.entry_face === "rear" && close(u7.rooms.filter(function (r) { return r.name === "Entry"; })[0].y + u7.rooms.filter(function (r) { return r.name === "Entry"; })[0].h, u7.depth_m, 0.02) &&
+    u4g.entry_face === "right" && close(u4g.rooms.filter(function (r) { return r.name === "Entry"; })[0].x + u4g.rooms.filter(function (r) { return r.name === "Entry"; })[0].w, u4g.width_m, 0.02), [u7.entry_face, u4g.entry_face]);
+  var ops7 = R1Plans.openings(u7, { front: false, rear: true, left: true, right: false }), ent7 = ops7.filter(function (x) { return x.kind === "entry"; })[0];
+  check("plans: U7's entry door is on the rear face (not the left face it also touches)", ent7 && ent7.face === "rear" && ent7.side === "h" && close(ent7.at, u7.depth_m), ent7);
+  check("plans check: the access is complete for the 8 rental units, Fourplex 01 and the sixplex (every upper entry level has its stair and walkway)", R1Plans.check(u8).length === 0 && R1Plans.check(byKey.fourplex_01).length === 0 && R1Plans.check(byKey.courtyard_sixplex).length === 0, [R1Plans.check(u8), R1Plans.check(byKey.fourplex_01)]);
+  var noAccess = { blocks: u8.blocks.map(function (b) { return Object.assign({}, b); }), units: 8 }, savedPlan = R1Access.plan; R1Access.plan = function (o) { var p = savedPlan(o); Object.keys(p.blocks).forEach(function (k) { p.blocks[k].stairs = []; p.blocks[k].walkways = []; }); return p; };
+  check("plans check: without the stairs and walkways the upper entry levels are reported", R1Plans.check(noAccess).filter(function (s) { return /no exit stair and walkway/.test(s); }).length === 4, R1Plans.check(noAccess));
+  R1Access.plan = savedPlan;
+  var wp = R1Plans.wallPieces([{ x1: 0, y1: 2, x2: 5, y2: 2, th: 0.12 }], [{ side: "h", at: 2, from: 2, to: 2.9 }]);
+  check("plans: an opening is a gap in the wall (two pieces, capped at the wall's own ends only)", wp.length === 2 && close(wp[0].x1, -0.06) && close(wp[0].x2, 2) && close(wp[1].x1, 2.9) && close(wp[1].x2, 5.06), wp);
+  var sh8 = R1Plans.sheet(u8, { k: 20 }), sh8m = R1Plans.sheet(u8, { k: 20, mirror: true });
+  check("plans sheet: walkways and exit stairs drawn, no white halos and no white paint over the walls, the mirrored sheet has the same texts", sh8.svg.indexOf(">WALKWAY<") > 0 && sh8.svg.indexOf(">EXIT STAIR<") > 0 && sh8.svg.indexOf(">WALKWAY OVER<") > 0 && sh8.svg.indexOf('stroke="#ffffff"') < 0 &&
+    (sh8.svg.match(/<text/g) || []).length === (sh8m.svg.match(/<text/g) || []).length && sh8.svg !== sh8m.svg, [sh8.svg.indexOf(">WALKWAY<"), (sh8.svg.match(/<text/g) || []).length, (sh8m.svg.match(/<text/g) || []).length]);
+  // section with units: one box per cut unit per floor, the walkway and stair, the yard lines and height limits labelled
+  var f8 = { scheme: "single", dims_like: "single", status: "ok", gaps: [], notes: [], buildings: [M.building("single", "Single building", [[-6.42, -14.15], [-6.42, -14.15 + u8.blocks[0].depth_m], [6.42, -14.15 + u8.blocks[0].depth_m], [6.42, -14.15]], 11.5, 3, "3.1.2.5(b)", ev.edges[ev.idx.front])] };
+  var sec8 = M.sectionPlan(ev, f8, { single: 0 }, 0, 2.4, u8);
+  check("sectionPlan with units: the cut runs through the first cell (x = -3.21), six unit boxes (2 per floor), a rear walkway and stair, property lines, yard lines at 4.9 and 10.7 m, a max-height mark",
+    sec8 && close(sec8.c[0], -3.21, 0.02) && sec8.units.length === 6 && sec8.units.some(function (u) { return u.unit === "U7" && u.sub === "2 BED"; }) && sec8.access.some(function (a) { return a.kind === "walkway" && a.face === "rear"; }) && sec8.access.some(function (a) { return a.kind === "stair"; }) &&
+    sec8.marks.filter(function (m) { return m.kind === "property"; }).length === 2 && sec8.marks.some(function (m) { return m.label === "FRONT YARD 4.9 m" && close(m.s, sec8.lot[0] + 4.9); }) && sec8.marks.some(function (m) { return /REAR YARD 10.7 m/.test(m.label) && close(m.s, sec8.lot[1] - 10.7); }) && sec8.marks.some(function (m) { return m.kind === "height" && close(m.z, 11.5); }),
+    sec8 && { c: sec8.c, units: sec8.units.map(function (u) { return u.unit + u.floor_index; }), access: sec8.access, marks: sec8.marks });
+  // the site plan sheet
+  var frame = R1SitePlan.frame(ev);
+  check("siteplan frame: a rotation of the map with the street at the top (side 1, the east edge, ends up on the left; no mirror)", !frame.mirror && close(frame.T([W / 2, 0])[0], -W / 2) && close(frame.T([0, D / 2])[1], D) && close(frame.T([0, -D / 2])[1], 0), frame);
+  var resSP = { parcels: block, buildings: [], roads: { segments: [] } }, spSheet = R1SitePlan.sheet({ ev: ev, form: f8, option: u8, res: resSP, det: det, parcel: block[0], address: "test" }, { k: 9 });
+  check("siteplan: one car-share stall off the lane, a shared outdoor space behind the stair, paths, entries, yard lines and halftone dimensions", spSheet.stalls === 1 && spSheet.shared_m2 > 40 && spSheet.svg.indexOf(">SHARED OUTDOOR SPACE<") > 0 && spSheet.svg.indexOf(">CAR<") > 0 && spSheet.svg.indexOf(">EXIT STAIR<") > 0 && spSheet.svg.indexOf("FRONT YARD 4.9 m") > 0 && spSheet.svg.indexOf("FRONTAGE 15240") > 0 && spSheet.svg.indexOf("SITE DEPTH 38100") > 0 &&
+    spSheet.rows.some(function (r) { return r[0] === "Car share" && /1 stall/.test(r[1]); }) && spSheet.rows.some(function (r) { return r[0] === "Access" && /exit stair/.test(r[1]); }), { stalls: spSheet.stalls, shared: spSheet.shared_m2, rows: spSheet.rows });
+  var spPatios = R1SitePlan.sheet({ ev: ev, form: f8, option: u8, res: resSP, det: det, parcel: block[0] }, { k: 9, outdoor: "patios", carshare: 2 });
+  check("siteplan: the patio configuration gives the two rear ground units 3 m patios, two stalls, and a smaller shared space", spPatios.patios === 2 && spPatios.stalls === 2 && spPatios.shared_m2 < spSheet.shared_m2 && spPatios.svg.indexOf(">PATIO U3<") > 0, { patios: spPatios.patios, stalls: spPatios.stalls, shared: spPatios.shared_m2 });
+  var spCourt = R1SitePlan.sheet({ ev: ev, form: f6, option: byKey.courtyard_sixplex, res: resSP, det: det, parcel: block[0] }, { k: 9, carshare: 1 });
+  check("siteplan: the courtyard sixplex gets a shared courtyard between the walkways and no stall (rear building 0.9 m off the lane)", spCourt.stalls === 0 && spCourt.svg.indexOf(">SHARED COURTYARD<") > 0 && spCourt.rows.some(function (r) { return r[0] === "Car share" && /No car-share stall/.test(r[1]); }) && spCourt.svg.indexOf("REAR YARD 0.9 m, rear bldg") > 0, spCourt.rows);
   var ua = R1Cmhc.unitAreas(byKey.fourplex_01);
   check("cmhc areas: Fourplex 01 ground flats ~67 m2 each, upper units ~134 m2", close(ua["U1@single"], 134.1 / 2, 0.1) && close(ua["U3@single"], 134.1, 0.1), ua);
   var url = R1Site.exportUrl("property-parcel-polygons", R1Site.within(-123.18, 49.25, 161.4));

@@ -371,9 +371,12 @@ var R1Cmhc = (function () {
     });
     return out;
   }
-  /* unitRooms(option): every room of every unit on every floor, in unit-local metres with the cell it sits in. */
+  /* unitRooms(option): every room of every unit on every floor, in unit-local metres with the cell it sits in.
+     The layouts put the entry at the front-left of the unit; a unit entered from the rear walkway (or the right
+     side path) is flipped so that its entry sits on the face it is reached from (R1Access decides the face). */
   function unitRooms(o) {
-    var out = [];
+    var out = [], ap = (typeof R1Access !== "undefined") ? R1Access.plan(o) : null;
+    function r2(v) { return Math.round(v * 100) / 100; }
     o.blocks.forEach(function (b) {
       var levelsOf = {};
       b.floors.forEach(function (f, fi) { f.units.forEach(function (k) { (levelsOf[k] || (levelsOf[k] = [])).push(fi); }); });
@@ -383,7 +386,11 @@ var R1Cmhc = (function () {
           var cw = (c.a1 - c.a0) * b.width_m, cd = (c.b1 - c.b0) * b.depth_m;
           // rooms: the layout engine with clearances when it is loaded (the same stair on every level of a unit), else the band programme
           var rs = (typeof R1Rooms !== "undefined") ? R1Rooms.layout(role, u, cw, cd, R1Rooms.unitCtx(cw, cd)) : rooms(role, u, cw, cd);
-          out.push({ block: b.key, unit: c.key, floor: f.name, floor_index: fi, level_index: li, levels: lv.length, role: role, cell: c, width_m: cw, depth_m: cd, rooms: rs });
+          var ent = ap ? ap.entries[c.key + "@" + b.key] : null, face = ent ? ent.face : null;
+          if (face === "rear") rs = rs.map(function (r) { return Object.assign({}, r, { y: r2(cd - r.y - r.h) }); });
+          if (face === "right") rs = rs.map(function (r) { return Object.assign({}, r, { x: r2(cw - r.x - r.w) }); });
+          out.push({ block: b.key, unit: c.key, floor: f.name, floor_index: fi, level_index: li, levels: lv.length, role: role, cell: c, width_m: cw, depth_m: cd, rooms: rs,
+            entry_face: face, entry_floor: ent ? ent.floor_index : lv[0], walkway: !!(ent && ent.walkway) });
         });
       });
     });
@@ -451,5 +458,5 @@ var R1Cmhc = (function () {
 
   return { SOURCE: SOURCE, DESIGNS: DESIGNS, UNIT_COLORS: UNIT_COLORS, design: design, url: url, fits: fits, form: form, fitRows: fitRows, fitLines: fitLines,
     unitRows: unitRows, unitSvg: unitSvg, unitMix: unitMix, optionGfa: optionGfa, unitColor: unitColor, unitVolumes: unitVolumes, unitAreas: unitAreas,
-    levelRoles: levelRoles, programme: programme, rooms: rooms, unitRooms: unitRooms, unitCells: unitCells, blockOf: blockOf, floorPlansSvg: floorPlansSvg };
+    levelRoles: levelRoles, programme: programme, rooms: rooms, unitRooms: unitRooms, unitCells: unitCells, blockOf: blockOf, unitOf: unitOf, bilinear: bilinear, floorPlansSvg: floorPlansSvg };
 })();

@@ -80,7 +80,7 @@ var App = (function () {
     var bylawUp = !!(S.form && S.form.status === "ok" && S.form.scheme !== "cmhc");
     ui.btnFormClear.disabled = !bylawUp; ui.unitParams.disabled = !bylawUp; ui.btnFormPlans.disabled = !(bylawUp && S.unitsOption);
     ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc"); ui.btnCmhcPlans.disabled = !S.cmhcPick;
-    ui.tab3d.disabled = !haveModel; ui.tabSection.disabled = !haveSite; ui.tabPlans.disabled = !S.unitsOption; ui.btnRightToggle.disabled = !haveEnv;
+    ui.tab3d.disabled = !haveModel; ui.tabSection.disabled = !haveSite; ui.tabPlans.disabled = !S.unitsOption; ui.tabSitePlan.disabled = !haveEnv; ui.btnRightToggle.disabled = !haveEnv;
     ui.stepBadges.forEach(function (b, i) {
       var done = [haveModel, !!S.ev, haveEnv, !!(S.form && S.form.status === "ok")][i];
       b.classList.toggle("done", !!done);
@@ -102,9 +102,12 @@ var App = (function () {
       var b = this._tileCoordsToBounds(coords), hit = presets.some(function (p) { return p.centre && siteBox(p.centre).overlaps(b); });
       return hit ? L.TileLayer.prototype.getTileUrl.call(this, coords) : BLANK_TILE;
     } });
+    // the basemap: OpenStreetMap tiles shown desaturated and lightened by the page's stylesheet, in the manner of the
+    // "subtle grayscale" map style (white roads, light grey blocks, faint labels), so the site drawing reads first
+    var attribution = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
     tileLayer = BUNDLED
-      ? new StoredTiles("tiles/{z}/{x}/{y}.png", { minZoom: 12, maxNativeZoom: 18, maxZoom: 20, errorTileUrl: BLANK_TILE, attribution: "&copy; OpenStreetMap contributors (tiles stored with this page around the preloaded sites)" })
-      : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 20, attribution: "&copy; OpenStreetMap contributors" });
+      ? new StoredTiles("tiles/{z}/{x}/{y}.png", { minZoom: 12, maxNativeZoom: 18, maxZoom: 20, errorTileUrl: BLANK_TILE, attribution: attribution + " (tiles stored with this page around the preloaded sites)" })
+      : L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 20, attribution: attribution });
     tileLayer.addTo(map);
     presetLayer = L.layerGroup().addTo(map);
     ["topo", "roads", "parcels", "buildings", "cut", "site", "envelope", "forms", "dims", "section"].forEach(function (k) { layers[k] = L.layerGroup().addTo(map); });
@@ -226,10 +229,16 @@ var App = (function () {
     if (!(S.form && S.form.status === "ok")) { if (S.envelopeLayer && !map.hasLayer(S.envelopeLayer)) S.envelopeLayer.addTo(layers.envelope); return; }
     var ctx = dimContext(), off = M.dimOffsetM(PLAN_SCALE), col = S.form.scheme === "cmhc" ? COLORS.cmhc : COLORS.form;
     S.form.buildings.forEach(function (b) { poly(b.pts, { color: col, weight: 2, fillColor: col, fillOpacity: S.unitsOption ? 0.15 : 0.55, interactive: false }, "forms"); });
-    if (S.unitsOption) {   // ground-floor units in their colours, labelled
+    if (S.unitsOption) {   // ground-floor units in their colours, labelled; the exterior stairs and walkways in grey
       R1Cmhc.unitVolumes(S.unitsOption, S.form).filter(function (v) { return v.floor_index === 0; }).forEach(function (v) {
         poly(v.pts, { color: "#ffffff", weight: 1, fillColor: v.color, fillOpacity: 0.7, interactive: false }, "forms");
         label(v.centroid, v.unit, 0, "unitlbl", "forms");
+      });
+      var ap = R1Access.plan(S.unitsOption);
+      S.form.buildings.forEach(function (b) {
+        var B = ap.blocks[b.key]; if (!B) return;
+        B.walkways.forEach(function (w) { poly(R1Access.rectSite(b, B, w.x0, w.x1, w.y0, w.y1), { color: "#4b5563", weight: 1, dashArray: "4 3", fillColor: "#e9ebe6", fillOpacity: 0.5, interactive: false }, "forms"); });
+        B.stairs.forEach(function (st) { poly(R1Access.rectSite(b, B, st.x0, st.x1, st.y0, st.y1), { color: "#1f2933", weight: 1, fillColor: "#f1f2ef", fillOpacity: 0.9, interactive: false }, "forms"); });
       });
     }
     M.formDimensionPlan(S.ev, S.form, off).forEach(function (spec) { drawDimension(spec, ctx, "forms", { color: COLORS.dim }); });
@@ -238,7 +247,7 @@ var App = (function () {
   function drawSectionMarker() {
     clearLayers(["section"]);
     if (!S.ev || S.ev.status !== "ok") return;
-    var sp = M.sectionPlan(S.ev, S.form && S.form.status === "ok" ? S.form : null, S.formBases, envelopeBaseZ(), M.dimOffsetM(SECTION_SCALE));
+    var sp = M.sectionPlan(S.ev, S.form && S.form.status === "ok" ? S.form : null, S.formBases, envelopeBaseZ(), M.dimOffsetM(SECTION_SCALE), S.unitsOption);
     if (!sp) return;
     var c = sp.c, d = sp.dir, half = (sp.lot[1] - sp.lot[0]) / 2 + 15;
     var a = [c[0] - d[0] * half, c[1] - d[1] * half], b = [c[0] + d[0] * half, c[1] + d[1] * half];
@@ -253,46 +262,84 @@ var App = (function () {
     host.innerHTML = "";
     if (!S.ev || S.ev.status !== "ok") { host.appendChild(el("p", "empty", S.parcel ? "Generate the envelope to cut the section." : "Import a site, then generate the envelope to cut the section.")); return; }
     var form = S.form && S.form.status === "ok" ? S.form : null;
-    var sp = M.sectionPlan(S.ev, form, S.formBases, envelopeBaseZ(), M.dimOffsetM(SECTION_SCALE));
+    var sp = M.sectionPlan(S.ev, form, S.formBases, envelopeBaseZ(), M.dimOffsetM(SECTION_SCALE), S.unitsOption);
     if (!sp) { host.appendChild(el("p", "empty", "The section line misses the lot.")); return; }
     var margin = 15, half = (sp.lot[1] - sp.lot[0]) / 2 + margin, mid = (sp.lot[0] + sp.lot[1]) / 2;
-    var s0 = mid - half, s1 = mid + half, zLo = sp.z_low - 1, zHi = sp.z_high;
+    var s0 = mid - half, s1 = mid + half, zLo = sp.z_low - 1, zHi = sp.z_high + 1.5;
     var prof = [];
     for (var s = s0; s <= s1 + 1e-9; s += 1) prof.push([s, M.groundZ(S.res, sp.c[0] + sp.dir[0] * s, sp.c[1] + sp.dir[1] * s)]);
     var gmin = Math.min.apply(null, prof.map(function (p) { return p[1]; })), gmax = Math.max.apply(null, prof.map(function (p) { return p[1]; }));
     zLo = Math.min(zLo, gmin - 3); zHi = Math.max(zHi, gmax + 2);
-    var W = host.clientWidth || 800, pad = 36, k = (W - 2 * pad) / (s1 - s0), H = (zHi - zLo) * k + 2 * pad;
+    var W = host.clientWidth || 800, pad = 36, k = (W - 2 * pad) / (s1 - s0), head = 60, H = (zHi - zLo) * k + 2 * pad + head;
     var svgNS = "http://www.w3.org/2000/svg", svg = document.createElementNS(svgNS, "svg");
     svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("width", "100%"); svg.style.maxWidth = "100%";
-    function X(sv) { return pad + (sv - s0) * k; } function Y(z) { return pad + (zHi - z) * k; }
+    function X(sv) { return pad + (sv - s0) * k; } function Y(z) { return pad + head + (zHi - z) * k; }
     function add(tag, attrs, text) { var e = document.createElementNS(svgNS, tag); Object.keys(attrs).forEach(function (a) { e.setAttribute(a, attrs[a]); }); if (text !== undefined) e.textContent = text; svg.appendChild(e); return e; }
     // ground block
     var pts = prof.map(function (p) { return X(p[0]) + "," + Y(p[1]); });
     add("polygon", { points: pts.join(" ") + " " + X(s1) + "," + Y(zLo) + " " + X(s0) + "," + Y(zLo), fill: "#5e6a4a", stroke: "none" });
     add("polyline", { points: pts.join(" "), fill: "none", stroke: "#3f4733", "stroke-width": 1.2 });
-    // buildings
+    // buildings: the outline, and, with a unit option, one box per unit per floor in its colour with its programme
+    var haveUnits = sp.units && sp.units.length;
     sp.buildings.forEach(function (b) {
       var col = b.key === "envelope" ? COLORS.envelope : (S.form && S.form.scheme === "cmhc" ? COLORS.cmhc : COLORS.form);
-      add("rect", { x: X(b.s0), y: Y(b.z1), width: (b.s1 - b.s0) * k, height: (b.z1 - b.z0) * k, fill: col, "fill-opacity": 0.75, stroke: "#5b4a1e", "stroke-width": 1 });
+      add("rect", { x: X(b.s0), y: Y(b.z1), width: (b.s1 - b.s0) * k, height: (b.z1 - b.z0) * k, fill: haveUnits ? "#ffffff" : col, "fill-opacity": haveUnits ? 1 : 0.75, stroke: "#1f2933", "stroke-width": 1.2 });
     });
-    // reference lines
+    (sp.units || []).forEach(function (u) {
+      var x = X(u.s0), y = Y(u.z1), w = (u.s1 - u.s0) * k, h = (u.z1 - u.z0) * k;
+      add("rect", { x: x, y: y, width: w, height: h, fill: u.color, "fill-opacity": 0.78, stroke: "#ffffff", "stroke-width": 1 });
+      if (w > 30 && h > 14) {
+        var n = parseInt(u.color.slice(1), 16), dark = "rgb(" + Math.round(((n >> 16) & 255) * 0.42) + "," + Math.round(((n >> 8) & 255) * 0.42) + "," + Math.round((n & 255) * 0.42) + ")";
+        var two = h > 30 && w > 54;
+        add("text", { x: x + w / 2, y: y + h / 2 + (two ? -1 : 4), "font-size": Math.min(12, h * 0.42), "font-weight": 700, "text-anchor": "middle", fill: dark, "class": "secunit" }, u.label);
+        if (two) add("text", { x: x + w / 2, y: y + h / 2 + 11, "font-size": 9, "text-anchor": "middle", fill: dark, "letter-spacing": ".5", "class": "secunit" }, u.sub);
+      }
+    });
+    // the exterior stair and the walkways the line crosses
+    (sp.access || []).forEach(function (a) {
+      if (a.kind === "walkway") {
+        add("rect", { x: X(a.s0), y: Y(a.z), width: (a.s1 - a.s0) * k, height: Math.max(2, 0.25 * k), fill: "#b8bec6", stroke: "#1f2933", "stroke-width": 0.8 });
+        var gx = a.face === "rear" ? X(a.s1) : X(a.s0);
+        add("line", { x1: gx, y1: Y(a.z), x2: gx, y2: Y(a.z + R1Access.GUARD_H), stroke: "#1f2933", "stroke-width": 1 });
+        if (!sp.access.some(function (b) { return b.kind === "stair" && b.block === a.block && b.face === a.face; })) add("text", { x: X((a.s0 + a.s1) / 2), y: Y(a.z) - 3, "font-size": 8, "text-anchor": "middle", "class": "seclbl" }, "WALKWAY");
+      } else {
+        add("rect", { x: X(a.s0), y: Y(a.z1), width: (a.s1 - a.s0) * k, height: (a.z1 - a.z0) * k, fill: "#f1f2ef", "fill-opacity": 0.9, stroke: "#1f2933", "stroke-width": 0.8, "stroke-dasharray": "3 2" });
+        add("text", { x: X((a.s0 + a.s1) / 2), y: Y((a.z0 + a.z1) / 2), "font-size": 8, "text-anchor": "middle", transform: "rotate(-90 " + X((a.s0 + a.s1) / 2) + " " + Y((a.z0 + a.z1) / 2) + ")", "class": "seclbl" }, "EXIT STAIR");
+      }
+    });
+    // reference lines: property lines, building faces, marks
     sp.lines.forEach(function (ln) {
-      var st = ln.style === "site" ? { stroke: COLORS.site, "stroke-width": 1.5 } : ln.style === "setback" ? { stroke: COLORS.setback, "stroke-width": 1, "stroke-dasharray": "6 4" } : { stroke: "#6b7280", "stroke-width": 0.8 };
+      if (ln.style === "site") return;   // the property lines are drawn with their labels below
+      var st = ln.style === "face" ? { stroke: "#9aa4b1", "stroke-width": 0.7 } : { stroke: "#6b7280", "stroke-width": 0.8 };
       var a = { x1: X(ln.a[0]), y1: Y(ln.a[1]), x2: X(ln.b[0]), y2: Y(ln.b[1]) }; Object.keys(st).forEach(function (kk) { a[kk] = st[kk]; });
       add("line", a);
     });
-    // dimensions
+    // the yard lines of the schedule, the property lines and the height limits, labelled: the vertical lines run up
+    // into the head band, where their names sit on two rows (yard lines above, property lines below), clear of the strings
+    (sp.marks || []).forEach(function (mk) {
+      if (mk.kind === "height") {
+        add("line", { x1: X(mk.s0), y1: Y(mk.z), x2: X(mk.s1), y2: Y(mk.z), stroke: COLORS.setback, "stroke-width": 1, "stroke-dasharray": "8 4" });
+        add("text", { x: X(mk.s0) - 4, y: Y(mk.z) + 3.5, "font-size": 9, "text-anchor": "end", "class": "secmark" }, mk.label + " [" + mk.clause + "]");
+        return;
+      }
+      var x = X(mk.s), top = pad + (mk.kind === "setback" ? (/rear building/.test(mk.label) ? 42 : 14) : 28);   // three rows: yard lines, property lines, the courtyard rear yard
+      add("line", { x1: x, y1: Y(zLo), x2: x, y2: top + 3, stroke: mk.kind === "setback" ? COLORS.setback : COLORS.site, "stroke-width": mk.kind === "setback" ? 1 : 1.5, "stroke-dasharray": mk.kind === "setback" ? "6 4" : "none" });
+      add("text", { x: x, y: top, "font-size": 8.5, "text-anchor": "middle", "class": mk.kind === "setback" ? "secmark" : "seclbl" }, mk.label + (mk.clause ? " [" + mk.clause + "]" : ""));
+    });
+    // dimensions, named
     sp.dims.forEach(function (dm) {
       if (dm.vertical) {
         var x = X(dm.s), y0 = Y(dm.z[0]), y1 = Y(dm.z[1]);
         add("line", { x1: x, y1: y0, x2: x, y2: y1, stroke: COLORS.dim, "stroke-width": 1 });
         [y0, y1].forEach(function (yy) { add("line", { x1: x - 4, y1: yy + 4, x2: x + 4, y2: yy - 4, stroke: COLORS.dim, "stroke-width": 1.5 }); });
-        var t = add("text", { x: x + 6, y: (y0 + y1) / 2, "font-size": 11, "text-anchor": "middle", transform: "rotate(-90 " + (x + 6) + " " + ((y0 + y1) / 2) + ")", "dominant-baseline": "auto", "class": "secdim" }, mm(dm.value_m));
+        add("text", { x: x + 6, y: (y0 + y1) / 2, "font-size": 11, "text-anchor": "middle", transform: "rotate(-90 " + (x + 6) + " " + ((y0 + y1) / 2) + ")", "class": "secdim" }, mm(dm.value_m));
+        add("text", { x: x + 17, y: (y0 + y1) / 2, "font-size": 8, "text-anchor": "middle", transform: "rotate(-90 " + (x + 17) + " " + ((y0 + y1) / 2) + ")", "class": "seclbl" }, dm.name);
       } else {
         var xa = X(dm.s[0]), xb = X(dm.s[1]), y = Y(dm.z);
         add("line", { x1: xa, y1: y, x2: xb, y2: y, stroke: COLORS.dim, "stroke-width": 1 });
         [xa, xb].forEach(function (xx) { add("line", { x1: xx - 4, y1: y + 4, x2: xx + 4, y2: y - 4, stroke: COLORS.dim, "stroke-width": 1.5 }); });
         add("text", { x: (xa + xb) / 2, y: y - 4, "font-size": 11, "text-anchor": "middle", "class": "secdim" }, mm(dm.value_m));
+        if (xb - xa > 46) add("text", { x: (xa + xb) / 2, y: y - 15, "font-size": 8, "text-anchor": "middle", "class": "seclbl" }, dm.name);
       }
     });
     // street / lane names at the ends
@@ -302,7 +349,7 @@ var App = (function () {
       if (sf) add("text", { x: X(sp.lot[0] - 8), y: Y(zLo) + 16, "font-size": 11, "text-anchor": "middle", "class": "seclbl" }, sf.name);
       if (sr) add("text", { x: X(sp.lot[1] + 4), y: Y(zLo) + 16, "font-size": 11, "text-anchor": "middle", "class": "seclbl" }, sr.name);
     }
-    add("text", { x: pad, y: 18, "font-size": 12, "class": "sectitle" }, "Section A-A through the site, street on the left  ·  1:" + SECTION_SCALE + " proportions, mm");
+    add("text", { x: pad, y: 18, "font-size": 12, "class": "sectitle" }, "Section A-A through the site" + (sp.cell ? " and unit " + sp.cell.unit : "") + ", street on the left  ·  1:" + SECTION_SCALE + " proportions, mm");
     host.appendChild(svg);
     sectionDirty = false;
   }
@@ -436,6 +483,18 @@ var App = (function () {
         var lines = v.kind ? [u.name ? u.name.toUpperCase() : v.unit] : [v.unit + " · " + v.beds + " BED"];
         G.add(labelledBox(v.pts, S.formBases[v.block] + v.z0, v.z1 - v.z0, v.color, lines));
       });
+      // the exterior exit stairs and the open walkways that reach the upper units
+      var ap = R1Access.plan(o);
+      S.form.buildings.forEach(function (b) {
+        var B = ap.blocks[b.key], base = S.formBases[b.key]; if (!B) return;
+        B.walkways.forEach(function (w) {
+          var q = R1Access.rectSite(b, B, w.x0, w.x1, w.y0, w.y1);
+          G.add(extrude(q, base + w.z - 0.25, 0.25, 0xb8bec6, 1));
+          var g0 = w.face === "rear" ? R1Access.rectSite(b, B, w.x0, w.x1, w.y1 - 0.06, w.y1) : R1Access.rectSite(b, B, w.x0, w.x1, w.y0, w.y0 + 0.06);
+          G.add(extrude(g0, base + w.z, R1Access.GUARD_H, 0x6b7280, 0.6));   // the guard
+        });
+        B.stairs.forEach(function (st) { G.add(labelledBox(R1Access.rectSite(b, B, st.x0, st.x1, st.y0, st.y1), base, st.z_top + R1Access.GUARD_H, "#b8bec6", ["EXIT STAIR"])); });
+      });
     } else if (formUp) S.form.buildings.forEach(function (b) { G.add(labelledBox(b.pts, S.formBases[b.key], b.height_m, "#d99a2b", [b.name.toUpperCase(), b.storeys + " STOREYS"])); });
     else if (S.ev && S.ev.status === "ok" && S.placed) G.add(labelledBox(singleQuad(S.ev) || S.ev.env_pts, envelopeBaseZ(), S.ev.height, "#3c8cdc", ["ENVELOPE", "UP TO " + S.ev.band.max_units + " UNITS"]));
     // the camera is set once per site; redrawing for a form or a catalogue option keeps the view where the user left it
@@ -476,7 +535,7 @@ var App = (function () {
 
   // ------------------------------------------------------------------ tabs
   function showView(name) {
-    ["map", "3d", "section", "plans"].forEach(function (k) {
+    ["map", "siteplan", "3d", "section", "plans"].forEach(function (k) {
       var pane = ui.panes[k], on = k === name;
       pane.hidden = !on; ui.tabs[k].classList.toggle("on", on); ui.tabs[k].setAttribute("aria-selected", on ? "true" : "false");
     });
@@ -484,10 +543,42 @@ var App = (function () {
     if (name === "3d" && S.square) { if (threeDirty) build3D(); else three.resize(); }
     if (name === "section" && sectionDirty) drawSection();
     if (name === "plans" && plansDirty) drawPlans();
+    if (name === "siteplan" && sitePlanDirty) drawSitePlan();
   }
   function markDirty() {
-    threeDirty = true; sectionDirty = true; plansDirty = true;
-    if (!ui.panes.section.hidden) drawSection(); if (!ui.panes["3d"].hidden && S.square) build3D(); if (!ui.panes.plans.hidden) drawPlans();
+    threeDirty = true; sectionDirty = true; plansDirty = true; sitePlanDirty = true;
+    if (!ui.panes.section.hidden) drawSection(); if (!ui.panes["3d"].hidden && S.square) build3D(); if (!ui.panes.plans.hidden) drawPlans(); if (!ui.panes.siteplan.hidden) drawSitePlan();
+  }
+  // the plan sheets read as a rotation of the map (street at the top): when side 1 lies on the right of that view, the floor plans mirror to match
+  function plansMirror() { return S.ev && S.ev.status === "ok" ? R1SitePlan.frame(S.ev).mirror : false; }
+
+  // ------------------------------------------------------------------ the site plan sheet
+  var sitePlanDirty = true, sitePlanOpts = { carshare: null, outdoor: "shared", k: 12 };
+  function drawSitePlan() {
+    var host = ui.sitePlanHost; host.innerHTML = "";
+    if (!(S.ev && S.ev.status === "ok" && S.placed)) { host.appendChild(el("p", "empty", "Fetch a site: the site plan follows the envelope.")); sitePlanDirty = false; return; }
+    var form = S.form && S.form.status === "ok" ? S.form : null, o = form ? S.unitsOption : null;
+    var sheet = R1SitePlan.sheet({ ev: S.ev, form: form, option: o, res: S.res, det: S.det, parcel: S.parcel, address: S.address }, sitePlanOpts);
+    var head = el("div", "sheet-head");
+    head.appendChild(el("h2", null, "Site plan" + (S.address ? ": " + S.address : "") + (o ? " · " + (o.source === "cmhc" ? "CMHC " : "") + o.name : (form ? " · " + form.name : " · permitted envelope"))));
+    head.appendChild(el("p", null, "Street at the top and the lane at the bottom, as on the floor-plan sheet (the north arrow gives the orientation). Yard lines of the R1-1 schedule, the ground-floor units in their colours, entries, the exterior exit stairs and walkways, paths, a car-share stall off the lane and the shared outdoor space; dimensions in mm, in halftone."));
+    host.appendChild(head);
+    var tools = el("div", "sheet-tools"), g1 = el("div", "grp"), g2 = el("div", "grp"), g3 = el("div", "grp");
+    g1.appendChild(el("span", null, "Car share"));
+    [[0, "None"], [1, "1 stall"], [2, "2 stalls"]].forEach(function (c) { var b = el("button", (sitePlanOpts.carshare === null ? sheet.stalls : sitePlanOpts.carshare) === c[0] ? "on" : null, c[1]); b.addEventListener("click", function () { sitePlanOpts.carshare = c[0]; drawSitePlan(); }); g1.appendChild(b); });
+    g2.appendChild(el("span", null, "Outdoor space"));
+    [["shared", "Shared"], ["patios", "Shared + patios"]].forEach(function (c) { var b = el("button", sitePlanOpts.outdoor === c[0] ? "on" : null, c[1]); b.addEventListener("click", function () { sitePlanOpts.outdoor = c[0]; drawSitePlan(); }); g2.appendChild(b); });
+    g3.appendChild(el("span", null, "Scale"));
+    [[9, "Small"], [12, "Medium"], [16, "Large"]].forEach(function (s) { var b = el("button", s[0] === sitePlanOpts.k ? "on" : null, s[1]); b.addEventListener("click", function () { sitePlanOpts.k = s[0]; drawSitePlan(); }); g3.appendChild(b); });
+    tools.appendChild(g1); tools.appendChild(g2); tools.appendChild(g3); host.appendChild(tools);
+    var row = el("div", "sheet-row"), body = el("div", "sheet-body"), aside = el("div", "sheet-aside");
+    body.innerHTML = sheet.svg; row.appendChild(body); row.appendChild(aside); host.appendChild(row);
+    var lg = el("div", "sheet-legend"); lg.innerHTML = sheet.legend; aside.appendChild(lg);
+    var table = el("table"), tbody = el("tbody");
+    sheet.rows.forEach(function (r) { var tr = el("tr"); tr.appendChild(el("th", null, r[0])); tr.appendChild(el("td", null, r[1])); tbody.appendChild(tr); });
+    table.appendChild(tbody); table.className = "sheet-table"; aside.appendChild(table);
+    var notes = el("div", "sheet-notes"); notes.innerHTML = sheet.notes.map(function (n) { return "<p>" + esc(n) + "</p>"; }).join(""); aside.appendChild(notes);
+    sitePlanDirty = false;
   }
 
   // ------------------------------------------------------------------ the floor-plan sheet
@@ -500,8 +591,11 @@ var App = (function () {
     if (plansFloor && floorNames.indexOf(plansFloor) < 0) plansFloor = null;
     var head = el("div", "sheet-head");
     head.appendChild(el("h2", null, (o.source === "cmhc" ? "CMHC " : "") + o.name + ": schematic floor plans"));
+    var access = R1Access.plan(o), stairs = R1Access.hasStairs(access);
     head.appendChild(el("p", null, (S.address ? S.address + " · " : "") + o.units + " units (" + R1Cmhc.unitMix(o) + "). " +
-      (o.source === "cmhc" ? "Unit extents follow the catalogue's floor layout; the rooms, walls, doors, windows and fittings are generated to suit each unit." : "Units, rooms, walls, doors, windows and fittings are generated to suit the by-law form.") + " Street at the top of the sheet and the lane at the bottom, as on the site; a red arrow marks an entry; dimensions in mm."));
+      (o.source === "cmhc" ? "Unit extents follow the catalogue's floor layout; the rooms, walls, doors, windows and fittings are generated to suit each unit." : "Units, rooms, walls, doors, windows and fittings are generated to suit the by-law form.") +
+      (stairs ? " Upper units are reached by an exterior single exit stair and an open walkway, drawn on every floor (dashed where it passes overhead)." : " Every unit is entered at grade.") +
+      " Street at the top of the sheet and the lane at the bottom, as on the site plan; a red arrow marks an entry; dimensions in mm."));
     host.appendChild(head);
     var tools = el("div", "sheet-tools"), g1 = el("div", "grp"), g2 = el("div", "grp");
     g1.appendChild(el("span", null, "Floor"));
@@ -509,15 +603,19 @@ var App = (function () {
     g2.appendChild(el("span", null, "Scale"));
     [[14, "Small"], [20, "Medium"], [28, "Large"]].forEach(function (s) { var b = el("button", s[0] === plansScale ? "on" : null, s[1]); b.addEventListener("click", function () { plansScale = s[0]; drawPlans(); }); g2.appendChild(b); });
     tools.appendChild(g1); tools.appendChild(g2); host.appendChild(tools);
-    var plans = R1Plans.sheet(o, { k: plansScale, floors: plansFloor ? [plansFloor] : null });
+    var plans = R1Plans.sheet(o, { k: plansScale, floors: plansFloor ? [plansFloor] : null, mirror: plansMirror() });
     var body = el("div", "sheet-body"); body.innerHTML = plans.svg; host.appendChild(body);
     var lg = el("div", "sheet-legend"); lg.innerHTML = plans.legend; host.appendChild(lg);
+    var issues = R1Plans.check(o), chk = el("p", "sheet-check " + (issues.length ? "warn" : "ok"));
+    chk.textContent = issues.length ? "Plan check: " + issues.length + " item" + (issues.length > 1 ? "s" : "") + " to resolve: " + issues.join("; ") + "." : "Plan check: every room has its door, doors are 850 mm or wider, halls, baths, bedrooms, kitchens and stairs meet their minimums, stairs stack, and every unit has its way in.";
+    host.appendChild(chk);
     var notes = el("div", "sheet-notes");
+    var accessHtml = access.notes.length ? "<p>" + esc(R1Access.lines(access).join(" ")) + " " + esc(access.notes.join(" ")) + "</p>" : "";
     if (o.source === "cmhc") {
       var links = o.blocks.map(function (b) { return R1Cmhc.url(b.design) ? '<a href="' + R1Cmhc.url(b.design) + '" target="_blank" rel="noopener">' + esc(b.design.name) + "</a>" : null; }).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
-      notes.innerHTML = "<p>Layout: entry and living toward the street, kitchen to the rear, bedrooms upstairs; walls 300 mm outside, 250 mm between units, 120 mm inside; areas are each unit's share of the footprint. CMHC's own drawings: " + links.join(", ") + ". " + esc(R1Cmhc.SOURCE.note) + "</p>";
+      notes.innerHTML = "<p>Layout: entry and living toward the face each unit is entered from, kitchen behind, bedrooms upstairs; walls 300 mm outside, 250 mm between units, 120 mm inside; areas are each unit's share of the footprint. CMHC's own drawings: " + links.join(", ") + ". " + esc(R1Cmhc.SOURCE.note) + "</p>" + accessHtml;
     } else {
-      notes.innerHTML = o.blocks.map(function (b) { return "<p><b>" + esc(b.name) + ":</b> " + esc(b.design.layout) + "</p>"; }).join("") +
+      notes.innerHTML = o.blocks.map(function (b) { return "<p><b>" + esc(b.name) + ":</b> " + esc(b.design.layout) + "</p>"; }).join("") + accessHtml +
         o.checks.map(function (c) { return "<p>" + (c.ok ? "OK: " : "<b>Check:</b> ") + esc(c.name + ": " + c.detail) + " [" + esc(c.clause) + "]</p>"; }).join("") +
         o.notes.map(function (n) { return "<p>" + esc(n) + "</p>"; }).join("");
     }
@@ -844,7 +942,8 @@ var App = (function () {
       o.checks.forEach(function (c) { if (!c.ok) host.appendChild(el("p", "muted", "Check: " + c.name + ": " + c.detail + " [" + c.clause + "]")); });
       o.notes.forEach(function (n) { host.appendChild(el("p", "muted", n)); });
     }
-    host.appendChild(el("p", "muted", "Same colours on the map (ground floor), in 3D (every floor) and in the floor plans. Areas are shares of the footprint, not measured floor areas."));
+    var al = R1Access.lines(R1Access.plan(o));
+    host.appendChild(el("p", "muted", (al.length ? al.join(" ") + " " : "Every unit is entered at grade. ") + "Same colours on the map (ground floor), in 3D, in the section and in the floor plans. Areas are shares of the footprint, not measured floor areas."));
   }
 
   // ------------------------------------------------------------------ clear / copy
@@ -866,7 +965,7 @@ var App = (function () {
   function bind() {
     ["address", "cutSide", "btnFetch", "parcelList", "zoning", "edgeSelect", "edgeNote", "edgeFallback", "btnPick", "rules", "assumptions", "chkHide",
       "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "btnFormPlans", "unitParams", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
-      "btnClear", "status", "statusText", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "tabPlans", "plansHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
+      "btnClear", "status", "statusText", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "tabPlans", "tabSitePlan", "plansHost", "sitePlanHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
       "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnPickSite", "modeForms", "modeCmhc", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightToggle", "btnLeftToggle", "sidePanel"].forEach(function (id) { ui[id] = $(id); });
     ui.btnRightClose.addEventListener("click", function () { openRight(false); });
     ui.btnRightToggle.addEventListener("click", function () { openRight(ui.rightPanel.hidden); });
@@ -897,8 +996,8 @@ var App = (function () {
     ui.btnSaveSite.addEventListener("click", onSaveSite);
     ui.siteFile.addEventListener("change", onOpenSiteFile);
     ui.schemeBtns = { single: $("rbSingle"), courtyard: $("rbCourtyard"), side_by_side: $("rbSide") };
-    ui.tabs = { map: $("tabMap"), "3d": $("tab3d"), section: $("tabSection"), plans: $("tabPlans") };
-    ui.panes = { map: $("paneMap"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans") };
+    ui.tabs = { map: $("tabMap"), siteplan: $("tabSitePlan"), "3d": $("tab3d"), section: $("tabSection"), plans: $("tabPlans") };
+    ui.panes = { map: $("paneMap"), siteplan: $("paneSitePlan"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans") };
     ui.stepBadges = Array.prototype.slice.call(document.querySelectorAll(".step .badge, .rhead .badge"));
     M.CUT_SIDES_M.forEach(function (s) { var o = el("option", null, s + " x " + s + " m"); o.value = String(s); if (s === M.CUT_DEFAULT_SIDE_M) o.selected = true; ui.cutSide.appendChild(o); });
     M.COURTYARDS_M.forEach(function (c) { var o = el("option", null, c + " m"); o.value = String(c); ui.courtyardSel.appendChild(o); });
@@ -918,10 +1017,10 @@ var App = (function () {
     ["chkRoads", "chkParcels", "chkBuildings"].forEach(function (id) { ui[id].addEventListener("change", function () { if (S.square) { drawContext(); if (S.placed) { drawEnvelope(); drawForm(); setExistingVisible(!ui.chkHide.checked); } markDirty(); } }); });
     Object.keys(ui.tabs).forEach(function (k) { ui.tabs[k].addEventListener("click", function () { showView(k); }); });
     window.addEventListener("resize", function () { if (!ui.panes.section.hidden) drawSection(); });
-    // shortcuts: Alt+1..4 views, Alt+M massing options, Alt+S steps
+    // shortcuts: Alt+1..5 views, Alt+M massing options, Alt+S steps
     window.addEventListener("keydown", function (e) {
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
-      var views = { "1": "map", "2": "3d", "3": "section", "4": "plans" };
+      var views = { "1": "map", "2": "siteplan", "3": "3d", "4": "section", "5": "plans" };
       if (views[e.key]) { if (!ui.tabs[views[e.key]].disabled) showView(views[e.key]); e.preventDefault(); }
       else if (e.key.toLowerCase() === "m") { if (!ui.btnRightToggle.disabled) openRight(ui.rightPanel.hidden); e.preventDefault(); }
       else if (e.key.toLowerCase() === "s") { ui.btnLeftToggle.click(); e.preventDefault(); }

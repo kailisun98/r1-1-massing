@@ -37,6 +37,8 @@ html, body { height: 100%; margin: 0; }
 body { background: var(--page); color: var(--ink); font: 13px/1.45 var(--sans); }
 * { box-sizing: border-box; }
 .app { display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto 1fr; height: 100%; }
+/* explicit placement: a hidden side bar must not shift the stage into its column */
+.side { grid-column: 1; grid-row: 3; } .stage { grid-column: 2; grid-row: 3; } .right { grid-column: 3; grid-row: 3; }
 /* the status strip: one line of feedback for every action, always visible, colour-coded with a dot (a spinner while busy) */
 .status { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 6px 16px; font-size: 12.5px; border-bottom: 1px solid var(--line); background: var(--status-info); }
 .status .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--blue); flex: 0 0 9px; }
@@ -120,7 +122,10 @@ pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono
 .tabs button.on { background: var(--group); color: var(--ink); }
 .tabs .hint { margin-left: auto; color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane { flex: 1; min-height: 0; position: relative; }
-#map { position: absolute; inset: 0; background: var(--page); }
+#map { position: absolute; inset: 0; background: #f2f2f0; }
+/* the basemap in the manner of the "subtle grayscale" map style: the OpenStreetMap tiles with the colour taken out and
+   the tones lifted, so blocks are light grey, roads white and labels faint */
+.leaflet-tile-pane { filter: grayscale(1) brightness(1.08) contrast(.78); }
 #threeHost { position: absolute; inset: 0; } #threeHost canvas { display: block; }
 #sectionHost { position: absolute; inset: 0; overflow: auto; padding: 16px; background: var(--panel); }
 #sectionHost .empty { color: var(--muted); }
@@ -133,6 +138,7 @@ tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--group); } tr.p
 .unitsw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; }
 .unitlbl { position: absolute; white-space: nowrap; font: 600 9px/1 var(--sans); color: #ffffff; text-shadow: 0 0 2px rgba(0,0,0,.5); }
 .legend .l-unit::before { background: linear-gradient(90deg, #2a9d8f 0 33%, #e76f51 33% 66%, #e9c46a 66%); }
+.legend .l-stair::before { background: #f1f2ef; border-color: #1f2933; } .legend .l-section::before { border-color: #2c3e50; border-width: 0 0 1.5px; border-bottom-style: dashed; }
 
 /* ---- controls and helpers */
 button.primary { background: var(--ink); color: var(--panel); }
@@ -178,6 +184,16 @@ fieldset.units:disabled { opacity: .5; }
 .sheet-legend .lg i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 .sheet-notes { margin-top: 10px; color: var(--muted); font-size: 12px; max-width: 90ch; }
 .sheet-notes a { color: var(--blue); }
+.sheet-check { margin: 10px 0 0; padding: 6px 10px; border-radius: 4px; font-size: 12px; max-width: 110ch; }
+.sheet-check.ok { background: var(--status-ok); } .sheet-check.warn { background: var(--status-busy); }
+.sheet-table { max-width: 110ch; margin-top: 10px; }
+.sheet-table th { width: 150px; text-transform: none; letter-spacing: 0; font-size: 11.5px; color: var(--ink); vertical-align: top; }
+#paneSitePlan { overflow: auto; background: var(--page); }
+/* the site plan: the drawing on the left, its legend, schedule and notes beside it when there is room */
+.sheet-row { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-start; }
+.sheet-row .sheet-body { flex: 0 0 auto; max-width: 100%; }
+.sheet-row .sheet-aside { flex: 1 1 320px; min-width: 0; }
+.sheet-row .sheet-aside .sheet-legend { margin-top: 0; }
 .step a { color: var(--blue); }
 .legend .l-street::before { background: #8e8e8e; } .legend .l-lane::before { background: #bdbdbd; } .legend .l-topo::before { background: var(--green); } .legend .l-bldg::before { background: #f4f4f2; border-color: #6b7280; }
 
@@ -187,7 +203,8 @@ fieldset.units:disabled { opacity: .5; }
 .dimlbl { background: rgba(255,255,255,.88); padding: 0 3px; border-radius: 2px; }
 .streetlbl { font-family: var(--sans); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: #333; }
 .seclbl { font-family: var(--sans); font-weight: 600; font-size: 12px; background: rgba(255,255,255,.9); border: 1px solid #2c3e50; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
-.secdim { font-family: var(--mono); fill: var(--ink); } .sectitle { font-family: var(--sans); fill: var(--muted); } svg .seclbl { font-family: var(--sans); fill: var(--muted); }
+.secdim { font-family: var(--mono); fill: var(--ink); } .sectitle { font-family: var(--sans); fill: var(--muted); } svg .seclbl { font-family: var(--sans); fill: var(--muted); letter-spacing: .04em; }
+svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; } svg .secunit { font-family: var(--sans); }
 
 @media (max-width: 1100px) {
   .side { width: min(360px, 34vw); }
@@ -196,6 +213,7 @@ fieldset.units:disabled { opacity: .5; }
 }
 @media (max-width: 820px) {
   .app { grid-template-columns: 1fr; grid-template-rows: auto auto 55vh auto auto; }
+  .stage { grid-column: 1; grid-row: 3; } .side { grid-column: 1; grid-row: 4; } .right { grid-column: 1; grid-row: 5; }
   .stage { border-bottom: 1px solid var(--line); }
   .side { width: auto; border-right: none; }
   .right { width: auto; border-left: none; border-top: 1px solid var(--line); }
@@ -281,11 +299,12 @@ fieldset.units:disabled { opacity: .5; }
 
   <main class="stage">
     <div class="tabs" role="tablist">
-      <button id="tabMap" role="tab" aria-selected="true">Plan / map</button>
+      <button id="tabMap" role="tab" aria-selected="true">Map</button>
+      <button id="tabSitePlan" role="tab" aria-selected="false" disabled>Site plan</button>
       <button id="tab3d" role="tab" aria-selected="false" disabled>3D</button>
       <button id="tabSection" role="tab" aria-selected="false" disabled>Site section</button>
       <button id="tabPlans" role="tab" aria-selected="false" disabled>Floor plans</button>
-      <span class="hint" title="Keyboard: Alt+1 to Alt+4 switch views; Alt+M massing options; Alt+S steps">City of Vancouver Open Data · dimensions in mm · <kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>4</kbd> views</span>
+      <span class="hint" title="Keyboard: Alt+1 to Alt+5 switch views; Alt+M massing options; Alt+S steps">City of Vancouver Open Data · dimensions in mm · <kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>5</kbd> views</span>
     </div>
     <div id="paneMap" class="pane">
       <div id="map" role="application" aria-label="Site plan on a map"></div>
@@ -293,10 +312,12 @@ fieldset.units:disabled { opacity: .5; }
         <span class="l-site">Site boundary</span><span class="l-setback">Setback</span>
         <span class="l-env">Permitted envelope</span><span class="l-form">Form option</span>
         <span class="l-cmhc">Catalogue massing</span><span class="l-unit">Units (ground floor)</span>
+        <span class="l-stair">Exit stair / walkway</span><span class="l-section">Section A-A</span>
         <span class="l-street">Street</span><span class="l-lane">Lane</span>
         <span class="l-topo">Site cut</span><span class="l-bldg">Buildings</span>
       </div>
     </div>
+    <div id="paneSitePlan" class="pane" hidden><div id="sitePlanHost" class="sheet"><p class="empty">Fetch a site: the site plan follows the envelope.</p></div></div>
     <div id="pane3d" class="pane" hidden><div id="threeHost"></div></div>
     <div id="paneSection" class="pane" hidden><div id="sectionHost"></div></div>
     <div id="panePlans" class="pane" hidden><div id="plansHost" class="sheet"><p class="empty">Draw a massing option in step 4, then open its floor plans.</p></div></div>
@@ -354,8 +375,10 @@ fieldset.units:disabled { opacity: .5; }
 <script src="massing.js"></script>
 <script src="cmhc.js"></script>
 <script src="units.js"></script>
+<script src="access.js"></script>
 <script src="rooms.js"></script>
 <script src="plans.js"></script>
+<script src="siteplan.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

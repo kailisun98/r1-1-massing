@@ -150,8 +150,14 @@ button.on, button[aria-pressed="true"].toggle { background: var(--blue); color: 
 .toggle { background: var(--group); color: var(--ink); }
 .toggle.on { background: var(--amber); color: var(--amber-ink); border-color: var(--amber); }
 
-/* a phone: the clause and status cells may wrap, so a four-column table stays inside its bar */
-@media (max-width: 820px) { .ui-table td.clause, .ui-table td.status-cell { white-space: normal; } }
+/* a phone: the clause and status cells may wrap, so a four-column table stays inside its bar; a sheet toolbar's groups
+   take the full width and their bars wrap their buttons instead of clipping the labels */
+@media (max-width: 820px) {
+  .ui-table td.clause, .ui-table td.status-cell { white-space: normal; }
+  .sheet-tools .grp { flex: 1 1 100%; }
+  .sheet-tools .seg { flex: 1 1 auto; flex-wrap: wrap; }
+  .sheet-tools .segbtn { flex: 1 1 auto; white-space: normal; }
+}
 
 /* ------------------------------------------------------------------ touch: 44 px targets on a coarse pointer */
 @media (pointer: coarse) {

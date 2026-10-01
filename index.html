@@ -5,47 +5,26 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>City of Vancouver R1-1 Schematic Design Tool</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="ui.css">
 <style>
 /* Leaflet 1.9.4 stylesheet, inlined (the map has no image markers or layer control) */
 .leaflet-image-layer,.leaflet-layer,.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-pane,.leaflet-pane>canvas,.leaflet-pane>svg,.leaflet-tile,.leaflet-tile-container,.leaflet-zoom-box{position:absolute;left:0;top:0}.leaflet-container{overflow:hidden}.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-tile{-webkit-user-select:none;-moz-user-select:none;user-select:none;-webkit-user-drag:none}.leaflet-tile::selection{background:0 0}.leaflet-safari .leaflet-tile{image-rendering:-webkit-optimize-contrast}.leaflet-safari .leaflet-tile-container{width:1600px;height:1600px;-webkit-transform-origin:0 0}.leaflet-marker-icon,.leaflet-marker-shadow{display:block}.leaflet-container .leaflet-overlay-pane svg{max-width:none!important;max-height:none!important}.leaflet-container .leaflet-marker-pane img,.leaflet-container .leaflet-shadow-pane img,.leaflet-container .leaflet-tile,.leaflet-container .leaflet-tile-pane img,.leaflet-container img.leaflet-image-layer{max-width:none!important;max-height:none!important;width:auto;padding:0}.leaflet-container img.leaflet-tile{mix-blend-mode:plus-lighter}.leaflet-container.leaflet-touch-zoom{-ms-touch-action:pan-x pan-y;touch-action:pan-x pan-y}.leaflet-container.leaflet-touch-drag{-ms-touch-action:pinch-zoom;touch-action:none;touch-action:pinch-zoom}.leaflet-container.leaflet-touch-drag.leaflet-touch-zoom{-ms-touch-action:none;touch-action:none}.leaflet-container{-webkit-tap-highlight-color:transparent}.leaflet-container a{-webkit-tap-highlight-color:rgba(51,181,229,.4)}.leaflet-tile{filter:inherit;visibility:hidden}.leaflet-tile-loaded{visibility:inherit}.leaflet-zoom-box{width:0;height:0;-moz-box-sizing:border-box;box-sizing:border-box;z-index:800}.leaflet-overlay-pane svg{-moz-user-select:none}.leaflet-pane{z-index:400}.leaflet-tile-pane{z-index:200}.leaflet-overlay-pane{z-index:400}.leaflet-shadow-pane{z-index:500}.leaflet-marker-pane{z-index:600}.leaflet-tooltip-pane{z-index:650}.leaflet-popup-pane{z-index:700}.leaflet-map-pane canvas{z-index:100}.leaflet-map-pane svg{z-index:200}.leaflet-control{position:relative;z-index:800;pointer-events:visiblePainted;pointer-events:auto}.leaflet-bottom,.leaflet-top{position:absolute;z-index:1000;pointer-events:none}.leaflet-top{top:0}.leaflet-right{right:0}.leaflet-bottom{bottom:0}.leaflet-left{left:0}.leaflet-control{float:left;clear:both}.leaflet-right .leaflet-control{float:right}.leaflet-top .leaflet-control{margin-top:10px}.leaflet-bottom .leaflet-control{margin-bottom:10px}.leaflet-left .leaflet-control{margin-left:10px}.leaflet-right .leaflet-control{margin-right:10px}.leaflet-zoom-animated{-webkit-transform-origin:0 0;-ms-transform-origin:0 0;transform-origin:0 0}svg.leaflet-zoom-animated{will-change:transform}.leaflet-zoom-anim .leaflet-zoom-animated{-webkit-transition:-webkit-transform .25s cubic-bezier(0,0,.25,1);transition:transform .25s cubic-bezier(0,0,.25,1)}.leaflet-pan-anim .leaflet-tile,.leaflet-zoom-anim .leaflet-tile{transition:none}.leaflet-zoom-anim .leaflet-zoom-hide{visibility:hidden}.leaflet-interactive{cursor:pointer}.leaflet-grab{cursor:grab}.leaflet-crosshair,.leaflet-crosshair .leaflet-interactive{cursor:crosshair}.leaflet-control,.leaflet-popup-pane{cursor:auto}.leaflet-dragging .leaflet-grab,.leaflet-dragging .leaflet-grab .leaflet-interactive,.leaflet-dragging .leaflet-marker-draggable{cursor:move;cursor:grabbing}.leaflet-image-layer,.leaflet-marker-icon,.leaflet-marker-shadow,.leaflet-pane>svg path,.leaflet-tile-container{pointer-events:none}.leaflet-image-layer.leaflet-interactive,.leaflet-marker-icon.leaflet-interactive,.leaflet-pane>svg path.leaflet-interactive,svg.leaflet-image-layer.leaflet-interactive path{pointer-events:visiblePainted;pointer-events:auto}.leaflet-container{background:#ddd;outline-offset:1px}.leaflet-container a{color:#0078a8}.leaflet-zoom-box{border:2px dotted #38f;background:rgba(255,255,255,.5)}.leaflet-container{font-family:"Helvetica Neue",Arial,Helvetica,sans-serif;font-size:12px;font-size:.75rem;line-height:1.5}.leaflet-bar{box-shadow:0 1px 5px rgba(0,0,0,.65);border-radius:4px}.leaflet-bar a{background-color:#fff;border-bottom:1px solid #ccc;width:26px;height:26px;line-height:26px;display:block;text-align:center;text-decoration:none;color:#000}.leaflet-bar a,.leaflet-control-layers-toggle{background-position:50% 50%;background-repeat:no-repeat;display:block}.leaflet-bar a:focus,.leaflet-bar a:hover{background-color:#f4f4f4}.leaflet-bar a:first-child{border-top-left-radius:4px;border-top-right-radius:4px}.leaflet-bar a:last-child{border-bottom-left-radius:4px;border-bottom-right-radius:4px;border-bottom:none}.leaflet-bar a.leaflet-disabled{cursor:default;background-color:#f4f4f4;color:#bbb}.leaflet-touch .leaflet-bar a{width:30px;height:30px;line-height:30px}.leaflet-control-zoom-in,.leaflet-control-zoom-out{font:bold 18px 'Lucida Console',Monaco,monospace;text-indent:1px}.leaflet-touch .leaflet-control-zoom-in,.leaflet-touch .leaflet-control-zoom-out{font-size:22px}.leaflet-container .leaflet-control-attribution{background:#fff;background:rgba(255,255,255,.8);margin:0}.leaflet-control-attribution,.leaflet-control-scale-line{padding:0 5px;color:#333;line-height:1.4}.leaflet-control-attribution a{text-decoration:none}.leaflet-control-attribution a:focus,.leaflet-control-attribution a:hover{text-decoration:underline}.leaflet-attribution-flag{display:inline!important;vertical-align:baseline!important;width:1em;height:.6669em}.leaflet-touch .leaflet-bar,.leaflet-touch .leaflet-control-attribution{box-shadow:none}.leaflet-touch .leaflet-bar{border:2px solid rgba(0,0,0,.2);background-clip:padding-box}.leaflet-div-icon{background:#fff;border:1px solid #666}
 
-/* ------------------------------------------------------------------ tokens */
-:root {
-  --ink: #2c3e50; --muted: #6b7280; --page: #f5f6f8; --panel: #ffffff; --line: #e1e5ea; --field: #ffffff;
-  --amber: #c77d14; --amber-ink: #ffffff; --blue: #3c8cdc; --red: #c81e1e; --green: #9fb07f; --teal: #2a9d8f;
-  --status-info: #eaf0f8; --status-busy: #fff1d6; --status-ok: #e1f2e5; --status-error: #fbe1e1;
-  --group: #e9eef4; --shadow: 0 1px 2px rgba(20, 30, 40, .06);
-  --sans: "Helvetica Neue", Helvetica, Arial, "Liberation Sans", sans-serif; --mono: "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    color-scheme: dark;
-    --ink: #e6ebf1; --muted: #9aa4b1; --page: #14181d; --panel: #1c2128; --line: #2c343d; --field: #12161b;
-    --amber: #e0a03a; --amber-ink: #14181d; --blue: #5aa2ea; --red: #e0554f; --green: #7d8f60; --teal: #3fb3a4;
-    --status-info: #1f2a3a; --status-busy: #3a2f14; --status-ok: #163121; --status-error: #3b1c1c; --group: #232c37;
-  }
-}
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --ink: #e6ebf1; --muted: #9aa4b1; --page: #14181d; --panel: #1c2128; --line: #2c343d; --field: #12161b;
-  --amber: #e0a03a; --amber-ink: #14181d; --blue: #5aa2ea; --red: #e0554f; --green: #7d8f60; --teal: #3fb3a4;
-  --status-info: #1f2a3a; --status-busy: #3a2f14; --status-ok: #163121; --status-error: #3b1c1c; --group: #232c37;
-}
+/* the design tokens (light and dark) and the component styles are in ui.css, shared with ui-gallery.html and ui-test.html */
 
 /* ------------------------------------------------------------------ layout */
 html, body { height: 100%; margin: 0; }
 body { background: var(--page); color: var(--ink); font: 13px/1.45 var(--sans); }
 * { box-sizing: border-box; }
 .app { display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto 1fr; height: 100%; }
-/* explicit placement: a hidden side bar must not shift the stage into its column */
+/* explicit placement: a hidden side bar must not shift the stage into its column; min-width 0 so a long select option
+   or a wide drawing scrolls inside its bar instead of widening the page (phones) */
 .side { grid-column: 1; grid-row: 3; } .stage { grid-column: 2; grid-row: 3; } .right { grid-column: 3; grid-row: 3; }
-/* the status strip: one line of feedback for every action, always visible, colour-coded with a dot (a spinner while busy) */
-.status { grid-column: 1 / -1; display: flex; align-items: center; gap: 10px; padding: 6px 16px; font-size: 12.5px; border-bottom: 1px solid var(--line); background: var(--status-info); }
-.status .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--blue); flex: 0 0 9px; }
-.status.ok .dot { background: #3a9a5b; } .status.error .dot { background: var(--red); }
-.status.busy .dot { border: 2px solid var(--amber); border-top-color: transparent; background: transparent; width: 10px; height: 10px; animation: spin .9s linear infinite; }
-@keyframes spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .status.busy .dot { animation: none; background: var(--amber); border: none; } }
+.side, .right, .steps, .rbody { min-width: 0; }
+select, input[type="text"] { max-width: 100%; }
+#unitsPanel svg { max-width: 100%; height: auto; display: block; }
+/* the status strip (R1UI.status): one line of feedback for every action, always visible, colour-coded with a dot (a spinner while busy) */
+.status { grid-column: 1 / -1; }
 .topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .topbar h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
 .topbar .hint { margin: 0; flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -66,22 +45,13 @@ body { background: var(--page); color: var(--ink); font: 13px/1.45 var(--sans); 
 .lbl3d.head { font-size: 11px; background: #2c3e50; color: #ffffff; border-left: none; padding: 3px 8px; }
 .lbl3dhost { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .side { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); background: var(--page); }
-.status.busy { background: var(--status-busy); } .status.ok { background: var(--status-ok); } .status.error { background: var(--status-error); }
 .steps { overflow: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 12px; }
 .step, .report { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; box-shadow: var(--shadow); }
 .step .actions { margin-top: 8px; }
 .step .row { margin-top: 6px; }
 .step table { margin-top: 8px; }
-.step h2, .report h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; text-wrap: balance; cursor: pointer; user-select: none; }
-.step h2::after, .report h2::after { content: ""; margin-left: auto; width: 7px; height: 7px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg) translate(-2px, -2px); flex: 0 0 auto; }
-.collapsed h2 { margin-bottom: 0; }
-.collapsed h2::after { transform: rotate(-45deg) translate(-2px, 2px); }
-.collapsed .stepbody { display: none; }
-.seg { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
-.segbtn { flex: 1; background: var(--panel); color: var(--muted); border-radius: 0; border: none; padding: 6px 8px; font-weight: 500; }
-.segbtn + .segbtn { border-left: 1px solid var(--line); }
-.segbtn.on { background: var(--ink); color: var(--panel); }
-.segbtn:disabled { opacity: .5; }
+/* a step folds from its heading (R1UI.collapsible turns the heading into the button) */
+.step h2, .report h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; user-select: none; }
 button, .filebtn { min-height: 30px; border-radius: 5px; }
 button.secondary, .filebtn { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
 button.secondary:hover:not(:disabled), .filebtn:hover { background: var(--group); }
@@ -94,38 +64,18 @@ kbd { font: 11px var(--mono); background: var(--group); border-radius: 3px; padd
 .checks { display: flex; flex-wrap: wrap; gap: 4px 14px; }
 input[type="text"], select { font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; width: 100%; }
 select[multiple], select[size] { padding: 3px; font-family: var(--mono); font-size: 11.5px; }
-button { font: inherit; font-weight: 500; padding: 6px 12px; border-radius: 4px; border: 1px solid transparent; cursor: pointer; background: var(--ink); color: var(--panel); }
 button.secondary { background: var(--group); color: var(--ink); }
 .filebtn { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 4px; background: var(--group); color: var(--ink); font-weight: 500; cursor: pointer; }
 .filebtn input { display: none; }
 .filebtn:focus-within { outline: 2px solid var(--blue); outline-offset: 1px; }
-button:disabled { opacity: .45; cursor: default; }
-button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .muted { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
 .zoning { margin: 8px 0 0; font-weight: 600; font-size: 12.5px; } .zoning.warn { color: var(--red); }
-.toggle { background: var(--group); color: var(--ink); }
-.toggle.on { background: var(--amber); color: var(--amber-ink); }
-.toggle[aria-pressed="true"] { border-color: var(--amber); }
-button.on { background: var(--blue); color: #fff; }
-table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin-top: 6px; }
-th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
-td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
-td.clause { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
-td.status-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
-/* the state of a rule: a coloured mark before its status */
-.st { display: inline-flex; width: 14px; height: 14px; border-radius: 50%; align-items: center; justify-content: center; font-size: 9.5px; font-weight: 700; line-height: 1; color: #fff; margin-right: 5px; vertical-align: -2px; flex: 0 0 14px; }
-.st-ok { background: #3a9a5b; } .st-fail { background: var(--red); } .st-na { background: #d9a520; }
-.keyline { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; font-size: 11px; }
-.keyline .st { margin-left: 8px; } .keyline .st:first-child { margin-left: 0; }
-.sheet .empty.busy::before { content: ""; display: inline-block; width: 10px; height: 10px; border: 2px solid var(--amber); border-top-color: transparent; border-radius: 50%; margin-right: 8px; vertical-align: -1px; animation: spin .9s linear infinite; }
-tr.group td { background: var(--group); font-weight: 600; padding: 5px 6px; }
 pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono); background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 8px; white-space: pre; }
 
 .stage { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .tabs { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); align-items: center; }
-.tabs button { background: transparent; color: var(--muted); border-radius: 4px; white-space: nowrap; flex: 0 0 auto; }
-.tabs button.on { background: var(--group); color: var(--ink); }
+.tabs .ui-tabs { flex: 0 1 auto; min-width: 0; }
 .tabs .hint { margin-left: auto; color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane { flex: 1; min-height: 0; position: relative; }
 #map { position: absolute; inset: 0; background: #f2f2f0; }
@@ -164,18 +114,7 @@ fieldset.units .sub { margin: 10px 0 4px; font-size: 12px; font-weight: 600; }
 fieldset.units .sub .muted { font-weight: 400; display: block; font-size: 11px; margin: 0; }
 fieldset.units .readout { font-size: 12.5px; font-variant-numeric: tabular-nums; }
 fieldset.units .actions { margin: 4px 0 6px; }
-.optlist { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
-.opt { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
-.opt.fit { cursor: pointer; }
-.opt.fit:hover { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 8%, var(--panel)); }
-.opt.on { border-color: var(--teal); background: color-mix(in srgb, var(--teal) 16%, var(--panel)); }
-.opt.nofit { opacity: .75; }
-.opt .name { font-weight: 600; font-size: 12.5px; }
-.opt .meta { color: var(--muted); font-size: 11.5px; grid-column: 1; }
-.opt .why { color: var(--muted); font-size: 11px; grid-column: 1 / -1; }
-.pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; white-space: nowrap; }
-.pill.ok { background: var(--status-ok); color: var(--ink); } .pill.no { background: var(--group); color: var(--muted); }
-.pill.n { background: var(--group); color: var(--ink); font-variant-numeric: tabular-nums; }
+fieldset.units .ui-stepper { margin-bottom: 4px; }
 
 /* ---- the floor-plan sheet */
 #panePlans { overflow: auto; background: var(--page); }
@@ -183,11 +122,6 @@ fieldset.units .actions { margin: 4px 0 6px; }
 .sheet .empty { color: var(--muted); }
 .sheet-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
 .sheet-head p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; max-width: 70ch; }
-.sheet-tools { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 12px 0 10px; }
-.sheet-tools .grp { display: flex; gap: 4px; align-items: center; }
-.sheet-tools .grp span { color: var(--muted); font-size: 11px; margin-right: 4px; text-transform: uppercase; letter-spacing: .04em; }
-.sheet-tools button { padding: 4px 10px; font-size: 12px; background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
-.sheet-tools button.on { background: var(--ink); color: var(--panel); border-color: var(--ink); }
 .sheet-body { background: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; }
 .sheet-body svg { display: block; }
 .sheet-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; font-size: 12px; }
@@ -197,8 +131,6 @@ fieldset.units .actions { margin: 4px 0 6px; }
 .sheet-section { background: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px 4px; margin: 0 0 10px; max-width: 924px; }
 .sheet-section h3 { margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
 .sheet-section svg { display: block; }
-.sheet-check { margin: 10px 0 0; padding: 6px 10px; border-radius: 4px; font-size: 12px; max-width: 110ch; }
-.sheet-check.ok { background: var(--status-ok); } .sheet-check.warn { background: var(--status-busy); }
 .sheet-table { max-width: 110ch; margin-top: 10px; }
 .sheet-table th { width: 150px; text-transform: none; letter-spacing: 0; font-size: 11.5px; color: var(--ink); vertical-align: top; }
 #paneSitePlan { overflow: auto; background: var(--page); }
@@ -243,7 +175,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
     <p id="sourceLine" class="hint"></p>
     <button id="btnRightToggle" class="secondary" title="Show or hide the massing options" aria-pressed="false" disabled>Massing options</button>
   </header>
-  <div id="status" class="status info" role="status" aria-live="polite"><span class="dot" aria-hidden="true"></span><span id="statusText">Ready.</span></div>
+  <div id="status" class="status info"></div>
   <aside class="side" id="sidePanel">
     <div class="steps">
       <section class="step" id="stepSite" aria-labelledby="h1s">
@@ -312,12 +244,8 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
   </aside>
 
   <main class="stage">
-    <div class="tabs" role="tablist">
-      <button id="tabMap" role="tab" aria-selected="true">Map</button>
-      <button id="tabSitePlan" role="tab" aria-selected="false" disabled>Site plan</button>
-      <button id="tab3d" role="tab" aria-selected="false" disabled>3D</button>
-      <button id="tabSection" role="tab" aria-selected="false" disabled>Site section</button>
-      <button id="tabPlans" role="tab" aria-selected="false" disabled>Floor plans</button>
+    <div class="tabs">
+      <div id="viewTabs"></div>
       <span class="hint" title="Keyboard: Alt+1 to Alt+5 switch views; Alt+M massing options; Alt+S steps">City of Vancouver Open Data · dimensions in mm · <kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>5</kbd> views</span>
     </div>
     <div id="paneMap" class="pane">
@@ -343,16 +271,9 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
       <button id="btnRightClose" class="iconbtn" aria-label="Hide the massing options" title="Hide">&times;</button>
     </div>
     <div class="rbody" id="formSection">
-          <div class="seg" role="tablist" aria-label="Massing source">
-            <button id="modeForms" class="segbtn on" role="tab" aria-selected="true">By-law forms</button>
-            <button id="modeCmhc" class="segbtn" role="tab" aria-selected="false">CMHC catalogue</button>
-          </div>
+          <div id="massingMode"></div>
           <div id="panelForms">
-            <div class="seg" role="group" aria-label="Form">
-              <button id="rbSingle" class="segbtn" aria-pressed="false" disabled>Single building</button>
-              <button id="rbCourtyard" class="segbtn" aria-pressed="false" disabled>Courtyard</button>
-              <button id="rbSide" class="segbtn" aria-pressed="false" disabled>Side by side</button>
-            </div>
+            <div id="schemeSeg"></div>
             <p id="formDesc" class="muted"></p>
             <div id="courtyardParams" hidden>
               <div class="row"><label for="courtyardSel">Courtyard</label><select id="courtyardSel"></select></div>
@@ -365,10 +286,10 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
               <div class="row"><label for="groundSel">Ground floor</label><select id="groundSel"></select></div>
               <div class="row"><label for="accessSel">Access</label><select id="accessSel"></select></div>
               <p class="sub">Unit mix <span class="muted">3-bed from 105 m², 2-bed from 65, studio on one level; 1-beds are the rest</span></p>
-              <div class="row"><label for="mix3Sel">3-bedroom</label><select id="mix3Sel"></select></div>
-              <div class="row"><label for="mix2Sel">2-bedroom</label><select id="mix2Sel"></select></div>
-              <div class="row"><label for="mix0Sel">Studios</label><select id="mix0Sel"></select></div>
-              <div class="row"><label>1-bedroom</label><span id="mix1Out" class="readout"></span></div>
+              <div id="mix3Host"></div>
+              <div id="mix2Host"></div>
+              <div id="mix0Host"></div>
+              <div class="row"><label id="mix1Lbl">1-bedroom</label><span id="mix1Out" class="readout" aria-labelledby="mix1Lbl"></span></div>
               <div class="actions"><button id="btnMixAuto" class="secondary" title="Bedrooms by each unit's area again">Mix by area</button></div>
             </fieldset>
             <div class="actions"><button id="btnFormPlans" class="primary" disabled>Floor plans</button><button id="btnFormSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
@@ -377,7 +298,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
           </div>
           <div id="panelCmhc" hidden>
             <p class="muted" style="margin-top:0">The British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a>, tested against this envelope. Click a fitting option to draw it.</p>
-            <div id="cmhcList" class="optlist" aria-live="polite"></div>
+            <div id="cmhcList"></div>
             <p id="cmhcNote" class="muted"></p>
             <div class="actions"><button id="btnCmhcPlans" class="primary" disabled>Floor plans</button><button id="btnCmhcSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
             <details class="help"><summary>What is checked</summary><p class="muted">Width, depth, storeys and height against the envelope; the unit count this site's band allows; floor area against FSR 1.00; and, for a design with an accessory dwelling unit behind it, the courtyard rules (3.1.2.4(a), 3.1.2.8(a), 3.1.2.11(c), 3.1.2.5(a)). Options that do not fit say which rule they fail.</p></details>
@@ -401,6 +322,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
 <script src="rooms.js"></script>
 <script src="plans.js"></script>
 <script src="siteplan.js"></script>
+<script src="ui.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -14,6 +14,10 @@ var App = (function () {
 
   var S = {};           // workflow state
   var ui = {};          // DOM handles
+  // the components (ui.js): props in, callbacks out; the app never touches their DOM
+  var statusC, tabsC, modeC, schemeC, cmhcC, leftC, rightC, pickC, pickSiteC, tables = {}, mixC = {}, plansBusy = null;
+  var TAB_ITEMS = [{ id: "map", label: "Map", panel: "paneMap" }, { id: "siteplan", label: "Site plan", panel: "paneSitePlan" }, { id: "3d", label: "3D", panel: "pane3d" }, { id: "section", label: "Site section", panel: "paneSection" }, { id: "plans", label: "Floor plans", panel: "panePlans" }];
+  var SCHEME_LABELS = { single: "Single building", courtyard: "Courtyard", side_by_side: "Side by side" };
   var map, layers = {}, tileLayer = null, presetLayer = null, three = null, pickMode = false, sitePickMode = false, sectionDirty = true, threeDirty = true;
 
   // ------------------------------------------------------------------ small helpers
@@ -30,10 +34,7 @@ var App = (function () {
   }
 
   // ------------------------------------------------------------------ status / report
-  function status(text, level) {
-    ui.statusText.textContent = text;
-    ui.status.className = "status " + (level || "info");
-  }
+  function status(text, level) { statusC.update({ text: text, level: level || "info" }); }
   function report(lines) {
     if (typeof lines === "string") lines = [lines];
     ui.report.textContent += lines.join("\n") + "\n";
@@ -45,55 +46,38 @@ var App = (function () {
     report(["R1-1 MASSING", "Source: " + R.document, "Version: " + R.version + " | Accessed: " + R.accessed, "URL: " + R.url, "NOTE: " + R.note, ""]);
   }
 
-  // ------------------------------------------------------------------ tables
-  function fillTable(table, header, rows, opts) {
-    opts = opts || {};
-    table.innerHTML = "";
-    var thead = el("thead"), tr = el("tr");
-    header.forEach(function (h) { tr.appendChild(el("th", null, h)); });
-    thead.appendChild(tr); table.appendChild(thead);
-    var tbody = el("tbody");
-    var STATE = { ok: ["st-ok", "✓", "applied and met"], fail: ["st-fail", "✕", "not met"], na: ["st-na", "–", "not applicable to what is drawn"] };
-    rows.forEach(function (r) {
-      var row = el("tr");
-      if (r.header) { row.className = "group"; var td = el("td", null, r.header); td.colSpan = header.length; row.appendChild(td); tbody.appendChild(row); return; }
-      r.slice(0, header.length).forEach(function (c, i) {
-        var td = el("td", i === opts.clauseCol ? "clause" : (i === opts.statusCol ? "status-cell" : null));
-        if (i === opts.statusCol && opts.stateCol !== undefined && STATE[r[opts.stateCol]]) {   // a coloured mark before the status: applied, not met, not applicable
-          var s = STATE[r[opts.stateCol]], ic = el("span", "st " + s[0], s[1]); ic.setAttribute("role", "img"); ic.setAttribute("aria-label", s[2]); ic.title = s[2]; td.appendChild(ic);
-        }
-        td.appendChild(document.createTextNode(c === null || c === undefined ? "" : String(c)));
-        row.appendChild(td);
-      });
-      tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
+  // ------------------------------------------------------------------ tables (R1UI.table)
+  // massing.js gives rows as arrays, with a {header} object opening a group; the by-law rows carry their state in column 4
+  function tableRows(rows, stateCol) {
+    return rows.map(function (r) { return r.header ? { group: r.header } : { cells: r, state: stateCol !== undefined ? r[stateCol] : undefined }; });
   }
   function fillRules() {
     var form = S.form && S.form.status === "ok" ? S.form : null, rows = [];
     M.rulesGroups(S.ev, form).forEach(function (g) { rows.push({ header: g.title }); g.rows.forEach(function (r) { rows.push(r); }); });
-    fillTable(ui.rules, ["Regulation", "R1-1", "Clause", "This site"], rows, { clauseCol: 2, statusCol: 3, stateCol: 4 });
+    tables.rules.update({ rows: tableRows(rows, 4) });
   }
-  function fillResults() { fillTable(ui.results, ["Item", "Value"], M.resultsRows(S.ev, S.base, S.zone, S.parcel)); }
-  function fillForm() { fillTable(ui.formTable, ["Item", "Value"], S.form ? M.formRows(S.form, S.ev) : []); }
+  function fillResults() { tables.results.update({ rows: tableRows(M.resultsRows(S.ev, S.base, S.zone, S.parcel)) }); }
+  function fillForm() { tables.form.update({ rows: tableRows(S.form ? M.formRows(S.form, S.ev) : []) }); }
 
   // ------------------------------------------------------------------ enabling by state
   function setReady() {
     var haveSite = !!S.parcel, haveModel = !!S.square, haveEnv = !!(S.ev && S.ev.status === "ok" && S.placed);
-    ui.edgeSelect.disabled = !haveSite; ui.btnPick.disabled = !haveSite;
-    ["single", "courtyard", "side_by_side"].forEach(function (k) { ui.schemeBtns[k].disabled = !haveEnv; });
+    ui.edgeSelect.disabled = !haveSite; pickC.update({ disabled: !haveSite });
+    schemeC.update({ disabled: !haveEnv });
     var bylawUp = !!(S.form && S.form.status === "ok" && S.form.scheme !== "cmhc");
     ui.btnFormClear.disabled = !bylawUp; ui.unitParams.disabled = !bylawUp; ui.btnFormPlans.disabled = !(bylawUp && S.unitsOption); ui.btnFormSection.disabled = !haveEnv;
     ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc"); ui.btnCmhcPlans.disabled = !S.cmhcPick; ui.btnCmhcSection.disabled = !haveEnv;
-    ui.tab3d.disabled = !haveModel; ui.tabSection.disabled = !haveSite; ui.tabPlans.disabled = !S.unitsOption; ui.tabSitePlan.disabled = !haveEnv; ui.btnRightToggle.disabled = !haveEnv;
+    tabsC.update({ items: tabItems({ "3d": !haveModel, section: !haveSite, plans: !S.unitsOption, siteplan: !haveEnv }) });
+    rightC.update({ disabled: !haveEnv && ui.rightPanel.hidden });
     ui.stepBadges.forEach(function (b, i) {
       var done = [haveModel, !!S.ev, haveEnv, !!(S.form && S.form.status === "ok")][i];
       b.classList.toggle("done", !!done);
     });
   }
+  function tabItems(off) { return TAB_ITEMS.map(function (t) { return { id: t.id, label: t.label, panel: t.panel, disabled: !!off[t.id] }; }); }
   function setScheme(key) {
     S.scheme = key;
-    Object.keys(ui.schemeBtns).forEach(function (k) { ui.schemeBtns[k].classList.toggle("on", k === key); ui.schemeBtns[k].setAttribute("aria-pressed", k === key ? "true" : "false"); });
+    schemeC.update({ value: key });
     ui.courtyardParams.hidden = key !== "courtyard";
     var s = M.SCHEMES.filter(function (x) { return x.key === key; })[0];
     ui.formDesc.textContent = s ? s.desc : "";
@@ -118,12 +102,12 @@ var App = (function () {
     ["topo", "roads", "parcels", "buildings", "cut", "site", "envelope", "forms", "dims", "section"].forEach(function (k) { layers[k] = L.layerGroup().addTo(map); });
     map.on("click", function (e) {
       if (sitePickMode) {
-        sitePickMode = false; ui.btnPickSite.classList.remove("on"); map.getContainer().classList.remove("leaflet-crosshair");
+        sitePickMode = false; pickSiteC.update({ pressed: false }); map.getContainer().classList.remove("leaflet-crosshair");
         pickSiteAt(e.latlng.lat, e.latlng.lng); return;
       }
       if (!pickMode || !S.parcel) return;
       var xy = S.res.frame.toXY(e.latlng.lng, e.latlng.lat);
-      pickMode = false; ui.btnPick.classList.remove("on");
+      pickMode = false; pickC.update({ pressed: false });
       var E = S.det ? S.det.edges : M.edges(S.parcel.ring), best = 0, bestD = Infinity;
       E.forEach(function (ed, i) { var d = site.pointToSegment(xy, ed.a, ed.b); if (d < bestD) { bestD = d; best = i; } });
       ui.edgeSelect.value = String(best); S.click = E[best].mid;
@@ -548,10 +532,7 @@ var App = (function () {
 
   // ------------------------------------------------------------------ tabs
   function showView(name) {
-    ["map", "siteplan", "3d", "section", "plans"].forEach(function (k) {
-      var pane = ui.panes[k], on = k === name;
-      pane.hidden = !on; ui.tabs[k].classList.toggle("on", on); ui.tabs[k].setAttribute("aria-selected", on ? "true" : "false");
-    });
+    tabsC.update({ value: name });   // the tab strip marks the tab and shows its pane
     if (name === "map") setTimeout(function () { map.invalidateSize(); if (S.parcel && map.getZoom() < 14) zoomToSite(); }, 30);
     if (name === "3d" && S.square) { if (threeDirty) build3D(); else three.resize(); }
     if (name === "section" && sectionDirty) drawSection();
@@ -576,20 +557,17 @@ var App = (function () {
     head.appendChild(el("h2", null, "Site plan" + (S.address ? ": " + S.address : "") + (o ? " · " + (o.source === "cmhc" ? "CMHC " : "") + o.name : (form ? " · " + form.name : " · permitted envelope"))));
     head.appendChild(el("p", null, "Street at the top and the lane at the bottom, as on the floor-plan sheet (the north arrow gives the orientation). Yard lines of the R1-1 schedule, the ground-floor units in their colours, entries, the exterior exit stairs and walkways, paths, a car-share stall off the lane and the shared outdoor space; dimensions in mm, in halftone."));
     host.appendChild(head);
-    var tools = el("div", "sheet-tools"), g1 = el("div", "grp"), g2 = el("div", "grp"), g3 = el("div", "grp");
-    g1.appendChild(el("span", null, "Car share"));
-    [[0, "None"], [1, "1 stall"], [2, "2 stalls"]].forEach(function (c) { var b = el("button", (sitePlanOpts.carshare === null ? sheet.stalls : sitePlanOpts.carshare) === c[0] ? "on" : null, c[1]); b.addEventListener("click", function () { sitePlanOpts.carshare = c[0]; drawSitePlan(); }); g1.appendChild(b); });
-    g2.appendChild(el("span", null, "Outdoor space"));
-    [["shared", "Shared"], ["patios", "Shared + patios"]].forEach(function (c) { var b = el("button", sitePlanOpts.outdoor === c[0] ? "on" : null, c[1]); b.addEventListener("click", function () { sitePlanOpts.outdoor = c[0]; drawSitePlan(); }); g2.appendChild(b); });
-    g3.appendChild(el("span", null, "Scale"));
-    [[9, "Small"], [12, "Medium"], [16, "Large"]].forEach(function (s) { var b = el("button", s[0] === sitePlanOpts.k ? "on" : null, s[1]); b.addEventListener("click", function () { sitePlanOpts.k = s[0]; drawSitePlan(); }); g3.appendChild(b); });
-    tools.appendChild(g1); tools.appendChild(g2); tools.appendChild(g3); host.appendChild(tools);
+    var tools = el("div"); host.appendChild(tools);
+    R1UI.toolbar(tools, { ariaLabel: "Site plan options", groups: [
+      { id: "carshare", label: "Car share", items: [{ id: "0", label: "None" }, { id: "1", label: "1 stall" }, { id: "2", label: "2 stalls" }], value: String(sitePlanOpts.carshare === null ? sheet.stalls : sitePlanOpts.carshare), onChange: function (id) { sitePlanOpts.carshare = parseInt(id, 10); drawSitePlan(); } },
+      { id: "outdoor", label: "Outdoor space", items: [{ id: "shared", label: "Shared" }, { id: "patios", label: "Shared + patios" }], value: sitePlanOpts.outdoor, onChange: function (id) { sitePlanOpts.outdoor = id; drawSitePlan(); } },
+      { id: "scale", label: "Scale", items: [{ id: "9", label: "Small" }, { id: "12", label: "Medium" }, { id: "16", label: "Large" }], value: String(sitePlanOpts.k), onChange: function (id) { sitePlanOpts.k = parseInt(id, 10); drawSitePlan(); } }] });
     var row = el("div", "sheet-row"), body = el("div", "sheet-body"), aside = el("div", "sheet-aside");
     body.innerHTML = sheet.svg; row.appendChild(body); row.appendChild(aside); host.appendChild(row);
     var lg = el("div", "sheet-legend"); lg.innerHTML = sheet.legend; aside.appendChild(lg);
     var table = el("table"), tbody = el("tbody");
-    sheet.rows.forEach(function (r) { var tr = el("tr"); tr.appendChild(el("th", null, r[0])); tr.appendChild(el("td", null, r[1])); tbody.appendChild(tr); });
-    table.appendChild(tbody); table.className = "sheet-table"; aside.appendChild(table);
+    sheet.rows.forEach(function (r) { var tr = el("tr"), th = el("th", null, r[0]); th.scope = "row"; tr.appendChild(th); tr.appendChild(el("td", null, r[1])); tbody.appendChild(tr); });
+    table.appendChild(tbody); table.className = "ui-table sheet-table"; aside.appendChild(table);
     var notes = el("div", "sheet-notes"); notes.innerHTML = sheet.notes.map(function (n) { return "<p>" + esc(n) + "</p>"; }).join(""); aside.appendChild(notes);
     sitePlanDirty = false;
   }
@@ -600,14 +578,17 @@ var App = (function () {
   function drawPlans() {
     var host = ui.plansHost, o = S.unitsOption;
     plansDirty = false;
+    if (plansBusy) { plansBusy.destroy(); plansBusy = null; }
     if (!o || !S.form || S.form.status !== "ok") { host.innerHTML = ""; host.appendChild(el("p", "empty", "Draw a massing option in step 4, then open its floor plans.")); return; }
-    host.innerHTML = ""; host.appendChild(el("p", "empty busy", "Laying out the rooms, placing the furniture clear of the doors and checking the clearances…"));
+    host.innerHTML = ""; plansBusy = R1UI.busy(host, { text: "Laying out the rooms, placing the furniture clear of the doors and checking the clearances…" });
     status("Drawing the floor plans of " + o.name + " and checking them…", "busy");
     if (plansTimer) clearTimeout(plansTimer);
     plansTimer = setTimeout(function () { plansTimer = null; drawPlansNow(); }, 30);
   }
   function drawPlansNow() {
-    var host = ui.plansHost, o = S.unitsOption; host.innerHTML = "";
+    var host = ui.plansHost, o = S.unitsOption;
+    if (plansBusy) { plansBusy.destroy(); plansBusy = null; }
+    host.innerHTML = "";
     if (!o || !S.form || S.form.status !== "ok") { host.appendChild(el("p", "empty", "Draw a massing option in step 4, then open its floor plans.")); plansDirty = false; return; }
     var floorNames = [];
     o.blocks.forEach(function (b) { b.floors.forEach(function (f) { if (floorNames.indexOf(f.name) < 0) floorNames.push(f.name); }); });
@@ -618,14 +599,11 @@ var App = (function () {
     head.appendChild(el("p", null, (S.address ? S.address + " · " : "") + o.units + " units (" + R1Cmhc.unitMix(o) + "). Street at the top, lane at the bottom; a red arrow marks an entry; dimensions in mm. " +
       (core ? "Upper units open onto the corridor of a shared single exit stair core." : (stairs ? "Upper units are reached by an exterior single exit stair and open walkway (dashed where it passes overhead)." : "Every unit is entered at grade."))));
     host.appendChild(head);
-    var tools = el("div", "sheet-tools"), g1 = el("div", "grp"), g2 = el("div", "grp"), g3 = el("div", "grp");
-    g1.appendChild(el("span", null, "Floor"));
-    [null].concat(floorNames).forEach(function (fn) { var b = el("button", fn === plansFloor ? "on" : null, fn || "All"); b.addEventListener("click", function () { plansFloor = fn; drawPlans(); }); g1.appendChild(b); });
-    g2.appendChild(el("span", null, "Scale"));
-    [[14, "Small"], [20, "Medium"], [28, "Large"]].forEach(function (s) { var b = el("button", s[0] === plansScale ? "on" : null, s[1]); b.addEventListener("click", function () { plansScale = s[0]; drawPlans(); }); g2.appendChild(b); });
-    g3.appendChild(el("span", null, "Site section"));
-    [[true, "Show"], [false, "Hide"]].forEach(function (s) { var b = el("button", s[0] === plansSection ? "on" : null, s[1]); b.addEventListener("click", function () { plansSection = s[0]; drawPlans(); }); g3.appendChild(b); });
-    tools.appendChild(g1); tools.appendChild(g2); tools.appendChild(g3); host.appendChild(tools);
+    var tools = el("div"); host.appendChild(tools);
+    R1UI.toolbar(tools, { ariaLabel: "Floor plan options", groups: [
+      { id: "floor", label: "Floor", items: [{ id: "all", label: "All" }].concat(floorNames.map(function (fn) { return { id: fn, label: fn }; })), value: plansFloor || "all", onChange: function (id) { plansFloor = id === "all" ? null : id; drawPlans(); } },
+      { id: "scale", label: "Scale", items: [{ id: "14", label: "Small" }, { id: "20", label: "Medium" }, { id: "28", label: "Large" }], value: String(plansScale), onChange: function (id) { plansScale = parseInt(id, 10); drawPlans(); } },
+      { id: "section", label: "Site section", items: [{ id: "show", label: "Show" }, { id: "hide", label: "Hide" }], value: plansSection ? "show" : "hide", onChange: function (id) { plansSection = id === "show"; drawPlans(); } }] });
     if (plansSection) {   // the site section beside the plan options, so plans and section read together
       var secWrap = el("div", "sheet-section"), secSvg = sectionSvg(Math.min(900, (host.clientWidth || 900) - 44));
       if (typeof secSvg !== "string") { secWrap.appendChild(el("h3", null, "Site section A-A")); secWrap.appendChild(secSvg); host.appendChild(secWrap); }
@@ -633,9 +611,10 @@ var App = (function () {
     var plans = R1Plans.sheet(o, { k: plansScale, floors: plansFloor ? [plansFloor] : null, mirror: plansMirror() });
     var body = el("div", "sheet-body"); body.innerHTML = plans.svg; host.appendChild(body);
     var lg = el("div", "sheet-legend"); lg.innerHTML = plans.legend; host.appendChild(lg);
-    var issues = R1Plans.check(o), chk = el("p", "sheet-check " + (issues.length ? "warn" : "ok"));
-    chk.textContent = issues.length ? "Plan check: " + issues.length + " item" + (issues.length > 1 ? "s" : "") + " to resolve: " + issues.join("; ") + "." : "Plan check passed: every room has its door (860 mm or wider), the furniture stands clear of every door swing and its 0.76 m approach, halls, baths, bedrooms, living rooms, kitchens and stairs meet the test fits, stairs stack, every unit holds the bedrooms of its type, and every unit has its way in.";
-    host.appendChild(chk);
+    var issues = R1Plans.check(o), chk = el("div"); host.appendChild(chk);
+    R1UI.notice(chk, issues.length
+      ? { tone: "warn", title: "Plan check: " + issues.length + " item" + (issues.length > 1 ? "s" : "") + " to resolve.", items: issues }
+      : { tone: "ok", title: "Plan check passed.", text: "Every room has its door (860 mm or wider), the furniture stands clear of every door swing and its 0.76 m approach, halls, baths, bedrooms, living rooms, kitchens and stairs meet the test fits, stairs stack, every unit holds the bedrooms of its type, and every unit has its way in." });
     status("Floor plans of " + o.name + " drawn" + (issues.length ? "; the plan check lists " + issues.length + " item" + (issues.length > 1 ? "s" : "") + " to resolve." : "; the plan check passed."), issues.length ? "error" : "ok");
     var notes = el("div", "sheet-notes");
     var accessHtml = access.notes.length ? "<p>" + esc(R1Access.lines(access).join(" ")) + " " + esc(access.notes.join(" ")) + "</p>" : "";
@@ -849,16 +828,18 @@ var App = (function () {
       buildings: [M.building("single", "Single building", pts, hm.value, hm.storeys, hm.clause.split(" ")[0], E[f])] };
   }
   function unitOpts() { return { units: parseInt(ui.unitsSel.value, 10) || undefined, tenure: ui.tenureSel.value || "other", ground: ui.groundSel.value || "residential", access: ui.accessSel.value || "exterior", mix: S.mix }; }
-  // the unit-mix selects: 3-bed and 2-bed counts capped by the cells large enough, studios capped by the single-level cells left, 1-beds the rest
+  // the unit-mix steppers: 3-bed and 2-bed counts capped by the cells large enough, studios capped by the single-level cells left, 1-beds the rest
   function fillMixSelects(o) {
     var mix = o && o.mix, lim = mix && mix.limits;
-    function fill(sel, max, val) { sel.innerHTML = ""; for (var i = 0; i <= max; i++) { var op = el("option", null, String(i)); op.value = String(i); sel.appendChild(op); } sel.value = String(Math.min(val, max)); sel.disabled = max === 0; }
-    if (!mix) { ["mix3Sel", "mix2Sel", "mix0Sel"].forEach(function (id) { ui[id].innerHTML = ""; ui[id].disabled = true; }); ui.mix1Out.textContent = ""; return; }
-    fill(ui.mix3Sel, lim.max3, mix.b3); fill(ui.mix2Sel, lim.max2, mix.b2); fill(ui.mix0Sel, lim.max0, mix.b0);
+    if (!mix) { ["b3", "b2", "b0"].forEach(function (k) { mixC[k].update({ value: 0, max: 0, disabled: true, help: "draw a form first" }); }); ui.mix1Out.textContent = ""; ui.btnMixAuto.disabled = true; return; }
+    mixC.b3.update({ value: mix.b3, max: lim.max3, disabled: false, help: null, maxReason: lim.max3 ? "cells of 105 m² or more" : "no cell reaches 105 m²" });
+    mixC.b2.update({ value: mix.b2, max: lim.max2, disabled: false, help: null, maxReason: lim.max2 ? "cells of 65 m² or more" : "no cell reaches 65 m²" });
+    mixC.b0.update({ value: mix.b0, max: lim.max0, disabled: false, help: null, maxReason: lim.max0 ? "single-level units" : "no single-level unit" });
     ui.mix1Out.textContent = mix.b1 + (mix.custom ? " (set by hand)" : " (by area)");
     ui.btnMixAuto.disabled = !mix.custom;
   }
-  function readMix() { return { b3: parseInt(ui.mix3Sel.value, 10) || 0, b2: parseInt(ui.mix2Sel.value, 10) || 0, b0: parseInt(ui.mix0Sel.value, 10) || 0 }; }
+  function readMix() { return { b3: mixC.b3.value, b2: mixC.b2.value, b0: mixC.b0.value }; }
+  function onMixChange() { S.mix = readMix(); if (S.scheme && S.form && S.form.scheme !== "cmhc") applyForm(S.scheme, true); }
   // shorten a form building from the rear to the depth the configurator settled on (points are [front-s1, rear-s1, rear-s2, front-s2])
   function trimForm(form, o) {
     var ef = S.ev.edges[S.ev.idx.front];
@@ -913,39 +894,35 @@ var App = (function () {
   function clearCmhcPick() {
     if (S.cmhcPick) { S.unitsOption = null; ui.unitsPanel.innerHTML = ""; }
     S.cmhcPick = null; ui.btnCmhcPlans.disabled = true;
-    Array.prototype.forEach.call(ui.cmhcList.querySelectorAll(".opt.on"), function (n) { n.classList.remove("on"); });
+    cmhcC.update({ value: null });
   }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
-  function resetCmhc() { S.cmhc = null; clearCmhcPick(); ui.cmhcList.innerHTML = ""; ui.cmhcNote.textContent = ""; }
+  function resetCmhc() { S.cmhc = null; clearCmhcPick(); cmhcC.update({ items: [], loading: false }); ui.cmhcNote.textContent = ""; }
+  // the catalogue fit takes a moment: the list shows its loading state first, then the options
   function onCmhc(quiet) {
     if (!(S.ev && S.ev.status === "ok" && S.placed)) { if (!quiet) status("The site needs an envelope first (step 3).", "error"); return; }
-    S.cmhc = R1Cmhc.fits(S.ev); clearCmhcPick(); fillCmhcList();
-    report(R1Cmhc.fitLines(S.cmhc, S.ev).concat([""]));
-    var ok = S.cmhc.options.filter(function (o) { return o.ok; });
-    ui.cmhcNote.textContent = (ok.length ? ok.length + " of " + S.cmhc.options.length + " catalogue options fit this site. Click a fitting option to draw it as the massing (units in colour) and see its unit configuration; the rest list the failing rule."
-      : "No catalogue design fits this envelope as drawn; the table gives the rule each one fails.");
-    if (!quiet) status(ok.length + " of " + S.cmhc.options.length + " catalogue options fit this site. Click one to draw it.", ok.length ? "ok" : "error");
-    setReady();
+    cmhcC.update({ loading: true }); ui.cmhcNote.textContent = "";
+    setTimeout(function () {
+      if (!(S.ev && S.ev.status === "ok" && S.placed)) { cmhcC.update({ loading: false, items: [] }); return; }
+      S.cmhc = R1Cmhc.fits(S.ev); clearCmhcPick(); fillCmhcList();
+      report(R1Cmhc.fitLines(S.cmhc, S.ev).concat([""]));
+      var ok = S.cmhc.options.filter(function (o) { return o.ok; });
+      ui.cmhcNote.textContent = (ok.length ? ok.length + " of " + S.cmhc.options.length + " catalogue options fit this site. Click a fitting option to draw it as the massing (units in colour) and see its unit configuration; the rest list the failing rule."
+        : "No catalogue design fits this envelope as drawn; the list gives the rule each one fails.");
+      if (!quiet) status(ok.length + " of " + S.cmhc.options.length + " catalogue options fit this site. Click one to draw it.", ok.length ? "ok" : "error");
+      setReady();
+    }, 20);
   }
   function fillCmhcList() {
-    var host = ui.cmhcList; host.innerHTML = "";
-    R1Cmhc.fitRows(S.cmhc).forEach(function (r) {
-      var o = r.option, item = el("div", "opt " + (r.ok ? "fit" : "nofit"));
-      item.appendChild(el("span", "name", o.name));
-      item.appendChild(el("span", "pill " + (r.ok ? "ok" : "no"), r.ok ? "fits" : "no fit"));
-      item.appendChild(el("span", "meta", o.units + " unit" + (o.units === 1 ? "" : "s") + " · " + R1Cmhc.unitMix(o) + " · " + r.cells[2]));
-      if (!r.ok) item.appendChild(el("span", "why", o.reason));
-      if (r.ok) {
-        item.setAttribute("role", "button"); item.tabIndex = 0; item.title = "Draw this option";
-        item.addEventListener("click", function () { applyCmhc(o, item); });
-        item.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); applyCmhc(o, item); } });
-      }
-      host.appendChild(item);
-    });
+    cmhcC.update({ loading: false, value: S.cmhcPick ? S.cmhcPick.key : null, items: R1Cmhc.fitRows(S.cmhc).map(function (r) {
+      var o = r.option;
+      return { id: o.key, title: o.name, badge: { text: r.ok ? "fits" : "no fit", tone: r.ok ? "ok" : "no" }, meta: o.units + " unit" + (o.units === 1 ? "" : "s") + " · " + R1Cmhc.unitMix(o) + " · " + r.cells[2], disabled: !r.ok, reason: r.ok ? null : o.reason };
+    }) });
   }
-  function applyCmhc(o, item) {
+  function cmhcOption(key) { return S.cmhc ? S.cmhc.options.filter(function (o) { return o.key === key; })[0] || null : null; }
+  function applyCmhc(o) {
     var form = R1Cmhc.form(S.ev, o);
-    clearCmhcPick(); if (item) item.classList.add("on");
+    clearCmhcPick(); cmhcC.update({ value: o.key });
     S.form = form; S.cmhcPick = o; o.source = "cmhc"; setScheme(null); fillForm(); fillRules();
     if (form.status !== "ok") { S.formBases = null; S.unitsOption = null; drawForm(); drawSectionMarker(); markDirty(); setReady(); status(form.reason, "error"); return; }
     S.unitsOption = o;
@@ -960,15 +937,10 @@ var App = (function () {
     var host = ui.unitsPanel; host.innerHTML = "";
     host.appendChild(el("p", "lbl", (o.source === "cmhc" ? "Units as drawn in the catalogue" : "Unit configuration") + ": " + o.units + " (" + R1Cmhc.unitMix(o) + ")"));
     var wrap = el("div"); wrap.innerHTML = R1Cmhc.unitSvg(o); host.appendChild(wrap);
-    var table = el("table"), thead = el("thead"), htr = el("tr"), tbody = el("tbody");
-    ["", "Unit", "Bedrooms", "Baths", "Floors", "Area", "Note"].forEach(function (h) { htr.appendChild(el("th", null, h)); });
-    thead.appendChild(htr); table.appendChild(thead);
-    R1Cmhc.unitRows(o).forEach(function (r) {
-      var tr = el("tr"), sw = el("td"), dot = el("span", "unitsw"); dot.style.background = r.color; sw.appendChild(dot); tr.appendChild(sw);
-      r.cells.forEach(function (c, i) { tr.appendChild(el("td", i === 4 ? "status-cell" : null, c)); });
-      tbody.appendChild(tr);
-    });
-    table.appendChild(tbody); host.appendChild(table);
+    var table = el("table"); host.appendChild(table);
+    R1UI.table(table, { caption: "Units of " + o.name, captionHidden: true, dense: true,
+      columns: [{ label: "Colour", hidden: true }, { label: "Unit" }, { label: "Bedrooms" }, { label: "Baths" }, { label: "Floors" }, { label: "Area", kind: "status" }, { label: "Note" }],
+      rows: R1Cmhc.unitRows(o).map(function (r) { var dot = el("span", "unitsw"); dot.style.background = r.color; dot.setAttribute("role", "img"); dot.setAttribute("aria-label", "colour of " + r.cells[0]); return { cells: [dot].concat(r.cells) }; }) });
     if (o.source === "cmhc") {
       o.blocks.forEach(function (b) {
         var p = el("p", "muted"); p.appendChild(document.createTextNode((o.blocks.length > 1 ? b.name + ": " : "") + b.design.layout + " "));
@@ -1003,45 +975,56 @@ var App = (function () {
   function bind() {
     ["address", "cutSide", "btnFetch", "parcelList", "zoning", "edgeSelect", "edgeNote", "edgeFallback", "btnPick", "rules", "assumptions", "chkHide",
       "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "btnFormPlans", "unitParams", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
-      "btnClear", "status", "statusText", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "tab3d", "tabSection", "tabPlans", "tabSitePlan", "plansHost", "sitePlanHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
-      "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnFormSection", "btnCmhcSection", "btnPickSite", "modeForms", "modeCmhc", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightToggle", "btnLeftToggle", "sidePanel",
-      "accessSel", "mix3Sel", "mix2Sel", "mix0Sel", "mix1Out", "btnMixAuto"].forEach(function (id) { ui[id] = $(id); });
-    ui.btnRightClose.addEventListener("click", function () { openRight(false); });
-    ui.btnRightToggle.addEventListener("click", function () { openRight(ui.rightPanel.hidden); });
-    ui.btnLeftToggle.addEventListener("click", function () {
-      ui.sidePanel.hidden = !ui.sidePanel.hidden; ui.btnLeftToggle.setAttribute("aria-pressed", ui.sidePanel.hidden ? "false" : "true"); ui.btnLeftToggle.classList.toggle("on", !ui.sidePanel.hidden);
-      setTimeout(function () { map.invalidateSize(); if (three) three.resize(); if (!ui.panes.section.hidden) drawSection(); }, 30);
+      "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "viewTabs", "plansHost", "sitePlanHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
+      "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnFormSection", "btnCmhcSection", "btnPickSite", "massingMode", "schemeSeg", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightToggle", "btnLeftToggle", "sidePanel",
+      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto"].forEach(function (id) { ui[id] = $(id); });
+    ui.panes = { map: $("paneMap"), siteplan: $("paneSitePlan"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans") };
+    // ---- the components: the status strip, the view tabs, the two segmented controls, the tables, the option list, the mix steppers, the toggles
+    statusC = R1UI.status(ui.status, { text: "Ready.", level: "info" });
+    tabsC = R1UI.tabs(ui.viewTabs, { ariaLabel: "Views", items: tabItems({ siteplan: true, "3d": true, section: true, plans: true }), value: "map", onChange: showView });
+    modeC = R1UI.segmented(ui.massingMode, { ariaLabel: "Massing source", items: [{ id: "forms", label: "By-law forms" }, { id: "cmhc", label: "CMHC catalogue" }], value: "forms", onChange: setMassingMode });
+    schemeC = R1UI.segmented(ui.schemeSeg, { ariaLabel: "Form", disabled: true, value: null, items: M.SCHEMES.map(function (s) { return { id: s.key, label: SCHEME_LABELS[s.key] || s.name, title: s.name }; }),
+      onChange: function (k) { applyForm(k, false); }, onReselect: function (k) { applyForm(k, true); } });   // choosing the drawn form again keeps its unit settings
+    tables.rules = R1UI.table(ui.rules, { caption: "By-law rules for this site", captionHidden: true, emptyText: "Fetch a site to check its rules.", columns: [{ label: "Regulation" }, { label: "R1-1" }, { label: "Clause", kind: "clause" }, { label: "This site", kind: "status" }], rows: [] });
+    tables.results = R1UI.table(ui.results, { caption: "Permitted envelope", captionHidden: true, emptyText: "Fetch a site to size its envelope.", columns: [{ label: "Item" }, { label: "Value" }], rows: [] });
+    tables.form = R1UI.table(ui.formTable, { caption: "The drawn form", captionHidden: true, emptyText: "No form drawn.", columns: [{ label: "Item" }, { label: "Value" }], rows: [] });
+    cmhcC = R1UI.optionList(ui.cmhcList, { ariaLabel: "Catalogue designs", emptyText: "Generate the envelope: the catalogue designs are tested against it.", loadingText: "Testing the catalogue designs against the envelope…", items: [], value: null,
+      onChange: function (key) { var o = cmhcOption(key); if (o) applyCmhc(o); } });
+    mixC.b3 = R1UI.stepper(ui.mix3Host, { id: "mix3", label: "3-bedroom", value: 0, min: 0, max: 0, onChange: onMixChange });
+    mixC.b2 = R1UI.stepper(ui.mix2Host, { id: "mix2", label: "2-bedroom", value: 0, min: 0, max: 0, onChange: onMixChange });
+    mixC.b0 = R1UI.stepper(ui.mix0Host, { id: "mix0", label: "Studios", value: 0, min: 0, max: 0, onChange: onMixChange });
+    leftC = R1UI.toggleButton(ui.btnLeftToggle, { label: "Show or hide the steps", pressed: true, onToggle: function (on) { ui.sidePanel.hidden = !on; setTimeout(relayout, 30); } });
+    rightC = R1UI.toggleButton(ui.btnRightToggle, { title: "Show or hide the massing options", pressed: false, disabled: true, onToggle: function (on) { openRight(on); } });
+    pickSiteC = R1UI.toggleButton(ui.btnPickSite, { title: "Drag the map to any lot and click inside it", pressed: false, onToggle: function (on) {
+      sitePickMode = on; if (on) { pickMode = false; pickC.update({ pressed: false }); }
+      map.getContainer().classList.toggle("leaflet-crosshair", on);
+      status(on ? "Drag the map to any lot and click inside it to make it the site." + (BUNDLED ? " This shared copy carries " + presets.length + " stored sites (the red pins)." : "") : "Site pick cancelled.", "info");
+    } });
+    pickC = R1UI.toggleButton(ui.btnPick, { pressed: false, disabled: true, onToggle: function (on) {
+      if (!S.parcel) { pickC.update({ pressed: false }); return; }
+      pickMode = on; if (on) { sitePickMode = false; pickSiteC.update({ pressed: false }); map.getContainer().classList.remove("leaflet-crosshair"); }
+      status(on ? "Click on the map near the street-facing edge of the site." : "Pick cancelled.", "info");
+    } });
+    // every step folds from its heading; the folds are remembered in this browser
+    var folded = {}; try { folded = JSON.parse(localStorage.getItem("r1.folded") || "{}") || {}; } catch (e) { folded = {}; }
+    Array.prototype.forEach.call(document.querySelectorAll(".step, .report"), function (sec) {
+      var key = sec.id || "report";
+      R1UI.collapsible(sec, { open: !folded[key], onToggle: function (open) { folded[key] = !open; try { localStorage.setItem("r1.folded", JSON.stringify(folded)); } catch (e2) { /* storage may be unavailable */ } } });
     });
+    ui.btnRightClose.addEventListener("click", function () { openRight(false); });
     ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans); ui.btnFormPlans.addEventListener("click", showFloorPlans);
     ui.btnFormSection.addEventListener("click", function () { showView("section"); }); ui.btnCmhcSection.addEventListener("click", function () { showView("section"); });
     R1Units.TENURES.forEach(function (t) { var o = el("option", null, t.name); o.value = t.key; ui.tenureSel.appendChild(o); });
     R1Units.GROUND_USES.forEach(function (g) { var o = el("option", null, g.name); o.value = g.key; ui.groundSel.appendChild(o); });
     R1Units.ACCESS.forEach(function (a) { var o = el("option", null, a.name); o.value = a.key; o.title = a.note; ui.accessSel.appendChild(o); });
     ["unitsSel", "tenureSel", "groundSel", "accessSel"].forEach(function (id) { ui[id].addEventListener("change", function () { S.mix = null; if (S.scheme && S.form && S.form.scheme !== "cmhc") applyForm(S.scheme, true); }); });
-    ["mix3Sel", "mix2Sel", "mix0Sel"].forEach(function (id) { ui[id].addEventListener("change", function () { S.mix = readMix(); if (S.scheme && S.form && S.form.scheme !== "cmhc") applyForm(S.scheme, true); }); });
     ui.btnMixAuto.addEventListener("click", function () { S.mix = null; if (S.scheme && S.form && S.form.scheme !== "cmhc") applyForm(S.scheme, true); });
     fillMixSelects(null);
-    ui.modeForms.addEventListener("click", function () { setMassingMode("forms"); });
-    ui.modeCmhc.addEventListener("click", function () { setMassingMode("cmhc"); });
-    // every section collapses from its heading
-    Array.prototype.forEach.call(document.querySelectorAll(".step > h2, .report > h2"), function (h) {
-      h.addEventListener("click", function () { var sec = h.parentElement, off = sec.classList.toggle("collapsed"); h.setAttribute("aria-expanded", off ? "false" : "true"); });
-      h.setAttribute("aria-expanded", "true"); h.setAttribute("role", "button"); h.tabIndex = 0;
-      h.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); h.click(); } });
-    });
     ui.parcelList.addEventListener("change", function () { if (S.res) onImport(); });
     ui.cutSide.addEventListener("change", function () { if (S.res) onFetch(); });
-    ui.btnPickSite.addEventListener("click", function () {
-      sitePickMode = !sitePickMode; pickMode = false; ui.btnPick.classList.remove("on");
-      ui.btnPickSite.classList.toggle("on", sitePickMode); map.getContainer().classList.toggle("leaflet-crosshair", sitePickMode);
-      status(sitePickMode ? "Drag the map to any lot and click inside it to make it the site." + (BUNDLED ? " This shared copy carries " + presets.length + " stored sites (the red pins)." : "") : "Site pick cancelled.", "info");
-    });
     ui.btnSaveSite.hidden = BUNDLED;   // the shared copy cannot save files (and has nothing new to save)
     ui.btnSaveSite.addEventListener("click", onSaveSite);
     ui.siteFile.addEventListener("change", onOpenSiteFile);
-    ui.schemeBtns = { single: $("rbSingle"), courtyard: $("rbCourtyard"), side_by_side: $("rbSide") };
-    ui.tabs = { map: $("tabMap"), siteplan: $("tabSitePlan"), "3d": $("tab3d"), section: $("tabSection"), plans: $("tabPlans") };
-    ui.panes = { map: $("paneMap"), siteplan: $("paneSitePlan"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans") };
     ui.stepBadges = Array.prototype.slice.call(document.querySelectorAll(".step .badge, .rhead .badge"));
     M.CUT_SIDES_M.forEach(function (s) { var o = el("option", null, s + " x " + s + " m"); o.value = String(s); if (s === M.CUT_DEFAULT_SIDE_M) o.selected = true; ui.cutSide.appendChild(o); });
     M.COURTYARDS_M.forEach(function (c) { var o = el("option", null, c + " m"); o.value = String(c); ui.courtyardSel.appendChild(o); });
@@ -1050,26 +1033,25 @@ var App = (function () {
     $("sourceLine").textContent = core.RULES.source.document + ", " + core.RULES.source.version + " (accessed " + core.RULES.source.accessed + "). City of Vancouver Open Data. By-law values in metres, drawn values in mm.";
     ui.btnFetch.addEventListener("click", onFetch);
     ui.address.addEventListener("keydown", function (e) { if (e.key === "Enter") onFetch(); });
-    ui.btnPick.addEventListener("click", function () { if (!S.parcel) return; pickMode = !pickMode; sitePickMode = false; ui.btnPickSite.classList.remove("on"); ui.btnPick.classList.toggle("on", pickMode); status(pickMode ? "Click on the map near the street-facing edge of the site." : "Pick cancelled.", "info"); });
     ui.edgeSelect.addEventListener("change", function () { S.click = null; if (S.parcel) onGenerate(); else setReady(); });
     ui.chkHide.addEventListener("change", onHideToggle);
-    Object.keys(ui.schemeBtns).forEach(function (k) { ui.schemeBtns[k].addEventListener("click", function () { applyForm(k, S.scheme === k); }); });
     ui.courtyardSel.addEventListener("change", function () { if (S.scheme === "courtyard") applyForm("courtyard", true); });
     ui.rearDepthSel.addEventListener("change", function () { if (S.scheme === "courtyard") applyForm("courtyard", true); });
     ui.btnFormClear.addEventListener("click", onFormClear);
     ui.btnCopy.addEventListener("click", onCopy); ui.btnClear.addEventListener("click", onClear);
     ["chkRoads", "chkParcels", "chkBuildings"].forEach(function (id) { ui[id].addEventListener("change", function () { if (S.square) { drawContext(); if (S.placed) { drawEnvelope(); drawForm(); setExistingVisible(!ui.chkHide.checked); } markDirty(); } }); });
-    Object.keys(ui.tabs).forEach(function (k) { ui.tabs[k].addEventListener("click", function () { showView(k); }); });
     window.addEventListener("resize", function () { if (!ui.panes.section.hidden) drawSection(); });
     // shortcuts: Alt+1..5 views, Alt+M massing options, Alt+S steps
     window.addEventListener("keydown", function (e) {
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
       var views = { "1": "map", "2": "siteplan", "3": "3d", "4": "section", "5": "plans" };
-      if (views[e.key]) { if (!ui.tabs[views[e.key]].disabled) showView(views[e.key]); e.preventDefault(); }
+      if (views[e.key]) { if (!tabsC.isDisabled(views[e.key])) showView(views[e.key]); e.preventDefault(); }
       else if (e.key.toLowerCase() === "m") { if (!ui.btnRightToggle.disabled) openRight(ui.rightPanel.hidden); e.preventDefault(); }
-      else if (e.key.toLowerCase() === "s") { ui.btnLeftToggle.click(); e.preventDefault(); }
+      else if (e.key.toLowerCase() === "s") { leftC.toggle(); e.preventDefault(); }
     });
   }
+  // the map, the 3D view and the section follow the stage's size after a bar opens or closes
+  function relayout() { map.invalidateSize(); if (three) three.resize(); if (!ui.panes.section.hidden) drawSection(); }
   function start() {
     resetState(); bind(); initMap(); reportReset(); fillRules(); fillResults(); fillForm(); setScheme(null); setReady(); showView("map");
     loadPresets().then(function () {
@@ -1083,17 +1065,15 @@ var App = (function () {
   }
   // the massing options live in the panel on the right; it opens when the site has its envelope
   function openRight(show) {
-    ui.rightPanel.hidden = !show; ui.btnRightToggle.classList.toggle("on", show); ui.btnRightToggle.setAttribute("aria-pressed", show ? "true" : "false");
-    ui.btnRightToggle.disabled = !S.placed && !show;
-    setTimeout(function () { map.invalidateSize(); if (three) three.resize(); if (!ui.panes.section.hidden) drawSection(); }, 30);
+    ui.rightPanel.hidden = !show; rightC.update({ pressed: show, disabled: !S.placed && !show });
+    setTimeout(relayout, 30);
   }
   // step 4 has two sources of massing: the by-law form options and the CMHC catalogue
   var massingMode = "forms";
   function setMassingMode(mode) {
     massingMode = mode;
+    modeC.update({ value: mode });
     ui.panelForms.hidden = mode !== "forms"; ui.panelCmhc.hidden = mode !== "cmhc";
-    ui.modeForms.classList.toggle("on", mode === "forms"); ui.modeForms.setAttribute("aria-selected", mode === "forms" ? "true" : "false");
-    ui.modeCmhc.classList.toggle("on", mode === "cmhc"); ui.modeCmhc.setAttribute("aria-selected", mode === "cmhc" ? "true" : "false");
     if (mode === "cmhc" && !S.cmhc && S.ev && S.ev.status === "ok" && S.placed) onCmhc(false);
   }
 

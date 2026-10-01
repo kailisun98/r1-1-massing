@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>R1-1 Component Gallery</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--ink); font: 13px/1.5 var(--sans); padding-block: 0 48px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding: 0 16px; }
+header.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line); }
+header.top .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding-block: 10px; }
+header.top h1 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+header.top p { margin: 0; color: var(--muted); font-size: 12px; flex: 1 1 260px; min-width: 0; }
+header.top .ctl { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+header.top input[type=range] { width: 140px; }
+nav.toc { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; margin: 14px 0 0; }
+nav.toc a { color: var(--blue); text-decoration: none; } nav.toc a:hover { text-decoration: underline; }
+h2 { font-size: 16px; margin: 36px 0 6px; letter-spacing: -.01em; text-wrap: balance; }
+h2 code { font: 500 13px var(--mono); background: var(--group); border-radius: 3px; padding: 1px 6px; }
+h3 { font-size: 12px; margin: 14px 0 6px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+p.lead { max-width: 70ch; margin: 0 0 8px; }
+.intro { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
+.intro .card { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; box-shadow: var(--shadow); }
+.intro .card h3 { margin-top: 0; }
+.intro .card p, .intro .card li { margin: 0; font-size: 12.5px; }
+.intro .card ul { margin: 0; padding-left: 16px; }
+.demo { display: grid; grid-template-columns: minmax(0, var(--demo-w, 1fr)) minmax(260px, 1fr); gap: 16px 24px; align-items: start; }
+.demo .live { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px; box-shadow: var(--shadow); min-width: 0; max-width: 100%; }
+.demo .live.narrow { max-width: var(--demo-w, 100%); }
+.demo .side { min-width: 0; max-width: 100%; overflow-x: auto; }   /* a wide props table scrolls inside its column, never the page */
+.demo pre { margin: 0; font: 11.5px/1.45 var(--mono); background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; overflow-x: auto; max-width: 100%; }
+main > pre { font: 11.5px/1.45 var(--mono); background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 10px 12px; overflow-x: auto; max-width: 100%; margin: 8px 0 0; }
+.knobs { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0; }
+.knobs button { background: var(--group); color: var(--ink); padding: 4px 10px; font-size: 12px; min-height: 28px; }
+.knobs button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+table.props { width: 100%; border-collapse: collapse; font-size: 12px; margin: 8px 0 0; }
+table.props th, table.props td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.props th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+table.props td:first-child { font-family: var(--mono); white-space: nowrap; }
+.log { font: 11.5px var(--mono); color: var(--muted); margin: 8px 0 0; min-height: 1.4em; }
+.pane { padding: 10px 12px; border: 1px dashed var(--line); border-radius: 4px; margin-top: 8px; color: var(--muted); }
+.unitsw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; }
+.row { display: grid; grid-template-columns: 84px 1fr; align-items: center; gap: 6px 8px; margin-bottom: 6px; }
+.row label:first-child { color: var(--muted); font-size: 12px; }
+input[type="text"], select { font: inherit; color: var(--ink); background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 5px 8px; width: 100%; }
+.muted { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; }
+.step h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; user-select: none; }
+.badge { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; background: var(--group); color: var(--ink); flex: 0 0 20px; }
+.sheet-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; font-size: 12px; }
+@media (max-width: 760px) { .demo { grid-template-columns: 1fr; } header.top input[type=range] { display: none; } }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <h1>R1-1 Component Gallery</h1>
+  <p>The UI components of the R1-1 Schematic Design Tool (<code>ui.js</code> + <code>ui.css</code>): what each one renders, its props, its states and how the app uses it.</p>
+  <div class="ctl"><label for="demoW">Demo width</label><input type="range" id="demoW" min="320" max="720" value="720" step="10"><output id="demoWOut" for="demoW">720 px</output></div>
+  <div class="ctl"><button id="themeBtn" type="button" class="secondary" aria-pressed="false">Dark theme</button></div>
+</div></header>
+
+<main class="wrap">
+  <nav class="toc" aria-label="Components">
+    <a href="#architecture">Architecture</a><a href="#tabs">tabs</a><a href="#segmented">segmented</a><a href="#toolbar">toolbar</a><a href="#status">status</a><a href="#notice">notice</a><a href="#busy">busy</a><a href="#optionList">optionList</a><a href="#table">table</a><a href="#stepper">stepper</a><a href="#field">field</a><a href="#collapsible">collapsible</a><a href="#toggleButton">toggleButton</a>
+  </nav>
+
+  <h2 id="architecture">Architecture</h2>
+  <p class="lead">One global, <code>R1UI</code>, holding a factory per component. A factory takes a host element and a props object, renders into the host and returns a handle. There is no framework, no build step and no dependency: the app, the artifact copy and the GitHub Pages copy load the same two files.</p>
+  <div class="intro">
+    <div class="card"><h3>Contract</h3><ul>
+      <li><code>R1UI.name(host, props)</code> renders and returns <code>{ el, update(partial), destroy() }</code>.</li>
+      <li>Props go in, callbacks (<code>onChange</code>, <code>onToggle</code>, <code>onReselect</code>) come out. A component never reads the app's state.</li>
+      <li><code>update()</code> never fires a callback. It syncs the DOM in place (focus and scroll kept) when the item ids are unchanged, and rebuilds only when they change.</li>
+      <li><code>destroy()</code> removes listeners and empties the host.</li>
+    </ul></div>
+    <div class="card"><h3>Accessibility</h3><ul>
+      <li>WAI-ARIA Authoring Practices patterns: tablist with roving tabindex, radiogroup, listbox, toolbar, spinbutton, disclosure, live regions.</li>
+      <li>Arrow keys, Home and End move within a group; Enter and Space select; disabled items are skipped by focus except in a listbox, where a disabled option stays readable with its reason.</li>
+      <li>State is in attributes (<code>aria-selected</code>, <code>aria-checked</code>, <code>aria-expanded</code>, <code>aria-pressed</code>, <code>aria-busy</code>, <code>aria-invalid</code>), with the CSS keyed to them.</li>
+      <li>Status marks carry text alternatives; busy states announce themselves; errors are assertive.</li>
+    </ul></div>
+    <div class="card"><h3>States and edge cases</h3><ul>
+      <li>Loading (skeletons or a spinner with text), empty (a sentence), disabled, error (tone + <code>aria-invalid</code>).</li>
+      <li>Zero items, one item, a value not among the items (nothing selected, a <code>console.warn</code>), a disabled current value, long labels (ellipsis + title), rapid repeated updates.</li>
+    </ul></div>
+    <div class="card"><h3>Responsive and theming</h3><ul>
+      <li>Tab strips scroll sideways; toolbars and option cards wrap; nothing is wider than its container.</li>
+      <li>44 px targets on coarse pointers; motion off under <code>prefers-reduced-motion</code>.</li>
+      <li>All colours come from the tokens in <code>ui.css</code>, which redefines them for dark mode (OS setting or <code>data-theme</code>).</li>
+    </ul></div>
+  </div>
+  <h3>Usage</h3>
+  <pre>&lt;link rel="stylesheet" href="ui.css"&gt;
+&lt;script src="ui.js"&gt;&lt;/script&gt;
+
+var tabs = R1UI.tabs(document.getElementById("viewTabs"), {
+  ariaLabel: "Views",
+  items: [{ id: "map", label: "Map", panel: "paneMap" }, { id: "plans", label: "Floor plans", panel: "panePlans", disabled: true }],
+  value: "map",
+  onChange: function (id) { showView(id); }
+});
+tabs.update({ items: [...], value: "plans" });   // later: enable, select, relabel; focus is kept
+tabs.destroy();</pre>
+
+  <!-- ============================================================ tabs -->
+  <h2 id="tabs"><code>R1UI.tabs</code> view tabs</h2>
+  <p class="lead">A tablist whose buttons show and hide their panels. Manual activation by default: arrows move focus, Enter or Space selects, so a heavy panel is not built while the user passes over its tab. The strip scrolls sideways when it is too narrow.</p>
+  <div class="demo">
+    <div class="live narrow">
+      <div id="dTabs"></div>
+      <div id="dPaneMap" class="pane">Map pane</div><div id="dPanePlans" class="pane">Floor plans pane</div><div id="dPane3d" class="pane">3D pane</div><div id="dPaneSection" class="pane">Site section pane</div>
+      <div class="knobs"><button id="kTabsEnable" aria-pressed="false">Enable Floor plans</button><button id="kTabsMany" aria-pressed="false">Many tabs (scrolls)</button></div>
+      <p class="log" id="lTabs">onChange: —</p>
+    </div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>items</td><td>{id, label, panel?, disabled?, title?}[]</td><td><code>panel</code> is an element or its id; it gets <code>role=tabpanel</code> and <code>aria-labelledby</code></td></tr>
+        <tr><td>value</td><td>id | null</td><td>unknown ids select nothing and warn</td></tr>
+        <tr><td>onChange</td><td>(id) =&gt; void</td><td>user selections only</td></tr>
+        <tr><td>activation</td><td>"manual" | "automatic"</td><td>default manual</td></tr>
+        <tr><td>ariaLabel</td><td>string</td><td>the tablist's name</td></tr>
+        <tr><td colspan="3">handle: <code>el</code>, <code>value</code>, <code>isDisabled(id)</code>, <code>update</code>, <code>destroy</code></td></tr></table>
+      <pre>R1UI.tabs(host, { ariaLabel: "Views",
+  items: [{ id: "map", label: "Map", panel: "paneMap" }, …],
+  value: "map", onChange: showView });</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ segmented -->
+  <h2 id="segmented"><code>R1UI.segmented</code> segmented control</h2>
+  <p class="lead">A radio group drawn as one bar: the massing source, the form. Arrow keys move and select. Choosing the chosen item again fires <code>onReselect</code>, which the app uses to redraw a form while keeping its unit settings.</p>
+  <div class="demo">
+    <div class="live narrow">
+      <div id="dSeg"></div>
+      <div class="knobs"><button id="kSegDisabled" aria-pressed="false">Disabled</button><button id="kSegBusy" aria-pressed="false">Busy</button><button id="kSegNone" aria-pressed="false">No value</button></div>
+      <p class="log" id="lSeg">onChange: —</p>
+    </div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>items</td><td>{id, label, disabled?, title?}[]</td><td>long labels get an ellipsis and a title</td></tr>
+        <tr><td>value</td><td>id | null</td><td></td></tr>
+        <tr><td>onChange / onReselect</td><td>(id) =&gt; void</td><td></td></tr>
+        <tr><td>disabled, busy</td><td>boolean</td><td>busy also sets <code>aria-busy</code></td></tr></table>
+      <pre>R1UI.segmented(host, { ariaLabel: "Form",
+  items: [{ id: "single", label: "Single building" }, { id: "courtyard", label: "Courtyard" }],
+  value: null, disabled: true,
+  onChange: function (k) { applyForm(k, false); },
+  onReselect: function (k) { applyForm(k, true); } });</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ toolbar -->
+  <h2 id="toolbar"><code>R1UI.toolbar</code> sheet toolbar</h2>
+  <p class="lead">Labelled groups of segmented controls above a drawing (floor, scale, car share, outdoor space). Groups wrap on a narrow sheet.</p>
+  <div class="demo">
+    <div class="live narrow"><div id="dToolbar"></div><p class="log" id="lToolbar">onChange: —</p></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>groups</td><td>{id, label, items, value, onChange}[]</td><td>each group is a segmented control; same ids update in place</td></tr>
+        <tr><td>ariaLabel</td><td>string</td><td>the toolbar's name</td></tr></table>
+      <pre>R1UI.toolbar(host, { ariaLabel: "Floor plan options", groups: [
+  { id: "floor", label: "Floor", items: [{ id: "all", label: "All" }, { id: "Ground floor", label: "Ground floor" }], value: "all", onChange: … },
+  { id: "scale", label: "Scale", items: [{ id: "14", label: "Small" }, { id: "20", label: "Medium" }], value: "20", onChange: … } ] });</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ status -->
+  <h2 id="status"><code>R1UI.status</code> status strip</h2>
+  <p class="lead">One line of feedback for every action: a polite live region with a coloured dot, a spinner while busy, assertive when it carries an error.</p>
+  <div class="demo">
+    <div class="live narrow"><div id="dStatus" class="status"></div>
+      <div class="knobs"><button data-level="info">info</button><button data-level="busy">busy</button><button data-level="ok">ok</button><button data-level="error">error</button></div></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>text</td><td>string</td><td></td></tr>
+        <tr><td>level</td><td>"info" | "busy" | "ok" | "error"</td><td>busy sets <code>aria-busy</code>; error switches the region to assertive</td></tr></table>
+      <pre>var statusC = R1UI.status(document.getElementById("status"), { text: "Ready.", level: "info" });
+statusC.update({ text: "Fetching City of Vancouver Open Data…", level: "busy" });</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ notice -->
+  <h2 id="notice"><code>R1UI.notice</code> notice</h2>
+  <p class="lead">A result or a warning with an optional list of items: the plan check under the floor plans.</p>
+  <div class="demo">
+    <div class="live narrow"><div id="dNotice"></div>
+      <div class="knobs"><button data-tone="ok">ok</button><button data-tone="warn">warn with items</button><button data-tone="error">error</button><button data-tone="info">info</button></div></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>tone</td><td>"ok" | "warn" | "error" | "info"</td><td>error renders as an alert, the rest as a status</td></tr>
+        <tr><td>title, text</td><td>string</td><td></td></tr>
+        <tr><td>items</td><td>string[]</td><td>rendered as a list</td></tr></table>
+      <pre>R1UI.notice(host, { tone: "warn", title: "Plan check: 2 items to resolve.",
+  items: ["U1 Bath: door 0.81 m (min 0.86)", "U3: stair does not stack"] });</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ busy -->
+  <h2 id="busy"><code>R1UI.busy</code> busy placeholder</h2>
+  <p class="lead">What a sheet shows while its drawing is computed: a spinner and a sentence, the host marked <code>aria-busy</code>. The app shows it, yields to the browser so it paints, then draws.</p>
+  <div class="demo">
+    <div class="live narrow"><div id="dBusy" class="pane">The floor plans would be here.</div>
+      <div class="knobs"><button id="kBusy">Redraw (busy for 1.5 s)</button></div></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr><tr><td>text</td><td>string</td><td></td></tr></table>
+      <pre>var b = R1UI.busy(host, { text: "Laying out the rooms…" });
+setTimeout(function () { b.destroy(); draw(); }, 30);</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ optionList -->
+  <h2 id="optionList"><code>R1UI.optionList</code> option list</h2>
+  <p class="lead">A listbox of cards: the catalogue designs tested against the envelope. A card that does not fit stays in the list, disabled, with the failing rule; it can be focused and read but not chosen. Loading shows skeleton cards; an empty list says why.</p>
+  <div class="demo">
+    <div class="live narrow"><div id="dOpt"></div>
+      <div class="knobs"><button id="kOptLoading" aria-pressed="false">Loading</button><button id="kOptEmpty" aria-pressed="false">Empty</button></div>
+      <p class="log" id="lOpt">onChange: —</p></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>items</td><td>{id, title, meta?, badge?: {text, tone}, detail?, disabled?, reason?}[]</td><td></td></tr>
+        <tr><td>value</td><td>id | null</td><td></td></tr>
+        <tr><td>loading, loadingText</td><td>boolean, string</td><td>three skeleton cards + a status text</td></tr>
+        <tr><td>emptyText</td><td>string</td><td></td></tr>
+        <tr><td>onChange</td><td>(id) =&gt; void</td><td></td></tr></table>
+      <pre>cmhcC = R1UI.optionList(host, { ariaLabel: "Catalogue designs", items: [], value: null,
+  emptyText: "Generate the envelope: the designs are tested against it.",
+  onChange: function (key) { applyCmhc(optionByKey(key)); } });
+cmhcC.update({ loading: true });
+cmhcC.update({ loading: false, items: fits.map(…), value: null });</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ table -->
+  <h2 id="table"><code>R1UI.table</code> data table</h2>
+  <p class="lead">Column headers with scope, group rows as row-group headers, a state mark (applied, not met, not applicable) with a text alternative, a numeric column, an element in a cell (a colour swatch), a hidden column label, skeleton rows while loading, an empty row.</p>
+  <div class="demo">
+    <div class="live narrow"><table id="dTable"></table>
+      <div class="knobs"><button id="kTableLoading" aria-pressed="false">Loading</button><button id="kTableEmpty" aria-pressed="false">Empty</button><button id="kTableDense" aria-pressed="false">Dense</button></div>
+      <h3>With a swatch column</h3><table id="dTable2"></table></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>columns</td><td>{label, kind?: "clause" | "status" | "num", hidden?}[]</td><td><code>hidden</code> keeps the label for screen readers only</td></tr>
+        <tr><td>rows</td><td>{cells: (string|Element)[], state?} | {group}</td><td><code>state</code> "ok" | "fail" | "na" draws the mark in the status column</td></tr>
+        <tr><td>caption, captionHidden</td><td>string, boolean</td><td></td></tr>
+        <tr><td>loading, emptyText, dense</td><td></td><td></td></tr></table>
+      <pre>tables.rules = R1UI.table(document.getElementById("rules"), { caption: "By-law rules", captionHidden: true,
+  columns: [{ label: "Regulation" }, { label: "R1-1" }, { label: "Clause", kind: "clause" }, { label: "This site", kind: "status" }],
+  rows: [{ group: "Yards" }, { cells: ["Front yard", "4.9 m", "3.1.2.6", "4.9 m"], state: "ok" }] });</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ stepper -->
+  <h2 id="stepper"><code>R1UI.stepper</code> stepper</h2>
+  <p class="lead">A bounded count with − and + buttons: the unit mix. The help line states the limit and its reason; the buttons disable at the ends; typed values clamp; max 0 disables the control.</p>
+  <div class="demo">
+    <div class="live narrow"><div id="dStep3"></div><div id="dStep2"></div><div id="dStep0"></div>
+      <div class="knobs"><button id="kStepNoForm" aria-pressed="false">No form drawn</button></div>
+      <p class="log" id="lStep">onChange: —</p></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>id, label</td><td>string</td><td>the label is wired to the input; the buttons are "Fewer …" / "More …"</td></tr>
+        <tr><td>value, min, max, step</td><td>number</td><td>value is clamped on every update</td></tr>
+        <tr><td>maxReason, help</td><td>string</td><td><code>help</code> replaces "up to N (reason)"</td></tr>
+        <tr><td>disabled</td><td>boolean</td><td></td></tr>
+        <tr><td>onChange</td><td>(n) =&gt; void</td><td></td></tr></table>
+      <pre>mixC.b3 = R1UI.stepper(host, { id: "mix3", label: "3-bedroom", value: 0, min: 0, max: 0, onChange: onMixChange });
+mixC.b3.update({ value: mix.b3, max: limits.max3, maxReason: "cells of 105 m² or more" });</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ field -->
+  <h2 id="field"><code>R1UI.field</code> field</h2>
+  <p class="lead">A labelled select or text input with help and an error: the help and the error describe the field, an error marks it invalid.</p>
+  <div class="demo">
+    <div class="live narrow"><div id="dField1"></div><div id="dField2"></div>
+      <div class="knobs"><button id="kFieldError" aria-pressed="false">Show an error</button></div></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>type</td><td>"select" | "text" | "number"</td><td></td></tr>
+        <tr><td>options</td><td>{value, label, disabled?, title?}[]</td><td>select only; an unknown value falls back to the first option</td></tr>
+        <tr><td>help, error</td><td>string</td><td></td></tr>
+        <tr><td>placeholder, list, autocomplete</td><td>string</td><td>text inputs</td></tr>
+        <tr><td>onChange, onEnter</td><td>(value) =&gt; void</td><td></td></tr></table>
+      <pre>R1UI.field(host, { id: "tenure", label: "Tenure", type: "select",
+  options: [{ value: "other", label: "Strata or freehold" }, { value: "rental", label: "Secured rental" }],
+  value: "other", help: "Rental allows two more units in the band.", onChange: … });</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ collapsible -->
+  <h2 id="collapsible"><code>R1UI.collapsible</code> collapsible step</h2>
+  <p class="lead">Enhances a section: its heading becomes a disclosure button for the rest of the section. The app remembers the folds per browser.</p>
+  <div class="demo">
+    <div class="live narrow">
+      <section class="step" id="dStep"><h2><span class="badge">2</span> By-law: R1-1 District Schedule</h2><div class="stepbody"><p class="muted">The rules of s.3.1.2 against this site.</p></div></section>
+      <p class="log" id="lCol">onToggle: —</p></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>open</td><td>boolean</td><td></td></tr>
+        <tr><td>onToggle</td><td>(open) =&gt; void</td><td></td></tr>
+        <tr><td colspan="3">the section's first h2/h3 is the toggle; a <code>.stepbody</code> is the body (created from the other children when missing)</td></tr></table>
+      <pre>R1UI.collapsible(section, { open: !folded[section.id], onToggle: function (open) { remember(section.id, open); } });</pre>
+    </div>
+  </div>
+
+  <!-- ============================================================ toggleButton -->
+  <h2 id="toggleButton"><code>R1UI.toggleButton</code> toggle button</h2>
+  <p class="lead">Enhances an existing button into a pressed/unpressed toggle: the bars, the map pick modes.</p>
+  <div class="demo">
+    <div class="live narrow"><button id="dToggle1" class="secondary">Massing options</button> <button id="dToggle2" class="secondary" style="font-size:18px;line-height:1">&#9776;</button>
+      <p class="log" id="lTog">onToggle: —</p></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>pressed, disabled</td><td>boolean</td><td></td></tr>
+        <tr><td>label</td><td>string</td><td>the accessible name, for an icon button; omit when the text says what it does</td></tr>
+        <tr><td>title</td><td>string</td><td></td></tr>
+        <tr><td>onToggle</td><td>(pressed) =&gt; void</td><td></td></tr>
+        <tr><td colspan="3">handle: <code>toggle()</code>, <code>pressed</code></td></tr></table>
+      <pre>leftC = R1UI.toggleButton(btn, { label: "Show or hide the steps", pressed: true, onToggle: function (on) { sidePanel.hidden = !on; } });</pre>
+    </div>
+  </div>
+</main>
+
+<script src="ui.js"></script>
+<script>
+(function () {
+  function $(id) { return document.getElementById(id); }
+  function log(id, s) { $(id).textContent = s; }
+  function knob(id, fn) { var b = $(id); b.addEventListener("click", function () { var on = b.getAttribute("aria-pressed") !== "true"; b.setAttribute("aria-pressed", on ? "true" : "false"); fn(on); }); }
+  // demo width and theme
+  var root = document.documentElement;
+  $("demoW").addEventListener("input", function () { root.style.setProperty("--demo-w", this.value + "px"); $("demoWOut").textContent = this.value + " px"; });
+  $("themeBtn").addEventListener("click", function () { var dark = root.getAttribute("data-theme") !== "dark"; root.setAttribute("data-theme", dark ? "dark" : "light"); this.setAttribute("aria-pressed", dark ? "true" : "false"); this.textContent = dark ? "Light theme" : "Dark theme"; });
+
+  // tabs
+  var TABS = [{ id: "map", label: "Map", panel: "dPaneMap" }, { id: "plans", label: "Floor plans", panel: "dPanePlans", disabled: true }, { id: "3d", label: "3D", panel: "dPane3d" }, { id: "section", label: "Site section", panel: "dPaneSection" }];
+  var tabs = R1UI.tabs($("dTabs"), { ariaLabel: "Views", items: TABS, value: "map", onChange: function (id) { log("lTabs", "onChange: " + id); } });
+  var plansOn = false, many = false;
+  function tabItems() { var it = TABS.map(function (t) { return { id: t.id, label: t.label, panel: t.panel, disabled: t.id === "plans" && !plansOn }; }); if (many) for (var i = 1; i <= 6; i++) it.push({ id: "x" + i, label: "Option " + i + " with a long name" }); return it; }
+  knob("kTabsEnable", function (on) { plansOn = on; tabs.update({ items: tabItems() }); });
+  knob("kTabsMany", function (on) { many = on; tabs.update({ items: tabItems() }); });
+
+  // segmented
+  var seg = R1UI.segmented($("dSeg"), { ariaLabel: "Form", items: [{ id: "single", label: "Single building" }, { id: "courtyard", label: "Courtyard", title: "Courtyard: front + rear building" }, { id: "side", label: "Side by side" }], value: "single",
+    onChange: function (id) { log("lSeg", "onChange: " + id); }, onReselect: function (id) { log("lSeg", "onReselect: " + id + " (redraw, keep the unit settings)"); } });
+  knob("kSegDisabled", function (on) { seg.update({ disabled: on }); });
+  knob("kSegBusy", function (on) { seg.update({ busy: on }); });
+  knob("kSegNone", function (on) { seg.update({ value: on ? null : "single" }); });
+
+  // toolbar
+  var tbState = { floor: "all", scale: "20", section: "show" };
+  function tbGroups() { return [
+    { id: "floor", label: "Floor", items: [{ id: "all", label: "All" }, { id: "Ground floor", label: "Ground floor" }, { id: "Second floor", label: "Second floor" }, { id: "Third floor", label: "Third floor" }], value: tbState.floor, onChange: function (id) { tbState.floor = id; log("lToolbar", "onChange: floor = " + id); } },
+    { id: "scale", label: "Scale", items: [{ id: "14", label: "Small" }, { id: "20", label: "Medium" }, { id: "28", label: "Large" }], value: tbState.scale, onChange: function (id) { tbState.scale = id; log("lToolbar", "onChange: scale = " + id); } },
+    { id: "section", label: "Site section", items: [{ id: "show", label: "Show" }, { id: "hide", label: "Hide" }], value: tbState.section, onChange: function (id) { tbState.section = id; log("lToolbar", "onChange: section = " + id); } }]; }
+  R1UI.toolbar($("dToolbar"), { ariaLabel: "Floor plan options", groups: tbGroups() });
+
+  // status
+  var TEXTS = { info: "Ready. Type an address or pick a lot on the map.", busy: "Fetching City of Vancouver Open Data within 212 m for a 300 m square…", ok: "Envelope placed: 12.84 x 19.80 m, 11.5 m high, up to 6 units.", error: "Fetch failed: no address '1 Nowhere St' found." };
+  var st = R1UI.status($("dStatus"), { text: TEXTS.info, level: "info" });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-level]"), function (b) { b.addEventListener("click", function () { st.update({ text: TEXTS[b.dataset.level], level: b.dataset.level }); }); });
+
+  // notice
+  var NOTES = { ok: { tone: "ok", title: "Plan check passed.", text: "Every room has its door (860 mm or wider), the furniture stands clear of every door swing and its 0.76 m approach, and every unit has its way in.", items: [] },
+    warn: { tone: "warn", title: "Plan check: 2 items to resolve.", text: "", items: ["U1 Bath: door 0.81 m (min 0.86)", "U3: the stair does not stack (x 2.4 m on the living level, 3.6 m on the bedroom level)"] },
+    error: { tone: "error", title: "Form not permitted.", text: "A courtyard configuration needs a site at least 33.5 m deep [3.1.2.4(a)]; this site is 32.0 m.", items: [] },
+    info: { tone: "info", title: "Shared copy.", text: "Six sites are stored with this page; open a site file for any other address.", items: [] } };
+  var nt = R1UI.notice($("dNotice"), NOTES.warn);
+  Array.prototype.forEach.call(document.querySelectorAll("[data-tone]"), function (b) { b.addEventListener("click", function () { nt.update(NOTES[b.dataset.tone]); }); });
+
+  // busy
+  var busyHost = $("dBusy"), busyHtml = busyHost.innerHTML;
+  $("kBusy").addEventListener("click", function () { var b = R1UI.busy(busyHost, { text: "Laying out the rooms, placing the furniture clear of the doors and checking the clearances…" }); setTimeout(function () { b.destroy(); busyHost.innerHTML = busyHtml; }, 1500); });
+
+  // option list
+  var OPTS = [{ id: "courtyard_sixplex", title: "Courtyard Sixplex", badge: { text: "fits", tone: "ok" }, meta: "6 units · 2 x 1-bed, 2 x 2-bed, 2 x 3-bed · 12.5 x 11.1 + 12.2 x 7.7 m" },
+    { id: "fourplex_01", title: "Fourplex 01", badge: { text: "fits", tone: "ok" }, meta: "4 units · 2 x 1-bed, 2 x 3-bed · 6.8 x 19.8 m" },
+    { id: "fourplex_01+adu_02", title: "Fourplex 01 + ADU 02", badge: { text: "no fit", tone: "no" }, meta: "5 units · 6.8 x 19.8 + 5.6 x 8.2 m", disabled: true, reason: "front + courtyard + rear = 39.9 m, site 38.1 m deep [3.1.2.11(c)]" },
+    { id: "rowhouse_x3", title: "Rowhouse x 3", badge: { text: "no fit", tone: "no" }, meta: "3 units · 17.1 x 12.0 m", disabled: true, reason: "17.1 m wide, envelope 12.84 m [3.1.2.7]" }];
+  var ol = R1UI.optionList($("dOpt"), { ariaLabel: "Catalogue designs", items: OPTS, value: "fourplex_01", emptyText: "Generate the envelope: the catalogue designs are tested against it.", loadingText: "Testing the catalogue designs against the envelope…", onChange: function (id) { log("lOpt", "onChange: " + id); } });
+  var optEmpty = false;
+  knob("kOptLoading", function (on) { ol.update({ loading: on, items: optEmpty ? [] : OPTS }); });
+  knob("kOptEmpty", function (on) { optEmpty = on; ol.update({ items: on ? [] : OPTS, value: on ? null : "fourplex_01" }); });
+
+  // table
+  var ROWS = [{ group: "Yards" }, { cells: ["Front yard", "4.9 m", "3.1.2.6", "4.9 m"], state: "ok" }, { cells: ["Side yards", "1.2 m", "3.1.2.8", "1.2 m"], state: "ok" }, { cells: ["Rear yard", "10.7 m", "3.1.2.9", "10.7 m"], state: "ok" },
+    { group: "Multiple buildings" }, { cells: ["Min site depth, courtyard", "33.5 m", "3.1.2.4(a)", "no courtyard drawn"], state: "na" }, { cells: ["Courtyard between buildings", "6.1 m", "3.1.2.11(c)", "5.4 m"], state: "fail" }];
+  var COLS = [{ label: "Regulation" }, { label: "R1-1" }, { label: "Clause", kind: "clause" }, { label: "This site", kind: "status" }];
+  var tb = R1UI.table($("dTable"), { caption: "By-law rules for this site", captionHidden: true, columns: COLS, rows: ROWS, emptyText: "Fetch a site to check its rules." });
+  var tEmpty = false, tLoading = false, tDense = false;
+  function tSync() { tb.update({ loading: tLoading, rows: tEmpty ? [] : ROWS, dense: tDense }); }
+  knob("kTableLoading", function (on) { tLoading = on; tSync(); }); knob("kTableEmpty", function (on) { tEmpty = on; tSync(); }); knob("kTableDense", function (on) { tDense = on; tSync(); });
+  function sw(c) { var s = document.createElement("span"); s.className = "unitsw"; s.style.background = c; s.setAttribute("role", "img"); s.setAttribute("aria-label", "colour " + c); return s; }
+  R1UI.table($("dTable2"), { dense: true, caption: "Units", captionHidden: true, columns: [{ label: "Colour", hidden: true }, { label: "Unit" }, { label: "Bedrooms" }, { label: "Floors" }, { label: "Area", kind: "num" }],
+    rows: [{ cells: [sw("#2a9d8f"), "U1", "1", "1", "67 m²"] }, { cells: [sw("#e76f51"), "U2", "1", "1", "67 m²"] }, { cells: [sw("#e9c46a"), "U3", "3", "2", "134 m²"] }] });
+
+  // stepper
+  var mix = { b3: 1, b2: 2, b0: 0 };
+  var s3 = R1UI.stepper($("dStep3"), { id: "g3", label: "3-bedroom", value: mix.b3, min: 0, max: 2, maxReason: "cells of 105 m² or more", onChange: function (v) { mix.b3 = v; log("lStep", "onChange: 3-bed = " + v); } });
+  var s2 = R1UI.stepper($("dStep2"), { id: "g2", label: "2-bedroom", value: mix.b2, min: 0, max: 6, maxReason: "cells of 65 m² or more", onChange: function (v) { mix.b2 = v; log("lStep", "onChange: 2-bed = " + v); } });
+  var s0 = R1UI.stepper($("dStep0"), { id: "g0", label: "Studios", value: mix.b0, min: 0, max: 0, maxReason: "no single-level unit", onChange: function (v) { mix.b0 = v; log("lStep", "onChange: studios = " + v); } });
+  knob("kStepNoForm", function (on) { [s3, s2, s0].forEach(function (s) { s.update(on ? { disabled: true, help: "draw a form first" } : { disabled: false, help: null }); }); });
+
+  // field
+  var f1 = R1UI.field($("dField1"), { id: "gTenure", label: "Tenure", type: "select", options: [{ value: "other", label: "Strata or freehold" }, { value: "rental", label: "Secured rental" }], value: "other", help: "Secured rental allows two more units in the band." });
+  var f2 = R1UI.field($("dField2"), { id: "gAddress", label: "Address", type: "text", value: "", placeholder: "e.g. 3567 W 27th Ave", autocomplete: "street-address" });
+  knob("kFieldError", function (on) { f2.update({ error: on ? "No address '1 Nowhere St' found in the City's address list." : null }); f1.update({ disabled: on }); });
+
+  // collapsible
+  R1UI.collapsible($("dStep"), { open: true, onToggle: function (o) { log("lCol", "onToggle: " + o); } });
+
+  // toggle buttons
+  R1UI.toggleButton($("dToggle1"), { title: "Show or hide the massing options", pressed: false, onToggle: function (p) { log("lTog", "onToggle: massing options " + p); } });
+  R1UI.toggleButton($("dToggle2"), { label: "Show or hide the steps", pressed: true, onToggle: function (p) { log("lTog", "onToggle: steps " + p); } });
+})();
+</script>
+</body>
+</html>

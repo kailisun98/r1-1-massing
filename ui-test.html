@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>R1-1 UI component tests</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+body { font: 13px/1.5 var(--mono); padding: 16px; background: var(--page); color: var(--ink); }
+.ok { color: var(--ok); } .fail { color: var(--red); font-weight: bold; }
+#stage { position: absolute; left: -9999px; top: 0; width: 600px; }   /* the components render off-screen but in the layout, so focus and sizes are real */
+</style>
+</head>
+<body>
+<h1>ui.js: component tests</h1>
+<p>Each component is rendered into a live document, driven through its props and the DOM events a user would fire, and checked for its markup, its ARIA state, its keyboard behaviour, its loading / empty / disabled states and its edge cases.</p>
+<pre id="out"></pre>
+<div id="stage"></div>
+<script src="ui.js"></script>
+<script>
+(function () {
+  var out = document.getElementById("out"), stage = document.getElementById("stage"), fails = 0, total = 0, warnings = [];
+  var realWarn = console.warn; console.warn = function (m) { warnings.push(String(m)); realWarn.apply(console, arguments); };
+  function check(name, cond, detail) { total++; if (!cond) fails++; out.innerHTML += '<span class="' + (cond ? "ok" : "fail") + '">' + (cond ? "PASS" : "FAIL") + "</span>  " + name + (cond ? "" : "  -- " + (typeof detail === "string" ? detail : JSON.stringify(detail))) + "\n"; }
+  function host() { var d = document.createElement("div"); stage.appendChild(d); return d; }
+  function key(el, k) { var e = new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }); el.dispatchEvent(e); return e; }
+  function click(el) { el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })); }
+  function change(el) { el.dispatchEvent(new Event("change", { bubbles: true })); }
+  function q(el, s) { return el.querySelector(s); } function qa(el, s) { return Array.prototype.slice.call(el.querySelectorAll(s)); }
+  function section(t) { out.innerHTML += "\n" + t + "\n"; }
+
+  // ---------------------------------------------------------------- tabs
+  section("tabs");
+  var p1 = host(), p2 = host(), p3 = host(); p1.id = "tp1"; p2.id = "tp2"; p3.id = "tp3";
+  var picked = [], th = host();
+  var tabs = R1UI.tabs(th, { ariaLabel: "Views", items: [{ id: "a", label: "Map", panel: "tp1" }, { id: "b", label: "Plans", panel: p2 }, { id: "c", label: "3D", panel: "tp3", disabled: true }], value: "a", onChange: function (id) { picked.push(id); } });
+  var tabBtns = qa(th, "[role=tab]");
+  check("tabs: a tablist with a name, one button per item, the selected one marked, its panel shown and the others hidden", q(th, "[role=tablist]").getAttribute("aria-label") === "Views" && tabBtns.length === 3 && tabBtns[0].getAttribute("aria-selected") === "true" && tabBtns[1].getAttribute("aria-selected") === "false" && !p1.hidden && p2.hidden && p3.hidden, th.innerHTML);
+  check("tabs: panels get role tabpanel and point back at their tab; tabs point at their panels", p1.getAttribute("role") === "tabpanel" && p1.getAttribute("aria-labelledby") === tabBtns[0].id && tabBtns[1].getAttribute("aria-controls") === "tp2" && p2.getAttribute("aria-labelledby") === tabBtns[1].id, [p1.getAttribute("aria-labelledby"), tabBtns[0].id]);
+  check("tabs: a disabled item is a disabled button; only the selected tab is in the tab order (roving tabindex)", tabBtns[2].disabled && tabBtns[0].tabIndex === 0 && tabBtns[1].tabIndex === -1 && tabBtns[2].tabIndex === -1, tabBtns.map(function (b) { return b.tabIndex; }));
+  tabBtns[0].focus(); key(tabBtns[0], "ArrowRight");
+  check("tabs: ArrowRight moves focus to the next enabled tab without selecting it (manual activation)", document.activeElement === tabBtns[1] && picked.length === 0 && tabBtns[0].getAttribute("aria-selected") === "true", [document.activeElement && document.activeElement.textContent, picked]);
+  key(tabBtns[1], "ArrowRight");
+  check("tabs: ArrowRight skips the disabled tab and wraps to the first", document.activeElement === tabBtns[0], document.activeElement && document.activeElement.textContent);
+  key(tabBtns[0], "End"); check("tabs: End goes to the last enabled tab", document.activeElement === tabBtns[1]);
+  click(tabBtns[1]);
+  check("tabs: a click selects: onChange fires once with the id, the panel swaps, the tabindex moves", picked.join() === "b" && p2.hidden === false && p1.hidden && tabBtns[1].tabIndex === 0 && tabBtns[0].tabIndex === -1, picked);
+  click(tabBtns[1]); check("tabs: clicking the selected tab again does not fire onChange", picked.length === 1);
+  click(tabBtns[2]); check("tabs: clicking a disabled tab does nothing", picked.length === 1 && p2.hidden === false);
+  tabBtns[1].focus(); tabs.update({ items: [{ id: "a", label: "Map", panel: "tp1" }, { id: "b", label: "Plans", panel: p2 }, { id: "c", label: "3D", panel: "tp3", disabled: false }], value: "c" });
+  check("tabs: update with the same ids syncs in place (same buttons, focus kept) and can enable an item and change the value", qa(th, "[role=tab]")[1] === tabBtns[1] && document.activeElement === tabBtns[1] && !tabBtns[2].disabled && tabBtns[2].getAttribute("aria-selected") === "true" && !p3.hidden && p2.hidden && tabs.isDisabled("c") === false, th.innerHTML);
+  check("tabs: update() does not fire onChange", picked.length === 1);
+  var w0 = warnings.length; tabs.update({ value: "zzz" });
+  check("tabs: a value that is not among the items selects nothing, warns once and keeps the first enabled tab tabbable", qa(th, "[aria-selected=true]").length === 0 && warnings.length === w0 + 1 && /not one of the items/.test(warnings[w0]) && qa(th, "[role=tab]")[0].tabIndex === 0 && p1.hidden && p2.hidden && p3.hidden, warnings.slice(w0));
+  tabs.update({ items: [{ id: "x", label: "Only" }], value: "x" });
+  check("tabs: new ids rebuild the strip (one tab), a tab with no panel is fine", qa(th, "[role=tab]").length === 1 && qa(th, "[role=tab]")[0].getAttribute("aria-selected") === "true");
+  var longTabs = R1UI.tabs(host(), { items: [{ id: "l", label: "A very long tab label that would never fit in a strip" }], value: "l" });
+  check("tabs: a long label gets a title so the ellipsis is not the only copy", q(longTabs.el, "[role=tab]").title.length > 28);
+  var emptyTabs = R1UI.tabs(host(), { items: [], value: null });
+  check("tabs: zero items render an empty tablist without an error", emptyTabs.el.getAttribute("role") === "tablist" && qa(emptyTabs.el, "[role=tab]").length === 0);
+  tabs.destroy(); check("tabs: destroy empties the host", th.childNodes.length === 0);
+  var autoT = R1UI.tabs(host(), { activation: "automatic", items: [{ id: "a", label: "A" }, { id: "b", label: "B" }], value: "a", onChange: function (id) { picked.push("auto:" + id); } });
+  qa(autoT.el, "[role=tab]")[0].focus(); key(qa(autoT.el, "[role=tab]")[0], "ArrowRight");
+  check("tabs: with automatic activation the arrow key also selects", picked[picked.length - 1] === "auto:b" && qa(autoT.el, "[role=tab]")[1].getAttribute("aria-selected") === "true");
+
+  // ---------------------------------------------------------------- segmented
+  section("segmented");
+  var segPicks = [], reselects = [], sh = host();
+  var seg = R1UI.segmented(sh, { ariaLabel: "Form", items: [{ id: "single", label: "Single building" }, { id: "courtyard", label: "Courtyard" }, { id: "side", label: "Side by side", disabled: true }], value: "single", onChange: function (id) { segPicks.push(id); }, onReselect: function (id) { reselects.push(id); } });
+  var radios = qa(sh, "[role=radio]");
+  check("segmented: a named radiogroup, aria-checked on the value, disabled item disabled", q(sh, "[role=radiogroup]").getAttribute("aria-label") === "Form" && radios.length === 3 && radios[0].getAttribute("aria-checked") === "true" && radios[1].getAttribute("aria-checked") === "false" && radios[2].disabled, sh.innerHTML);
+  click(radios[1]); check("segmented: click selects and fires onChange", segPicks.join() === "courtyard" && radios[1].getAttribute("aria-checked") === "true" && radios[0].getAttribute("aria-checked") === "false" && seg.value === "courtyard");
+  click(radios[1]); check("segmented: clicking the chosen item fires onReselect, not onChange", reselects.join() === "courtyard" && segPicks.length === 1);
+  radios[1].focus(); key(radios[1], "ArrowLeft");
+  check("segmented: arrow keys move and select (radio group behaviour)", segPicks.join() === "courtyard,single" && document.activeElement === radios[0] && radios[0].getAttribute("aria-checked") === "true");
+  key(radios[0], "ArrowLeft"); check("segmented: wraps backwards past the disabled item", document.activeElement === radios[1] && seg.value === "courtyard");
+  seg.update({ disabled: true }); check("segmented: disabled disables every button and keeps the value", radios.every(function (r) { return r.disabled; }) && seg.value === "courtyard");
+  seg.update({ disabled: false, busy: true }); check("segmented: busy sets aria-busy and disables the group", q(sh, "[role=radiogroup]").getAttribute("aria-busy") === "true" && radios[0].disabled);
+  seg.update({ busy: false, value: null }); check("segmented: value null checks nothing (no warning for null)", qa(sh, "[aria-checked=true]").length === 0 && !radios[0].disabled);
+  seg.update({ items: [{ id: "one", label: "One" }], value: "one" }); check("segmented: one item is fine", qa(sh, "[role=radio]").length === 1 && qa(sh, "[role=radio]")[0].getAttribute("aria-checked") === "true");
+  seg.destroy(); check("segmented: destroy empties the host", sh.childNodes.length === 0);
+
+  // ---------------------------------------------------------------- status
+  section("status");
+  var sth = host(), st = R1UI.status(sth, { text: "Ready.", level: "info" });
+  check("status: a polite live region with the text and a level class", sth.getAttribute("role") === "status" && sth.getAttribute("aria-live") === "polite" && sth.className === "status info" && /Ready\./.test(sth.textContent), sth.outerHTML);
+  st.update({ text: "Fetching…", level: "busy" }); check("status: busy marks aria-busy and prefixes 'Working' for a screen reader", sth.getAttribute("aria-busy") === "true" && sth.className === "status busy" && /Working: /.test(sth.textContent));
+  st.update({ text: "Fetch failed.", level: "error" }); check("status: an error is assertive and prefixed 'Error'", sth.getAttribute("aria-live") === "assertive" && /Error: /.test(sth.textContent) && sth.getAttribute("aria-busy") === "false");
+  st.update({ text: "Done.", level: "ok" }); check("status: back to polite", sth.getAttribute("aria-live") === "polite" && !/Error/.test(sth.textContent));
+
+  // ---------------------------------------------------------------- collapsible
+  section("collapsible");
+  var sec = host(); sec.innerHTML = '<h2 id="hh"><span class="badge">1</span> Site</h2><div class="stepbody"><p>body</p></div>';
+  var toggles = [], col = R1UI.collapsible(sec, { open: true, onToggle: function (o) { toggles.push(o); } }), cb = q(sec, "h2 button");
+  check("collapsible: the heading's content moves into a button with aria-expanded and aria-controls pointing at the body", cb && cb.getAttribute("aria-expanded") === "true" && cb.textContent.indexOf("Site") > 0 && q(sec, ".stepbody").id && cb.getAttribute("aria-controls") === q(sec, ".stepbody").id && !q(sec, ".stepbody").hidden, sec.innerHTML);
+  click(cb); check("collapsible: click folds: body hidden, class collapsed, onToggle(false)", q(sec, ".stepbody").hidden && sec.classList.contains("collapsed") && toggles.join() === "false");
+  col.update({ open: true }); check("collapsible: update opens without firing onToggle", !q(sec, ".stepbody").hidden && toggles.length === 1);
+  var sec2 = host(); sec2.innerHTML = "<h3>Report</h3><pre>x</pre><p>y</p>";
+  R1UI.collapsible(sec2, { open: false });
+  check("collapsible: without a .stepbody the rest of the section is wrapped into one; open:false starts folded", q(sec2, ".stepbody") && qa(sec2, ".stepbody > *").length === 2 && q(sec2, ".stepbody").hidden && q(sec2, "h3 button").getAttribute("aria-expanded") === "false", sec2.innerHTML);
+  var noHead = host(), threw = false; try { R1UI.collapsible(noHead, {}); } catch (e) { threw = true; }
+  check("collapsible: a section without a heading is refused with an error", threw);
+
+  // ---------------------------------------------------------------- option list
+  section("optionList");
+  var oh = host(), chosen = [];
+  var ol = R1UI.optionList(oh, { ariaLabel: "Catalogue designs", items: [], value: null, emptyText: "Nothing yet.", onChange: function (id) { chosen.push(id); } });
+  check("optionList: empty items show the empty text inside the listbox", q(oh, "[role=listbox]").getAttribute("aria-label") === "Catalogue designs" && q(oh, ".empty").textContent === "Nothing yet." && qa(oh, "[role=option]").length === 0);
+  ol.update({ loading: true, loadingText: "Testing…" });
+  check("optionList: loading shows skeleton cards, aria-busy and a status text for a screen reader", q(oh, "[role=listbox]").getAttribute("aria-busy") === "true" && qa(oh, ".opt.skeleton").length === 3 && q(oh, "[role=status]").textContent === "Testing…" && qa(oh, "[role=option]").length === 0, oh.innerHTML);
+  ol.update({ loading: false, items: [{ id: "f1", title: "Fourplex 01", badge: { text: "fits", tone: "ok" }, meta: "4 units" }, { id: "f2", title: "Fourplex 02", badge: { text: "no fit", tone: "no" }, disabled: true, reason: "too wide" }, { id: "d", title: "Duplex", detail: "2 units" }], value: null });
+  var opts = qa(oh, "[role=option]");
+  check("optionList: options with aria-selected, a disabled one with aria-disabled and its reason, badges and meta", opts.length === 3 && opts[0].getAttribute("aria-selected") === "false" && opts[1].getAttribute("aria-disabled") === "true" && /too wide/.test(opts[1].textContent) && q(opts[0], ".pill.ok").textContent === "fits" && q(opts[0], ".meta").textContent === "4 units" && q(oh, "[role=listbox]").getAttribute("aria-busy") === "false", oh.innerHTML);
+  click(opts[1]); check("optionList: clicking a disabled option selects nothing (but focuses it so its reason is read)", chosen.length === 0 && document.activeElement === opts[1]);
+  click(opts[0]); check("optionList: click selects and fires onChange", chosen.join() === "f1" && opts[0].getAttribute("aria-selected") === "true" && opts[0].classList.contains("on"));
+  opts[0].focus(); key(opts[0], "ArrowDown"); check("optionList: ArrowDown moves focus (through the disabled option, which stays readable)", document.activeElement === opts[1]);
+  key(opts[1], "ArrowDown"); key(opts[2], "Enter"); check("optionList: Enter selects the focused option", chosen.join() === "f1,d" && opts[2].getAttribute("aria-selected") === "true" && opts[0].getAttribute("aria-selected") === "false");
+  key(opts[2], " "); check("optionList: Space on the selected option does not fire again", chosen.length === 2);
+  ol.update({ value: null }); check("optionList: value null clears the selection in place", qa(oh, "[aria-selected=true]").length === 0 && qa(oh, "[role=option]")[0] === opts[0]);
+  var w1 = warnings.length; ol.update({ value: "nope" }); check("optionList: an unknown value warns and selects nothing", warnings.length === w1 + 1 && qa(oh, "[aria-selected=true]").length === 0);
+  for (var i = 0; i < 10; i++) ol.update({ items: [{ id: "f1", title: "Fourplex 01" }, { id: "n" + i, title: "New " + i }], value: "f1" });
+  check("optionList: ten rapid updates leave exactly one listbox with the latest two options", qa(oh, "[role=listbox]").length === 1 && qa(oh, "[role=option]").length === 2 && /New 9/.test(oh.textContent) && q(oh, "[aria-selected=true]").textContent.indexOf("Fourplex 01") === 0);
+  ol.destroy(); check("optionList: destroy empties the host", oh.childNodes.length === 0);
+
+  // ---------------------------------------------------------------- table
+  section("table");
+  var tbh = document.createElement("table"); stage.appendChild(tbh);
+  var tb = R1UI.table(tbh, { caption: "Rules", captionHidden: true, columns: [{ label: "Regulation" }, { label: "R1-1" }, { label: "Clause", kind: "clause" }, { label: "This site", kind: "status" }], rows: [], emptyText: "No rules yet." });
+  check("table: renders in place on a <table>, a hidden caption, column headers with scope, one empty row spanning the columns", tbh === tb.el && q(tbh, "caption").classList.contains("vh") && qa(tbh, "thead th[scope=col]").length === 4 && q(tbh, "td.empty").getAttribute("colspan") === "4" && q(tbh, "td.empty").textContent === "No rules yet.", tbh.outerHTML);
+  tb.update({ rows: [{ group: "Site" }, { cells: ["Front yard", "4.9 m", "3.1.2.6", "4.9 m"], state: "ok" }, { cells: ["Courtyard", "6.1 m", "3.1.2.11", "none drawn"], state: "na" }, { cells: ["Height", "11.5 m", "3.1.2.5", "12.0 m"], state: "fail" }] });
+  var marks = qa(tbh, "tbody .st");
+  check("table: a group row is a rowgroup header spanning the table; state marks are images with labels before the status text", q(tbh, "tr.group th").getAttribute("scope") === "rowgroup" && q(tbh, "tr.group th").getAttribute("colspan") === "4" && marks.length === 3 && marks[0].getAttribute("role") === "img" && marks[0].getAttribute("aria-label") === "applied and met" && marks[1].classList.contains("st-na") && marks[2].classList.contains("st-fail") && /12\.0 m/.test(marks[2].parentNode.textContent) && q(tbh, "td.clause").textContent === "3.1.2.6", tbh.innerHTML);
+  tb.update({ loading: true }); check("table: loading shows skeleton rows and aria-busy", qa(tbh, "tr.skeleton").length === 3 && tbh.getAttribute("aria-busy") === "true");
+  var sw = document.createElement("span"); sw.className = "unitsw";
+  var tbd = R1UI.table(host(), { dense: true, columns: [{ label: "Colour", hidden: true }, { label: "Unit" }, { label: "Area", kind: "num" }], rows: [{ cells: [sw, "U1", "67 m²"] }] });
+  check("table: created inside a plain host, dense class, a hidden column label, an element cell and a numeric column", tbd.el.tagName === "TABLE" && tbd.el.classList.contains("dense") && q(tbd.el, "th span.vh").textContent === "Colour" && q(tbd.el, "td .unitsw") === sw && q(tbd.el, "td.num").textContent === "67 m²", tbd.el.outerHTML);
+  tbd.update({ rows: [{ cells: ["x", "U2"] }] }); check("table: a short row renders without an error", qa(tbd.el, "tbody td").length === 2);
+
+  // ---------------------------------------------------------------- toolbar
+  section("toolbar");
+  var tlh = host(), tlPicks = [];
+  var tl = R1UI.toolbar(tlh, { ariaLabel: "Sheet options", groups: [{ id: "scale", label: "Scale", items: [{ id: "s", label: "Small" }, { id: "m", label: "Medium" }], value: "m", onChange: function (id) { tlPicks.push("scale:" + id); } }, { id: "floor", label: "Floor", items: [{ id: "all", label: "All" }, { id: "g", label: "Ground" }], value: "all", onChange: function (id) { tlPicks.push("floor:" + id); } }] });
+  var grps = qa(tlh, "[role=group]");
+  check("toolbar: role toolbar with a name, one labelled group per entry, each a radiogroup with its value checked", q(tlh, "[role=toolbar]").getAttribute("aria-label") === "Sheet options" && grps.length === 2 && document.getElementById(grps[0].getAttribute("aria-labelledby")).textContent === "Scale" && q(grps[0], "[aria-checked=true]").textContent === "Medium" && q(grps[1], "[aria-checked=true]").textContent === "All", tlh.innerHTML);
+  click(qa(grps[1], "[role=radio]")[1]); check("toolbar: a group's onChange fires with its id", tlPicks.join() === "floor:g");
+  tl.update({ groups: [{ id: "scale", label: "Scale", items: [{ id: "s", label: "Small" }, { id: "m", label: "Medium" }], value: "s" }, { id: "floor", label: "Floor", items: [{ id: "all", label: "All" }, { id: "g", label: "Ground" }], value: "g" }] });
+  check("toolbar: update with the same group ids changes values in place", qa(tlh, "[role=group]")[0] === grps[0] && q(grps[0], "[aria-checked=true]").textContent === "Small");
+  tl.update({ groups: [{ id: "only", label: "Only", items: [{ id: "a", label: "A" }], value: "a" }] }); check("toolbar: new group ids rebuild the bar", qa(tlh, "[role=group]").length === 1);
+  tl.destroy(); check("toolbar: destroy empties the host", tlh.childNodes.length === 0);
+
+  // ---------------------------------------------------------------- stepper
+  section("stepper");
+  var sph = host(), spVals = [];
+  var sp = R1UI.stepper(sph, { id: "mix3", label: "3-bedroom", value: 1, min: 0, max: 3, maxReason: "cells of 105 m² or more", onChange: function (v) { spVals.push(v); } });
+  var inp = q(sph, "input"), dec = qa(sph, "button")[0], inc = qa(sph, "button")[1];
+  check("stepper: a labelled number input with min/max, two labelled buttons, help text describing the limit", q(sph, "label").htmlFor === "mix3" && inp.id === "mix3" && inp.type === "number" && inp.min === "0" && inp.max === "3" && inp.value === "1" && dec.getAttribute("aria-label") === "Fewer 3-bedroom" && inc.getAttribute("aria-label") === "More 3-bedroom" && document.getElementById(inp.getAttribute("aria-describedby")).textContent === "up to 3 (cells of 105 m² or more)" && !dec.disabled && !inc.disabled, sph.innerHTML);
+  click(inc); click(inc); check("stepper: + increments, fires onChange with the value, and disables itself at max", spVals.join() === "2,3" && inp.value === "3" && inc.disabled && !dec.disabled && sp.value === 3);
+  click(inc); check("stepper: + at max does nothing", spVals.length === 2);
+  inp.value = "-5"; change(inp); check("stepper: a typed value below min clamps to min and fires once", inp.value === "0" && spVals[spVals.length - 1] === 0 && dec.disabled);
+  inp.value = "99"; change(inp); check("stepper: a typed value above max clamps to max", inp.value === "3" && spVals[spVals.length - 1] === 3);
+  inp.value = "abc"; change(inp); check("stepper: a non-number falls back to min", inp.value === "0" && spVals[spVals.length - 1] === 0);
+  key(inp, "ArrowUp"); check("stepper: ArrowUp increments", inp.value === "1" && spVals[spVals.length - 1] === 1);
+  var n0 = spVals.length; sp.update({ max: 0 }); check("stepper: lowering max below the value clamps the value without firing onChange, and max 0 disables everything", inp.value === "0" && spVals.length === n0 && inp.disabled && dec.disabled && inc.disabled && sph.firstChild.classList.contains("off"));
+  sp.update({ max: 2, disabled: false, help: "draw a form first" }); check("stepper: an explicit help text replaces the limit text", document.getElementById(inp.getAttribute("aria-describedby")).textContent === "draw a form first" && !inp.disabled);
+  sp.update({ help: null }); check("stepper: help null returns to the limit text", /up to 2/.test(document.getElementById(inp.getAttribute("aria-describedby")).textContent));
+
+  // ---------------------------------------------------------------- field
+  section("field");
+  var fh = host(), fVals = [];
+  var fd = R1UI.field(fh, { id: "tenure", label: "Tenure", type: "select", options: [{ value: "other", label: "Strata" }, { value: "rental", label: "Rental" }], value: "rental", help: "Rental allows two more units.", onChange: function (v) { fVals.push(v); } });
+  var sel = q(fh, "select");
+  check("field: a labelled select with its options and value, the help wired through aria-describedby", q(fh, "label").htmlFor === "tenure" && sel.options.length === 2 && sel.value === "rental" && document.getElementById(sel.getAttribute("aria-describedby")).textContent === "Rental allows two more units." && sel.getAttribute("aria-invalid") === "false", fh.innerHTML);
+  sel.value = "other"; change(sel); check("field: change fires onChange with the value", fVals.join() === "other" && fd.value === "other");
+  fd.update({ error: "Pick a tenure." }); check("field: an error marks the field invalid, shows an alert and describes the field by it", sel.getAttribute("aria-invalid") === "true" && q(fh, "[role=alert]").textContent === "Pick a tenure." && !q(fh, "[role=alert]").hidden && /-err/.test(sel.getAttribute("aria-describedby")));
+  fd.update({ error: null, value: "nope" }); check("field: error cleared; a value not among the options falls back to the first", sel.getAttribute("aria-invalid") === "false" && q(fh, "[role=alert]").hidden && sel.selectedIndex === 0);
+  var ft = R1UI.field(host(), { label: "Address", type: "text", value: "3567 W 27th Ave", placeholder: "e.g. 3567 W 27th Ave" });
+  check("field: a text input with placeholder and value, no describedby without help or error", ft.input.type === "text" && ft.input.value === "3567 W 27th Ave" && ft.input.placeholder.length > 0 && !ft.input.hasAttribute("aria-describedby"));
+
+  // ---------------------------------------------------------------- notice
+  section("notice");
+  var nh = host(), nt = R1UI.notice(nh, { tone: "ok", title: "Plan check passed.", text: "Every room has its door." });
+  check("notice: a status with the tone class, an icon hidden from readers, title and text", q(nh, ".ui-notice").getAttribute("role") === "status" && q(nh, ".ui-notice").classList.contains("ok") && q(nh, ".ui-notice-icon").getAttribute("aria-hidden") === "true" && q(nh, "strong").textContent === "Plan check passed." && /Every room/.test(nh.textContent) && !q(nh, "ul"), nh.innerHTML);
+  nt.update({ tone: "warn", title: "Plan check: 2 items to resolve.", text: null, items: ["U1 Bath door 0.81 m", "U3 stair does not stack"] });
+  check("notice: items render as a list; warn stays a status", qa(nh, "li").length === 2 && q(nh, ".ui-notice").classList.contains("warn") && q(nh, ".ui-notice").getAttribute("role") === "status");
+  nt.update({ tone: "error", items: [] }); check("notice: an error is an alert", q(nh, ".ui-notice").getAttribute("role") === "alert" && !q(nh, "ul"));
+
+  // ---------------------------------------------------------------- busy
+  section("busy");
+  var bh = host(); bh.innerHTML = "<p>old</p>";
+  var bz = R1UI.busy(bh, { text: "Laying out the rooms…" });
+  check("busy: replaces the host content with a status line and marks the host busy", bh.getAttribute("aria-busy") === "true" && qa(bh, "p").length === 1 && q(bh, "p.empty.busy").getAttribute("role") === "status" && q(bh, "p").textContent === "Laying out the rooms…");
+  bz.update({ text: "Checking the clearances…" }); check("busy: update changes the text", q(bh, "p").textContent === "Checking the clearances…");
+  bz.destroy(); check("busy: destroy removes the line and the busy mark", !bh.hasAttribute("aria-busy") && bh.childNodes.length === 0);
+
+  // ---------------------------------------------------------------- toggle button
+  section("toggleButton");
+  var tbtn = document.createElement("button"); tbtn.textContent = "Massing options"; stage.appendChild(tbtn); var tgl = [];
+  var tg = R1UI.toggleButton(tbtn, { title: "Show or hide the massing options", pressed: false, onToggle: function (p) { tgl.push(p); } });
+  check("toggleButton: aria-pressed false, a title, no aria-label when the button has its own text", tbtn.getAttribute("aria-pressed") === "false" && tbtn.title === "Show or hide the massing options" && !tbtn.hasAttribute("aria-label"));
+  click(tbtn); check("toggleButton: click presses and fires onToggle(true)", tbtn.getAttribute("aria-pressed") === "true" && tbtn.classList.contains("on") && tgl.join() === "true" && tg.pressed === true);
+  tg.update({ pressed: false, disabled: true }); check("toggleButton: update sets the state without firing", tbtn.getAttribute("aria-pressed") === "false" && tbtn.disabled && tgl.length === 1);
+  tg.update({ disabled: false }); tg.toggle(); check("toggleButton: toggle() flips and fires", tbtn.getAttribute("aria-pressed") === "true" && tgl.join() === "true,true");
+  var ibtn = document.createElement("button"); ibtn.textContent = "☰"; stage.appendChild(ibtn);
+  R1UI.toggleButton(ibtn, { label: "Show or hide the steps", pressed: true });
+  check("toggleButton: an icon button gets the label as its name and title", ibtn.getAttribute("aria-label") === "Show or hide the steps" && ibtn.title === "Show or hide the steps" && ibtn.getAttribute("aria-pressed") === "true");
+
+  // ---------------------------------------------------------------- the element helper
+  section("h");
+  var clicks = 0, hel = R1UI.h("label", { htmlFor: "zz", className: "x", dataset: { k: "v" }, hidden: false, "aria-busy": true, onClick: function () { clicks++; } }, ["text", null, R1UI.h("b", { text: "bold" })]);
+  click(hel);
+  check("h: htmlFor, className, dataset, boolean/ARIA attributes, event listeners, text and element children; false and null are skipped", hel.htmlFor === "zz" && hel.className === "x" && hel.dataset.k === "v" && !hel.hidden && hel.getAttribute("aria-busy") === "true" && clicks === 1 && hel.textContent === "textbold" && q(hel, "b"), hel.outerHTML);
+  check("h: hidden:true sets the attribute, disabled:true disables", R1UI.h("p", { hidden: true }).hidden && R1UI.h("button", { disabled: true }).disabled);
+
+  console.warn = realWarn;
+  out.innerHTML += "\n" + (fails ? fails + " FAILED of " + total : "ALL " + total + " CHECKS PASSED") + "\n";
+  window.uitest = { fails: fails, total: total };
+})();
+</script>
+</body>
+</html>

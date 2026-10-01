@@ -75,7 +75,7 @@ pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono
 
 .stage { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .tabs { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); align-items: center; }
-.tabs .ui-tabs { flex: 0 1 auto; min-width: 0; }
+.tabs #viewTabs, .tabs .ui-tabs { flex: 0 1 auto; min-width: 0; }   /* the strip shrinks and scrolls sideways on a phone */
 .tabs .hint { margin-left: auto; color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane { flex: 1; min-height: 0; position: relative; }
 #map { position: absolute; inset: 0; background: #f2f2f0; }
@@ -162,7 +162,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
   .stage { border-bottom: 1px solid var(--line); }
   .side { width: auto; border-right: none; }
   .right { width: auto; border-left: none; border-top: 1px solid var(--line); }
-  .topbar .hint { display: none; }
+  .topbar .hint, .tabs .hint { display: none; }   /* no room for the source line or the keyboard hint on a phone */
 }
 @media (prefers-reduced-motion: reduce) { .leaflet-zoom-anim .leaflet-zoom-animated { transition: none; } }
 </style>

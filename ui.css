@@ -163,6 +163,24 @@ button.on, button[aria-pressed="true"].toggle { background: var(--blue); color: 
   .sheet-tools .segbtn { flex: 1 1 auto; white-space: normal; }
 }
 
+/* ------------------------------------------------------------------ tour (R1UI.tour): a spotlight and a card over the dimmed page */
+.ui-tour-backdrop { position: fixed; inset: 0; z-index: 1100; background: transparent; }
+.ui-tour-backdrop.dim { background: rgba(20, 30, 40, .45); }
+.ui-tour-spot { position: fixed; z-index: 1200; border-radius: 8px; box-shadow: 0 0 0 9999px rgba(20, 30, 40, .45), 0 0 0 2px var(--blue); pointer-events: none; transition: left .25s, top .25s, width .25s, height .25s; }
+.ui-tour-card { position: fixed; z-index: 1300; width: min(360px, calc(100vw - 32px)); background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 30px rgba(0, 0, 0, .28); padding: 14px 16px 12px; outline: none; }
+.ui-tour-card:focus-visible { outline: var(--focus); outline-offset: 2px; }
+.ui-tour-card.docked { left: 16px !important; right: 16px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); top: auto !important; width: auto; }
+.ui-tour-count { margin: 0 0 2px; font-size: 11px; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.ui-tour-title { margin: 0 0 6px; font-size: 14px; font-weight: 600; text-wrap: balance; }
+.ui-tour-text { margin: 0 0 12px; font-size: 12.5px; line-height: 1.5; max-width: 60ch; }
+.ui-tour-actions { display: flex; align-items: center; gap: 6px; }
+.ui-tour-spacer { flex: 1; }
+.ui-tour-skip { background: transparent; color: var(--muted); padding: 4px 6px; min-height: 28px; }
+.ui-tour-skip:hover { color: var(--ink); }
+.ui-tour-actions .secondary { background: var(--group); color: var(--ink); }
+.ui-tour-actions .primary { background: var(--ink); color: var(--panel); }
+@media (prefers-reduced-motion: reduce) { .ui-tour-spot { transition: none; } }
+
 /* ------------------------------------------------------------------ touch: 44 px targets on a coarse pointer */
 @media (pointer: coarse) {
   .ui-tab, .segbtn, .ui-stepper-btn, .ui-collapse, button { min-height: 44px; }

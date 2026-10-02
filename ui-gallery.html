@@ -64,7 +64,7 @@ input[type="text"], select { font: inherit; color: var(--ink); background: var(-
 
 <main class="wrap">
   <nav class="toc" aria-label="Components">
-    <a href="#architecture">Architecture</a><a href="#tabs">tabs</a><a href="#segmented">segmented</a><a href="#toolbar">toolbar</a><a href="#status">status</a><a href="#notice">notice</a><a href="#busy">busy</a><a href="#optionList">optionList</a><a href="#table">table</a><a href="#stepper">stepper</a><a href="#field">field</a><a href="#collapsible">collapsible</a><a href="#toggleButton">toggleButton</a>
+    <a href="#architecture">Architecture</a><a href="#tabs">tabs</a><a href="#segmented">segmented</a><a href="#toolbar">toolbar</a><a href="#status">status</a><a href="#notice">notice</a><a href="#busy">busy</a><a href="#optionList">optionList</a><a href="#table">table</a><a href="#stepper">stepper</a><a href="#field">field</a><a href="#collapsible">collapsible</a><a href="#toggleButton">toggleButton</a><a href="#tour">tour</a>
   </nav>
 
   <h2 id="architecture">Architecture</h2>
@@ -322,6 +322,26 @@ mixC.b3.update({ value: mix.b3, max: limits.max3, maxReason: "cells of 105 m² o
       <pre>leftC = R1UI.toggleButton(btn, { label: "Show or hide the steps", pressed: true, onToggle: function (on) { sidePanel.hidden = !on; } });</pre>
     </div>
   </div>
+
+  <!-- ============================================================ tour -->
+  <h2 id="tour"><code>R1UI.tour</code> walkthrough</h2>
+  <p class="lead">A guided demo over the live page: a spotlight on each step's target with a dialog card beside it, Next, Back and Skip, arrow keys and Esc, focus kept in the card and returned afterwards. A step's <code>run()</code> puts the page in the state it talks about before its card shows. The app's Walkthrough button runs an eleven-step tour from the site to the report.</p>
+  <div class="demo">
+    <div class="live narrow"><button id="kTour" type="button">Start a three-step tour of this page</button><p class="log" id="lTour">onDone: —</p></div>
+    <div class="side">
+      <table class="props"><tr><th>prop</th><th>type</th><th>notes</th></tr>
+        <tr><td>steps</td><td>{title, text, target?, placement?, run?}[]</td><td><code>target</code>: a selector, an element or a function; none centres the card over the dimmed page</td></tr>
+        <tr><td>placement</td><td>"auto" | "right" | "left" | "bottom" | "top" | "inside"</td><td>"inside" sits in a large target's lower left corner</td></tr>
+        <tr><td>run</td><td>() =&gt; void | Promise</td><td>runs before the step shows; a promise delays the card</td></tr>
+        <tr><td>onDone</td><td>(reason) =&gt; void</td><td>"done", "skipped" or "destroyed"</td></tr>
+        <tr><td colspan="3">handle: <code>start(at?)</code>, <code>next()</code>, <code>back()</code>, <code>close()</code>, <code>index</code>, <code>open</code></td></tr></table>
+      <pre>tourC = R1UI.tour(document.body, { onDone: function (why) { … }, steps: [
+  { title: "Welcome to Lotwise", text: "A two-minute tour…" },
+  { title: "1. Site", target: "#stepSite", text: "Type an address…", run: function () { showView("map"); return ensureSite(); } },
+  { title: "5. Floor plans", target: "#panePlans", placement: "inside", text: "…", run: function () { showView("plans"); return wait(1500); } } ] });
+btnTour.addEventListener("click", function () { tourC.start(); });</pre>
+    </div>
+  </div>
 </main>
 
 <script src="ui.js"></script>
@@ -415,6 +435,13 @@ mixC.b3.update({ value: mix.b3, max: limits.max3, maxReason: "cells of 105 m² o
   // toggle buttons
   R1UI.toggleButton($("dToggle1"), { title: "Show or hide the massing options", pressed: false, onToggle: function (p) { log("lTog", "onToggle: massing options " + p); } });
   R1UI.toggleButton($("dToggle2"), { label: "Show or hide the steps", pressed: true, onToggle: function (p) { log("lTog", "onToggle: steps " + p); } });
+
+  // tour: three steps over this page
+  var gTour = R1UI.tour(document.body, { onDone: function (why) { log("lTour", "onDone: " + why); }, steps: [
+    { title: "A tour of the gallery", text: "Each component below is live. This card is centred because the step has no target; the next ones spotlight a part of the page." },
+    { title: "The view tabs", target: "#dTabs", text: "Arrow keys move between the tabs; Enter or Space selects. Try the knobs under the demo to enable a tab or add many." },
+    { title: "The data table", target: "#dTable", placement: "top", text: "State marks with text alternatives, group rows, skeleton rows while loading. Finish returns you here.", run: function () { document.getElementById("table").scrollIntoView({ block: "start" }); return new Promise(function (r) { setTimeout(r, 250); }); } }] });
+  $("kTour").addEventListener("click", function () { gTour.start(); });
 })();
 </script>
 </body>

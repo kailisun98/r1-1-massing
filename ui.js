@@ -345,5 +345,86 @@ var R1UI = (function () {
     return { el: button, update: function (p) { Object.assign(state, p); sync(); }, toggle: onClick, get pressed() { return state.pressed; }, destroy: function () { button.removeEventListener("click", onClick); } };
   }
 
-  return { tabs: tabs, segmented: segmented, status: status, collapsible: collapsible, optionList: optionList, table: table, toolbar: toolbar, stepper: stepper, field: field, notice: notice, busy: busy, toggleButton: toggleButton, h: h, uid: uid, STATE: STATE };
+  // ------------------------------------------------------------------ Tour (a guided walkthrough over the live page)
+  /** props: { steps: [{ title, text, target?: selector | Element | () => Element, placement?: "auto" | "right" | "left" | "bottom" | "top" | "inside",
+                run?: () => void | Promise }], onDone(reason: "done" | "skipped" | "destroyed") }
+      A modal dialog card beside a spotlight on the step's target, over a dimmed page. Next / Back / Skip tour; the
+      arrow keys step, Esc leaves; focus stays in the card and returns to where it was. A step's run() puts the page
+      in the right state (and may return a promise) before its card shows; the target is scrolled into view. On a
+      phone the card docks to the bottom of the screen. */
+  function tour(host, props) {
+    var state = Object.assign({ steps: [] }, props), open = false, cur = -1, prevFocus = null, resizeT = null;
+    var backdrop = h("div", { className: "ui-tour-backdrop", "aria-hidden": "true" }), spot = h("div", { className: "ui-tour-spot", "aria-hidden": "true" });
+    var titleId = uid("tour-title"), descId = uid("tour-desc");
+    var count = h("p", { className: "ui-tour-count" }), title = h("h2", { id: titleId, className: "ui-tour-title" }), text = h("p", { id: descId, className: "ui-tour-text" });
+    var skip = h("button", { type: "button", className: "ui-tour-skip", text: "Skip tour", onClick: function () { close("skipped"); } });
+    var back = h("button", { type: "button", className: "secondary", text: "Back", onClick: function () { go(cur - 1); } });
+    var next = h("button", { type: "button", className: "primary", text: "Next", onClick: function () { go(cur + 1); } });
+    var card = h("div", { role: "dialog", "aria-modal": "true", "aria-labelledby": titleId, "aria-describedby": descId, className: "ui-tour-card", tabindex: "-1" },
+      [count, title, text, h("div", { className: "ui-tour-actions" }, [skip, h("span", { className: "ui-tour-spacer" }), back, next])]);
+    function targetOf(step) { var t = step.target; if (typeof t === "function") t = t(); if (typeof t === "string") t = document.querySelector(t); return t && t.getBoundingClientRect ? t : null; }
+    function place() {
+      if (!open || cur < 0) return;
+      var step = state.steps[cur], el = targetOf(step), vw = window.innerWidth, vh = window.innerHeight, pad = 8, docked = vw < 640;
+      card.classList.toggle("docked", docked); backdrop.classList.toggle("dim", !el);
+      if (el) {
+        var r = el.getBoundingClientRect();
+        spot.hidden = false; spot.style.left = (r.left - pad) + "px"; spot.style.top = (r.top - pad) + "px"; spot.style.width = (r.width + 2 * pad) + "px"; spot.style.height = (r.height + 2 * pad) + "px";
+      } else spot.hidden = true;
+      if (docked) { card.style.left = ""; card.style.top = ""; return; }
+      var cw = card.offsetWidth, ch = card.offsetHeight, x, y, pl = step.placement || "auto", gap = 14;
+      if (!el) { x = (vw - cw) / 2; y = (vh - ch) / 2; }
+      else {
+        var q = el.getBoundingClientRect();
+        if (pl === "auto") pl = q.right + gap + cw <= vw ? "right" : (q.left - gap - cw >= 0 ? "left" : (q.bottom + gap + ch <= vh ? "bottom" : (q.top - gap - ch >= 0 ? "top" : "inside")));
+        if (pl === "right") { x = q.right + gap; y = q.top; } else if (pl === "left") { x = q.left - gap - cw; y = q.top; } else if (pl === "bottom") { x = q.left; y = q.bottom + gap; }
+        else if (pl === "top") { x = q.left; y = q.top - gap - ch; } else { x = q.left + 16; y = q.bottom - ch - 16; }   // inside: the card sits in the target's lower left corner
+      }
+      card.style.left = Math.max(8, Math.min(x, vw - cw - 8)) + "px"; card.style.top = Math.max(8, Math.min(y, vh - ch - 8)) + "px";
+    }
+    function show(i) {
+      var step = state.steps[i]; cur = i;
+      count.textContent = "Step " + (i + 1) + " of " + state.steps.length; title.textContent = step.title; text.textContent = step.text;
+      back.disabled = i === 0; next.disabled = false; next.textContent = i === state.steps.length - 1 ? "Finish" : "Next";
+      var el = targetOf(step); if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest", inline: "nearest" });
+      place(); card.focus();
+    }
+    function go(i) {
+      if (!open || i < 0) return;
+      if (i >= state.steps.length) { close("done"); return; }
+      var step = state.steps[i], r = null;
+      next.disabled = true; back.disabled = true;
+      try { r = step.run ? step.run() : null; } catch (e) { console.warn("R1UI.tour: step " + (i + 1) + " failed to run", e); }
+      if (r && typeof r.then === "function") r.then(function () { if (open) show(i); }, function () { if (open) show(i); }); else show(i);   // a promise delays the card; otherwise it shows at once
+    }
+    function onKey(e) {
+      if (!open) return;
+      if (e.key === "Escape") { e.preventDefault(); close("skipped"); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); go(cur + 1); }
+      else if (e.key === "ArrowLeft") { e.preventDefault(); go(cur - 1); }
+      else if (e.key === "Tab") {   // focus stays in the card
+        var f = [skip, back, next].filter(function (b) { return !b.disabled; }), first = f[0], last = f[f.length - 1];
+        if (e.shiftKey && (document.activeElement === first || document.activeElement === card)) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
+    }
+    function onResize() { clearTimeout(resizeT); resizeT = setTimeout(place, 60); }
+    function start(at) {
+      if (open || !state.steps.length) return; open = true; prevFocus = document.activeElement;
+      host.appendChild(backdrop); host.appendChild(spot); host.appendChild(card);
+      document.addEventListener("keydown", onKey, true); window.addEventListener("resize", onResize); window.addEventListener("scroll", onResize, true);
+      go(at || 0);
+    }
+    function close(reason) {
+      if (!open) return; open = false; cur = -1;
+      [backdrop, spot, card].forEach(function (n) { if (n.parentNode) n.parentNode.removeChild(n); });
+      document.removeEventListener("keydown", onKey, true); window.removeEventListener("resize", onResize); window.removeEventListener("scroll", onResize, true);
+      if (prevFocus && prevFocus.focus) prevFocus.focus();
+      if (state.onDone) state.onDone(reason);
+    }
+    return { el: card, start: start, close: function () { close("skipped"); }, next: function () { go(cur + 1); }, back: function () { go(cur - 1); }, get index() { return cur; }, get open() { return open; },
+      update: function (p) { Object.assign(state, p); if (open) show(Math.min(cur, state.steps.length - 1)); }, destroy: function () { close("destroyed"); } };
+  }
+
+  return { tabs: tabs, segmented: segmented, status: status, collapsible: collapsible, optionList: optionList, table: table, toolbar: toolbar, stepper: stepper, field: field, notice: notice, busy: busy, toggleButton: toggleButton, tour: tour, h: h, uid: uid, STATE: STATE };
 })();

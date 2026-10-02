@@ -23,7 +23,10 @@ browser.
 
 1. Open https://kailisun98.github.io/r1-1-massing/ in a desktop browser (Chrome, Edge, Firefox or
    Safari). The example lot, 3567 W 27th Ave, loads by itself: the site is fetched, the street edge
-   detected and the permitted envelope drawn, so the page opens in a working state.
+   detected and the permitted envelope drawn, so the page opens in a working state. Click
+   **Walkthrough** in the top bar for a guided two-minute demo: it steps through everything below
+   on the live page, with a spotlight and a short note at each stop (Next, Back, Skip; arrow keys
+   and Esc).
 2. In **Site** (step 1) type another Vancouver address and press Enter or **Fetch site**, or click
    **Pick a lot on the map** and click inside any lot. The site cut (200 × 200 m by default) sets
    how much context is imported. The by-law table (step 2) says whether the lot is zoned R1-1 and

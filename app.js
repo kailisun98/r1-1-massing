@@ -1013,7 +1013,7 @@ var App = (function () {
       "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "btnFormPlans", "unitParams", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
       "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "viewTabs", "plansHost", "sitePlanHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
       "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnFormSection", "btnCmhcSection", "btnPickSite", "massingMode", "schemeSeg", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightToggle", "btnLeftToggle", "sidePanel",
-      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto"].forEach(function (id) { ui[id] = $(id); });
+      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto", "btnTour"].forEach(function (id) { ui[id] = $(id); });
     ui.panes = { map: $("paneMap"), siteplan: $("paneSitePlan"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans") };
     // ---- the components: the status strip, the view tabs, the two segmented controls, the tables, the option list, the mix steppers, the toggles
     statusC = R1UI.status(ui.status, { text: "Ready.", level: "info" });
@@ -1047,6 +1047,8 @@ var App = (function () {
       var key = sec.id || "report";
       R1UI.collapsible(sec, { open: !folded[key], onToggle: function (open) { folded[key] = !open; try { localStorage.setItem("r1.folded", JSON.stringify(folded)); } catch (e2) { /* storage may be unavailable */ } } });
     });
+    tourC = R1UI.tour(document.body, { steps: tourSteps(), onDone: function (why) { if (why === "done") status("Walkthrough finished. Type your own address in step 1, or pick a lot on the map.", "info"); } });
+    ui.btnTour.addEventListener("click", function () { tourC.start(); });
     ui.btnRightClose.addEventListener("click", function () { openRight(false); });
     ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans); ui.btnFormPlans.addEventListener("click", showFloorPlans);
     ui.btnFormSection.addEventListener("click", function () { showView("section"); }); ui.btnCmhcSection.addEventListener("click", function () { showView("section"); });
@@ -1088,6 +1090,36 @@ var App = (function () {
   }
   // the map, the 3D view and the section follow the stage's size after a bar opens or closes
   function relayout() { map.invalidateSize(); if (three) three.resize(); if (!ui.panes.section.hidden) drawSection(); }
+
+  // ------------------------------------------------------------------ the walkthrough: a guided demo over the live page (R1UI.tour)
+  // each step puts the page in the state it talks about (loads the example site if nothing is loaded, draws a form,
+  // opens a tab) and spotlights the part of the page it explains
+  var tourC = null;
+  function tourSteps() {
+    function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+    function placed() { return !!(S.ev && S.ev.status === "ok" && S.placed); }
+    function ensureSite() {   // the example site when nothing is loaded yet; waits for its envelope (up to 20 s)
+      if (placed() || (S.res && S.parcel)) return wait(50);
+      if (!ui.address.value.trim()) ui.address.value = EXAMPLE_ADDRESS;
+      if (!S.res) onFetch();
+      return new Promise(function (resolve) { var t0 = Date.now(); (function poll() { if (placed() || Date.now() - t0 > 20000) resolve(); else setTimeout(poll, 250); })(); });
+    }
+    function showSide() { if (ui.sidePanel.hidden) leftC.toggle(); }
+    function withForm() { if (!placed()) return; openRight(true); setMassingMode("forms"); if (!S.form || S.form.status !== "ok" || !S.unitsOption) applyForm("single", false); }
+    return [
+      { title: "Welcome to Lotwise", text: "A two-minute tour of the workflow: a lot is read from the City's open data, checked against the R1-1 schedule clause by clause, and drawn as an envelope, massing options, floor plans, a site plan and a section. Use Next or the arrow keys; Esc leaves the tour at any point." },
+      { title: "1. Site", target: "#stepSite", text: "Type a Vancouver address and press Enter, or pick a lot on the map. The example lot has loaded by itself: its parcel, neighbours, buildings and contours come from the City of Vancouver Open Data portal, and the street edge is detected from the parcel pattern.", run: function () { showSide(); showView("map"); return ensureSite(); } },
+      { title: "2. By-law table", target: "#stepRules", text: "Every rule of the R1-1 schedule with its clause and what this site does about it: a green check is applied and met, a red cross is not met, an amber dash does not apply to what is drawn. Fold a step by clicking its heading.", run: function () { showSide(); } },
+      { title: "3. Permitted envelope", target: "#paneMap", placement: "inside", text: "The yard lines and the envelope on the map, dimensioned in millimetres outside the lot; the results table on the left gives its size and what controls it. Changing the parcel, the site cut or the street edge redraws it.", run: function () { showView("map"); return wait(200); } },
+      { title: "4. Massing options", target: "#rightPanel", placement: "left", text: "Pick a by-law form (single building, courtyard, side by side) and set the dwellings, tenure, ground-floor use, access and the unit mix: the configurator trims the building to FSR 1.0, lays out the units and lists what each rule says. The unit table and stack diagram follow below.", run: function () { withForm(); return wait(400); } },
+      { title: "The CMHC catalogue", target: "#panelCmhc", placement: "left", text: "Or test CMHC's British Columbia catalogue designs against the envelope: the ones that fit are drawn with their units in colour; the others say which rule they fail.", run: function () { if (!placed()) return; openRight(true); setMassingMode("cmhc"); return wait(700); } },
+      { title: "5. Floor plans", target: "#panePlans", placement: "inside", text: "Schematic plans of every unit on every floor, laid out from standard test fits and the adjacencies of the catalogue plans, with the exterior exit stair and walkway; the plan check under the sheet says what still fails. Floor, scale and the section beside the plans are options above the sheet.", run: function () { withForm(); showView("plans"); return wait(1500); } },
+      { title: "Site plan", target: "#paneSitePlan", placement: "inside", text: "The lot with its yard lines, the ground-floor units and their entries, the exit stairs and walkways, a car-share stall off the lane and the shared outdoor space, dimensions in halftone.", run: function () { if (!placed()) return; showView("siteplan"); return wait(500); } },
+      { title: "Site section", target: "#paneSection", placement: "inside", text: "The cut through the site and the first unit: one box per unit per floor, the walkway and stair, the yard lines and height limits with their clauses, the heights dimensioned outside the drawing.", run: function () { if (!placed()) return; showView("section"); return wait(400); } },
+      { title: "3D", target: "#pane3d", placement: "inside", text: "The site as a terrain with the surrounding buildings and every unit as a labelled box, the walkways and stairs in place. Drag to orbit, scroll to zoom.", run: function () { if (!S.square) return; showView("3d"); return wait(500); } },
+      { title: "Report and shortcuts", target: ".report", text: "Everything the run did, with every number tied to its clause; Copy report puts it on the clipboard. Keyboard: Alt+1 to Alt+5 switch the views, Alt+M the massing options, Alt+S the steps. That is the tour: try your own address.", run: function () { showSide(); showView("map"); return wait(200); } }
+    ];
+  }
   function start() {
     resetState(); bind(); initMap(); reportReset(); fillRules(); fillResults(); fillForm(); setScheme(null); setReady(); showView("map");
     loadPresets().then(function () {
@@ -1113,7 +1145,7 @@ var App = (function () {
     if (mode === "cmhc" && !S.cmhc && S.ev && S.ev.status === "ok" && S.placed) onCmhc(false);
   }
 
-  return { start: start, state: function () { return S; }, map: function () { return map; }, three: function () { return three; }, zoomToSite: zoomToSite, showView: showView,
+  return { start: start, state: function () { return S; }, map: function () { return map; }, three: function () { return three; }, zoomToSite: zoomToSite, showView: showView, tour: function () { return tourC; },
     applyForm: applyForm, onFetch: onFetch, onImport: onImport, onGenerate: onGenerate, exportSite: exportSite, bundled: BUNDLED };
 })();
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", App.start); else App.start();

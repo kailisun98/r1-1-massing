@@ -160,12 +160,13 @@ var App = (function () {
     poly(ring, { color: COLORS.site, weight: 3, fill: false, interactive: false }, "site");
     zoomToSite();
   }
+  // the map zooms in on the selected site and centres it, with a little of the neighbours around it
   function zoomToSite() {
     if (!S.parcel) return;
     map.invalidateSize();
     if (map.getSize().y < 50) { setTimeout(zoomToSite, 400); return; }   // the pane is not laid out (or hidden) yet
-    var b = L.latLngBounds(S.parcel.ring.map(ll)).pad(1.2);
-    map.fitBounds(b, { padding: [24, 24], maxZoom: 19, animate: false });
+    var b = L.latLngBounds(S.parcel.ring.map(ll)).pad(0.45);
+    map.fitBounds(b, { padding: [28, 28], maxZoom: 19, animate: false });   // no animation: a background tab would leave it half way
   }
   function setExistingVisible(show) {
     layers.buildings.eachLayer(function (p) { if (p._r1Existing) { if (show) { if (!map.hasLayer(p)) p.addTo(layers.buildings); } else p.remove(); } });

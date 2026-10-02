@@ -59,9 +59,11 @@ CDEM as a point-elevation fallback. Everything
 imported is **approximate context**; parcel dimensions must be checked against a legal survey
 before they are relied on.
 
-## Web app
+## Web app: Lotwise
 
-The same workflow runs in a browser, with no server and no Revit: [`web/index.html`](web/index.html).
+**Lotwise** (the name: it reads a lot and advises on it) is the same workflow in a browser, with no
+server and no Revit: [`web/index.html`](web/index.html). Its subtitle is *City of Vancouver R1-1
+schematic design tool*.
 **Live site:** https://kailisun98.github.io/r1-1-massing/ (GitHub Pages, from the public repo
 https://github.com/kailisun98/r1-1-massing, which holds only the web files, a README and
 `.nojekyll`; to update it, copy the changed files from `web/` into that repo and push).
@@ -143,28 +145,41 @@ opens in a working state; type another address to start over.
   sizes not on those pages are the usual catalogue sizes (0.6 m counter, 0.76 × 1.52 m tub, 0.9 m
   shower, 2.1 × 0.9 m sofa, stacked washer and dryer); stairs follow BC Building Code 2024 Part 9
   (width 0.86 m, rise under 0.2 m, 0.26 m run).
-- **Room layouts** (`web/rooms.js`): every unit level is composed from those modules. A unit on
-  several levels has a U-stair core 2.0 m wide (two 0.95 m flights side by side with a landing,
-  3.3 m long for 3.83 m floors) in the same place on every level, or a 1.0 m straight run (5.9 m)
-  along the party wall when the unit is narrower than 6.1 m, or, when the unit is too shallow for
-  rooms behind that run, the U-stair across the back wall in a 2 m band with the powder room (and
-  upstairs the bath) beside it and a cross hall in front; the entry is 1.5 m deep with a coat
-  closet, halls are 1.0 m, the bath 2.2 × 1.7 m on one wall, the powder room 1.45 × 1.4 m, the
-  kitchen band 1.8 m deep (0.6 m counter, 1.2 m aisle) with a 2.4 m run or more, the laundry a
-  0.95 m closet, bedrooms sized to the bed they hold with a 0.6 m closet or a 1.2 m walk-in. A flat
-  8.2 m or deeper gets an entry hall along the party wall, living/dining in front, the wet band
-  across the middle and the bedroom(s) behind; a shallower flat puts living/dining and the bedroom
-  side by side on the window wall with bath, kitchen and laundry across the back. A two-level unit
-  has entry, stair, powder room and laundry in the column beside living, dining and kitchen, then
-  landing, hall, primary bedroom, bath row and the other bedrooms (off a cross hall when the depth
-  allows two rooms, else one bedroom with a walk-in closet); a three-level townhouse adds an entry
-  level with bath, den and patio; the duplex an attic level with a terrace. When a unit is too
-  small for the full programme the layout drops rooms in a fixed order (the ensuite, the third
-  bedroom, the laundry closet) rather than draw rooms below these sizes, and no room is narrower
-  than a door. `R1Plans.check` re-reads every drawn plan and reports what it still fails: a room
-  without a door, a door under 0.86 m, a bedroom no bed fits, a living room under 3.2 m, a dining
-  room under 2.6 m, a kitchen under 1.7 m or with a run under 2.1 m, a bath under 1.5 m, a stair
-  that does not stack, a unit with no way in; the sheet and the unit panel show the result.
+- **Room layouts** (`web/rooms.js`): every unit level is composed from those modules, following
+  the adjacencies of the CMHC catalogue plans (Fourplex 01 and 02, Rowhouse, Duplex, Courtyard
+  Sixplex, ADU 02, read from the summary packages on 2026-10-01) and ordinary townhouse and
+  apartment practice: the entry opens into a vestibule with a coat closet and from there into the
+  living space; living, dining and kitchen are one open room (the kitchen has no door and stands
+  against the back or a side wall, open along its whole front); bedrooms and bathrooms open off a
+  hall (a short hall off the living room, a cross hall, or the upper landing), never off the kitchen
+  or another bedroom; a powder room may open off the entry hall or the dining area; the primary
+  bedroom gets the ensuite and a walk-in closet; laundry and mechanical are closets off a hall;
+  spare depth goes to the rooms (a study, an office), never to a store; a bedroom turns its back on
+  an open walkway when its wing has windows on the far side. Stairs are sized on a 3.1 m storey (the
+  by-law height is a maximum, not a storey height): a U-stair core 2.0 × 3.0 m in the same place on
+  every level, a 1.0 × 4.9 m straight run along the party wall of a narrow unit, or, in a shallow
+  unit, the U-stair across the back wall in a 2 m band with the powder room (upstairs the bath and
+  laundry) beside it. A flat 9.6 m or wider has the living space in the middle bay between bedroom
+  wings at the ends (the bedroom on the window wall, a hall along the living room, the bath and
+  closets beside the hall; reached by the side path, the wing on that side carries the vestibule
+  and a cross hall); a flat 8 m or deeper has a hall along the blind party wall with living in
+  front, the wet band and the bedrooms behind; a smaller flat has a living column beside a private
+  column; a studio one room. A two-level unit entered at grade has living, dining and kitchen below
+  (entry, stair, powder room, laundry and mechanical closets in the column) and bedrooms above (the
+  primary suite in front, the bath row, the other bedrooms off the hall or a cross hall); one
+  entered above grade from the exterior stair has its bedrooms on the entry level and its living
+  level on top, as the catalogue draws Fourplex 01 and the Sixplex; a three-level unit adds a last
+  bedroom with a den and a terrace in the roof. Wide upper levels get a hall along the stair with
+  cross halls and rows of rooms (bath, bedrooms, study, office). No closet is bigger than 4.5 m²
+  (a walk-in 6.5) and no bedroom over 22 m². `R1Plans.check` re-reads every drawn plan and reports
+  what it still fails: a room without a door, a door under 0.86 m, a bedroom no bed fits, a living
+  room under 3.2 m, a dining room under 2.6 m, a kitchen under 1.7 m or with a run under 2.1 m, a
+  bath under 1.5 m, a stair that does not stack, a unit with no way in, and the circulation: a
+  bathroom or bedroom opening off the wrong room, a closed kitchen, a closet grown into a room, an
+  oversized bedroom, the wrong number of bedrooms, a room that cannot be reached from the entry (or
+  the stair above) without passing through another room, a stair that opens off no hall; the sheet
+  and the unit panel show the result. Every by-law form at every unit count and tenure, the core
+  option and every fitting catalogue design pass with no items.
 - **Access** (`web/access.js`): how every unit is reached. Ground units are entered at grade from
   the street, or from the side-yard path when a cell sits behind another. With the internal-core
   option every unit not on the street opens onto the core's corridor and the core itself is
@@ -236,7 +251,35 @@ opens in a working state; type another address to start over.
   the marks carry an accessible label. The unit settings are grouped (count, tenure, ground floor,
   access; then the mix). The stage, the steps and the massing options have fixed grid positions, so
   hiding a bar widens the stage instead of shifting it.
-- **Layout**: a top bar carries the title, *City of Vancouver R1-1 Schematic Design Tool*, the
+- **UI components** (`web/ui.js`, styles and design tokens in `web/ui.css`; gallery
+  `web/ui-gallery.html`, tests `web/ui-test.html`): the page is built from a small, dependency-free
+  component layer, `R1UI`. Each factory takes a host element and a props object, renders into the
+  host and returns `{ el, update(partialProps), destroy() }`; props go in, callbacks (`onChange`,
+  `onToggle`, `onReselect`) come out, and `update()` never fires a callback: it syncs the DOM in
+  place (focus and scroll kept) while the item ids are unchanged and rebuilds only when they change.
+  Components: `tabs` (the five views; a tablist with roving tabindex and manual activation, so a heavy
+  pane is not built while arrowing past its tab; panels get `role=tabpanel`), `segmented` (massing
+  source, form; a radio group, arrows move and select, re-choosing fires `onReselect`), `toolbar`
+  (the floor, scale, section, car-share and outdoor-space groups above the sheets), `status` (the
+  strip: a polite live region, assertive for errors, `aria-busy` while working), `notice` (the plan
+  check, with its items as a list; an error is an alert), `busy` (the placeholder while a sheet is
+  computed), `optionList` (the catalogue designs: a listbox whose non-fitting cards stay focusable
+  and readable with the failing rule; skeleton cards while loading; a sentence when empty), `table`
+  (by-law, envelope, form and unit tables: scoped headers, group rows as row-group headers, state
+  marks with text alternatives, element cells for the colour swatches, skeleton rows, an empty row),
+  `stepper` (the unit mix: − and + with "Fewer/More …" names, a help line stating the limit and its
+  reason, typed values clamped, max 0 disabling the control), `field` (a labelled select or input
+  with help and an error wired through `aria-describedby` / `aria-invalid`), `collapsible` (each step
+  folds from its heading, which becomes a disclosure button; the folds are remembered per browser)
+  and `toggleButton` (the bars and the map pick modes, `aria-pressed`). Edge cases handled
+  everywhere: zero or one item, a value not among the items (nothing selected, a `console.warn`),
+  a disabled current value, long labels (ellipsis plus title), rapid repeated updates. Tab strips
+  scroll sideways on a phone, toolbars and cards wrap, targets grow to 44 px on coarse pointers,
+  motion stops under `prefers-reduced-motion`, and every colour is a token that `ui.css` redefines
+  for dark mode. `ui-gallery.html` shows each component live with its props table, state knobs
+  (loading, empty, disabled, error), a demo-width slider and a theme switch; `ui-test.html` drives
+  every component through the DOM events a user would fire (86 checks, all passing).
+- **Layout**: a top bar carries the name, *Lotwise*, with its subtitle *City of Vancouver R1-1 schematic design tool*, the
   source line, a button that hides or shows the steps on the left and one for the massing options
   on the right. The massing options (step 4) sit in the right panel, which opens as soon as the
   site has its envelope; in 3D every unit box carries its tag (unit, bedrooms) and each building a
@@ -276,7 +319,13 @@ opens in a working state; type another address to start over.
   its programme (U4 · 2 BED, GROCERY STORE), the walkway slabs with their guards and the exit stair
   it crosses, the property lines, the yard lines of the schedule (front 4.9 m, rear 10.7 m, and
   0.9 m for a rear building) and the height limit over each building, all labelled with their
-  clauses.
+  clauses. The annotation keeps clear of the drawing: the building heights stand outside it (the
+  front or only building's in the front yard on the left, a rear building's beyond the rear
+  property line on the right), the yard and property lines run up into a head band where their
+  names are laid out on rows so that no name sits across another line (a name is anchored left or
+  right of its line when centring it would cross a neighbour), the height-limit label reads along
+  its line from inside the building's span, a figure too wide for its span sits past the span's
+  end, and a walkway's name stands away from the building face.
 - `web/selftest.html` runs the ported headless checks in the browser (all pass).
 - Libraries from CDNs: Leaflet 1.9.4, three.js r128 with OrbitControls.
 
@@ -305,6 +354,7 @@ tiles there; everything else identical). The link is private until it is shared 
 01 Revit Massing tool/
   web/                                      the browser version (see "Web app" above)
     index.html, app.js, core.js, site.js, massing.js, cmhc.js, units.js, access.js, fits.js, rooms.js, plans.js, siteplan.js, selftest.html
+    ui.js, ui.css, ui-gallery.html, ui-test.html   the UI components (R1UI), their styles and design tokens, the gallery and the component tests
     tools/serve.py, tools/build_artifact.py the local server (+ save endpoint) and the artifact bundle build
     artifact.html, data/, tiles/            generated: the shared copy's page, stored site files, map tiles
   r1_1_envelope.py                          the Rhino original (reference)
@@ -523,6 +573,9 @@ placement, the by-law and results tables, the site square and its clipping of ri
 elevation points, the three form options with their geometry, refusals and tables, `FORM_RULES`
 against the schedule extract, the workflow end to end) plus live checks on the real 1560 W 13th
 Ave fetch and the zoning lookup. Live checks are reported as SKIP without network.
+
+In the browser, `web/selftest.html` runs the ported engine checks (79) and `web/ui-test.html` the
+component checks (86): open them from the local server and read the last line.
 
 The Revit side is exercised inside Revit through the **r1-1 Routes** channel that the sibling
 extension registers (`POST http://localhost:48884/r1-1/exec` with `{"path": "...py", "args": {...}}`):

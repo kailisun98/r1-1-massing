@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>City of Vancouver R1-1 Schematic Design Tool</title>
+<title>Lotwise</title>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="ui.css">
 <style>
@@ -27,6 +27,7 @@ select, input[type="text"] { max-width: 100%; }
 .status { grid-column: 1 / -1; }
 .topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .topbar h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
+.topbar h1 .sub { font-weight: 400; font-size: 12.5px; color: var(--muted); margin-left: 8px; letter-spacing: 0; }
 .topbar .hint { margin: 0; flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .topbar .secondary.on { background: var(--ink); color: var(--panel); }
 .side { width: min(400px, 34vw); }
@@ -155,6 +156,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
   .side { width: min(360px, 34vw); }
   .right { width: 340px; }
   .topbar h1 { font-size: 14px; white-space: normal; }
+  .topbar h1 .sub { display: block; margin-left: 0; font-size: 11.5px; }
 }
 @media (max-width: 820px) {
   .app { grid-template-columns: 1fr; grid-template-rows: auto auto 55vh auto auto; }
@@ -171,7 +173,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
 <div class="app">
   <header class="topbar">
     <button id="btnLeftToggle" class="iconbtn" title="Show or hide the steps" aria-label="Show or hide the steps" aria-pressed="true">&#9776;</button>
-    <h1>City of Vancouver R1-1 Schematic Design Tool</h1>
+    <h1>Lotwise <span class="sub">City of Vancouver R1-1 schematic design tool</span></h1>
     <p id="sourceLine" class="hint"></p>
     <button id="btnRightToggle" class="secondary" title="Show or hide the massing options" aria-pressed="false" disabled>Massing options</button>
   </header>

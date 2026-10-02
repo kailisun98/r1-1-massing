@@ -1,4 +1,4 @@
-/* app.js -- the R1-1 Massing web app: the five-step sidebar, the map/plan, the 3D view and
+/* app.js -- Lotwise, the City of Vancouver R1-1 schematic design tool: the five-step sidebar, the map/plan, the 3D view and
    the site section. Same workflow as the Revit panel (lib/r1_1_massing_ui.py). */
 var App = (function () {
   "use strict";
@@ -43,7 +43,7 @@ var App = (function () {
   function reportReset() {
     var R = core.RULES.source;
     ui.report.textContent = "";
-    report(["R1-1 MASSING", "Source: " + R.document, "Version: " + R.version + " | Accessed: " + R.accessed, "URL: " + R.url, "NOTE: " + R.note, ""]);
+    report(["LOTWISE: R1-1 MASSING", "Source: " + R.document, "Version: " + R.version + " | Accessed: " + R.accessed, "URL: " + R.url, "NOTE: " + R.note, ""]);
   }
 
   // ------------------------------------------------------------------ tables (R1UI.table)
@@ -723,7 +723,7 @@ var App = (function () {
   function exportSite() {
     if (!S.res || !S.siteTape) return null;
     var na = site.normaliseAddress(S.address), t = S.res.target, wd = t ? site.approxDims(t.ring) : null;
-    return { format: "r1-1-site/1", app: "R1-1 Massing web app", saved: new Date().toISOString(), address: S.address, civic: na[0], street: na[1],
+    return { format: "r1-1-site/1", app: "Lotwise", saved: new Date().toISOString(), address: S.address, civic: na[0], street: na[1],
       centre: S.res.centre, radius_m: S.res.radius_m, zoning: S.zone ? S.zone.district : null, local_area: S.hit ? S.hit.local_area : null,
       label: t ? t.civic + " " + t.street + (wd ? " (" + fmt(wd[0], 1) + " x " + fmt(wd[1], 1) + " m)" : "") : null,
       requests: site.slimTape(S.siteTape, S.res.centre[0], S.res.centre[1], S.res.radius_m + 25) };

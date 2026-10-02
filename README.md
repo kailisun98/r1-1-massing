@@ -40,10 +40,15 @@ browser.
    access (exterior stair and walkway, or a shared internal stair) and the unit mix; under
    **CMHC catalogue** click a design that fits the envelope. The unit table and stack diagram
    appear below.
-5. Switch the stage with the tabs **Map**, **Site plan**, **3D**, **Site section** and
-   **Floor plans** (keyboard: Alt+1 to Alt+5). The floor plans sheet carries the plan check under
-   the drawing; the site plan has car-share and outdoor-space options above it.
-6. **Copy report** (left bar, Report) copies the whole run with every clause; **Save site file**
+5. Switch the stage with the tabs **Map**, **Site plan**, **3D**, **Site section**,
+   **Floor plans** and **Summary** (keyboard: Alt+1 to Alt+6). The floor plans sheet carries the
+   plan check under the drawing; the site plan has car-share and outdoor-space options above it.
+6. End with **Summary** (the last tab, or the Summary button under the massing options): the key
+   development statistics of the drawn option (site, envelope, coverage, gross floor area and FSR
+   against the 1.0 cap, units and family units, tenure, access, car share, outdoor space), the
+   by-law checks, the unit schedule, the 3D view, the site plan, the section and the floor plans
+   on one page. **Export PDF** writes them to a four-page A4 report.
+7. **Copy report** (left bar, Report) copies the whole run with every clause; **Save site file**
    keeps the fetched data for the shared copy of the app.
 
 To run it on your own machine: clone the repository and serve the folder, for example
@@ -53,7 +58,7 @@ python -m http.server 8765
 ```
 
 then open http://localhost:8765/. Opening `index.html` straight from disk also works in most
-browsers. `selftest.html` runs the engine checks (79) and `ui-test.html` the component checks (86);
+browsers. `selftest.html` runs the engine checks (80) and `ui-test.html` the component checks (96);
 `ui-gallery.html` shows the interface components.
 
 This repository also holds the Revit 2026 (pyRevit) version of the same workflow, **R1-1
@@ -354,12 +359,27 @@ opens in a working state; type another address to start over.
 - **3D annotation**: each unit box has its programme painted on its faces in large letters in a
   darker shade of its colour (U3 · 3 BED, GROCERY STORE), the way a programme diagram is drawn;
   the by-law blocks and the bare envelope are labelled the same way.
+- **Summary tab and PDF** (`web/summary.js`, `drawSummary` and `exportSummaryPdf` in `app.js`):
+  the last tab of the flow. `R1Summary.stats` gathers the statistics of the drawn option from the
+  envelope, the form and the unit configuration: site area, frontage, depth and unit band; the
+  permitted envelope, its controlling constraint and the yards; each building's size, height and
+  storeys with its clause, the separations, site coverage, gross floor area (every storey full,
+  or the catalogue's gross building area) and the FSR against the 1.0 cap of 3.1.1.2; the
+  dwellings and their mix, the family units against the 2.2.8 minimum, tenure, ground-floor use,
+  average unit area, access, the car-share stalls and the shared outdoor space of the site plan;
+  then the option's checks and the plan check, and the unit schedule. The page shows them beside
+  a capture of the 3D view, with the site plan, the section and all the floor plans below.
+  **Export PDF** loads jsPDF 2.5.1 and its AutoTable plugin from cdnjs on first use and writes a
+  four-page A4 landscape report (statistics and checks; the 3D view; site plan, section and
+  unit schedule; floor plans), the SVG sheets rasterised through a canvas; the Pages copy saves
+  the file directly and the artifact copy hands it to the viewer through the host's download
+  prompt. **Print** (Pages copy) prints the summary alone through a print stylesheet.
 - **UI**: following the usual principles (hierarchy, progressive disclosure, consistency, contrast,
   accessibility, proximity, alignment, feedback): one title bar; a status strip under it that is
   always visible, colour-coded, with a spinner while a fetch runs or the plans are being checked;
   both side bars collapse; one primary action per step; segmented controls for the massing source
   and the form; option cards with a fits / no-fit pill; disclosure sections for help text; keyboard
-  shortcuts Alt+1 to Alt+5 for the views, Alt+M and Alt+S for the bars. The by-law table (step 2)
+  shortcuts Alt+1 to Alt+6 for the views, Alt+M and Alt+S for the bars. The by-law table (step 2)
   marks every rule: a green check where it is applied and met, a red cross where it is checked and
   not met, an amber dash where it does not apply to what is drawn (the courtyard and side-by-side
   rules until such a form is drawn, the 3-unit rule on a larger site), with a key under the table;

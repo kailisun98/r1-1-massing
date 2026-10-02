@@ -19,6 +19,7 @@
 <script src="rooms.js"></script>
 <script src="plans.js"></script>
 <script src="siteplan.js"></script>
+<script src="summary.js"></script>
 <script>
 (function () {
   var out = document.getElementById("out"), fails = 0, total = 0;
@@ -195,6 +196,10 @@
   // the by-law table states
   var rr = M.rulesRows(ev, fc), rr0 = M.rulesRows(ev, null), st = function (rows, re) { var r = rows.filter(function (x) { return re.test(x[0]); })[0]; return r && r[4]; };
   check("rules: states are ok / fail / na: the 6-unit band applied, the 3-unit rule not applicable, courtyard rules ok with the courtyard form and na without it, side-by-side na", st(rr, /Up to 6/) === "ok" && st(rr, /^3 units/) === "na" && st(rr, /Min site depth, courtyard/) === "ok" && st(rr0, /Min site depth, courtyard/) === "na" && st(rr, /side by side/) === "na" && st(rr, /Max building width/) === "ok" && st(rr, /Front yard/) === "ok", rr.map(function (r) { return r[0].slice(0, 24) + ":" + r[4]; }));
+  // the development summary at the end of the flow
+  var sum = R1Summary.stats({ ev: ev, form: f8, option: u8, parcel: block[0], zone: { district: "R1-1" }, address: "1560 W 13th Ave", site: { stalls: 1, shared_m2: 120, patios: 0 }, planIssues: [] });
+  check("summary: the 8 rental units on the synthetic lot: FSR 1.00 within the cap, coverage, 8 dwellings with 3 family units, access, car share, a passed plan check, 8 unit rows and the four statistic groups", close(sum.fsr, 1.0, 0.02) && sum.coverage > 0.3 && sum.groups.length === 4 && sum.groups[3].rows.some(function (r) { return r[0] === "Dwelling units" && /^8 /.test(r[1]); }) && sum.groups[3].rows.some(function (r) { return r[0] === "Family units (2+ bedrooms)" && /minimum 3/.test(r[1]) && r[2]; }) &&
+    sum.groups[2].rows.some(function (r) { return r[0] === "FSR" && /within/.test(r[1]) && /3\.1\.1\.2/.test(r[2]); }) && sum.groups[3].rows.some(function (r) { return r[0] === "Car share" && /1 stall/.test(r[1]); }) && sum.checks.some(function (c) { return c[0] === "Plan check" && c[3] === "ok"; }) && sum.units.length === 8 && /^8 units/.test(sum.option) && sum.source.document, { fsr: sum.fsr, groups: sum.groups.map(function (g) { return g.title + ":" + g.rows.length; }), checks: sum.checks, option: sum.option });
   var ua = R1Cmhc.unitAreas(byKey.fourplex_01);
   check("cmhc areas: Fourplex 01 ground flats ~67 m2 each, upper units ~134 m2", close(ua["U1@single"], 134.1 / 2, 0.1) && close(ua["U3@single"], 134.1, 0.1), ua);
   var url = R1Site.exportUrl("property-parcel-polygons", R1Site.within(-123.18, 49.25, 161.4));

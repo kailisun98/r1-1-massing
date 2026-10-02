@@ -135,6 +135,27 @@ fieldset.units .ui-stepper { margin-bottom: 4px; }
 .sheet-table { max-width: 110ch; margin-top: 10px; }
 .sheet-table th { width: 150px; text-transform: none; letter-spacing: 0; font-size: 11.5px; color: var(--ink); vertical-align: top; }
 #paneSitePlan { overflow: auto; background: var(--page); }
+/* the development summary: statistics beside the 3D view, then the unit schedule and the drawings; printable */
+#paneSummary { overflow: auto; background: var(--page); }
+.summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 8px 24px; align-items: start; margin-top: 4px; }   /* two columns when the stage is wide enough, else one */
+.summary-grid .ui-table { margin-top: 10px; }
+.summary-3d { display: block; width: 100%; max-width: 640px; border: 1px solid var(--line); border-radius: 6px; background: #f4f5f7; margin-top: 10px; }
+.summary-h { margin: 20px 0 6px; font-size: 13px; font-weight: 600; }
+.summary-sheet { background: #ffffff; border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; max-width: 1400px; }
+.summary-sheet svg { max-width: 100%; height: auto; display: block; }
+.summary-notes { margin-top: 12px; color: var(--muted); font-size: 12px; max-width: 100ch; }
+#summaryHost .ui-table { width: 100%; }
+#summaryHost .ui-table td { white-space: normal; overflow-wrap: anywhere; }
+@media print {
+  .topbar, .status, .side, .right, .tabs, .legend, #paneSummary .sheet-tools { display: none !important; }
+  .app { display: block; height: auto; }
+  .stage { display: block; }
+  .pane { display: none !important; }
+  #paneSummary { display: block !important; position: static; overflow: visible; background: #fff; }
+  .summary-grid { grid-template-columns: 1fr 1fr; }
+  .summary-h { break-before: page; }
+  .summary-sheet { border: none; padding: 0; overflow: visible; }
+}
 /* the site plan: the drawing on the left, its legend, schedule and notes beside it when there is room */
 .sheet-row { display: flex; flex-wrap: wrap; gap: 16px 24px; align-items: flex-start; }
 .sheet-row .sheet-body { flex: 0 0 auto; max-width: 100%; }
@@ -249,7 +270,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
   <main class="stage">
     <div class="tabs">
       <div id="viewTabs"></div>
-      <span class="hint" title="Keyboard: Alt+1 to Alt+5 switch views; Alt+M massing options; Alt+S steps">City of Vancouver Open Data · dimensions in mm · <kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>5</kbd> views</span>
+      <span class="hint" title="Keyboard: Alt+1 to Alt+6 switch views; Alt+M massing options; Alt+S steps">City of Vancouver Open Data · dimensions in mm · <kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>6</kbd> views</span>
     </div>
     <div id="paneMap" class="pane">
       <div id="map" role="application" aria-label="Site plan on a map"></div>
@@ -266,6 +287,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
     <div id="pane3d" class="pane" hidden><div id="threeHost"></div></div>
     <div id="paneSection" class="pane" hidden><div id="sectionHost"></div></div>
     <div id="panePlans" class="pane" hidden><div id="plansHost" class="sheet"><p class="empty">Draw a massing option in step 4, then open its floor plans.</p></div></div>
+    <div id="paneSummary" class="pane" hidden><div id="summaryHost" class="sheet"><p class="empty">Draw a massing option in step 4: the summary gathers its statistics, checks, unit schedule and drawings.</p></div></div>
   </main>
 
   <aside class="right" id="rightPanel" hidden aria-labelledby="h4s">
@@ -295,7 +317,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
               <div class="row"><label id="mix1Lbl">1-bedroom</label><span id="mix1Out" class="readout" aria-labelledby="mix1Lbl"></span></div>
               <div class="actions"><button id="btnMixAuto" class="secondary" title="Bedrooms by each unit's area again">Mix by area</button></div>
             </fieldset>
-            <div class="actions"><button id="btnFormPlans" class="primary" disabled>Floor plans</button><button id="btnFormSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
+            <div class="actions"><button id="btnFormPlans" class="primary" disabled>Floor plans</button><button id="btnFormSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnFormSummary" class="secondary" disabled title="Open the Summary tab: statistics, FSR, checks, the unit schedule and a PDF export">Summary</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
             <table id="formTable"></table>
             <p id="formNote" class="muted"></p>
           </div>
@@ -303,7 +325,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
             <p class="muted" style="margin-top:0">The British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a>, tested against this envelope. Click a fitting option to draw it.</p>
             <div id="cmhcList"></div>
             <p id="cmhcNote" class="muted"></p>
-            <div class="actions"><button id="btnCmhcPlans" class="primary" disabled>Floor plans</button><button id="btnCmhcSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
+            <div class="actions"><button id="btnCmhcPlans" class="primary" disabled>Floor plans</button><button id="btnCmhcSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnCmhcSummary" class="secondary" disabled title="Open the Summary tab: statistics, FSR, checks, the unit schedule and a PDF export">Summary</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
             <details class="help"><summary>What is checked</summary><p class="muted">Width, depth, storeys and height against the envelope; the unit count this site's band allows; floor area against FSR 1.00; and, for a design with an accessory dwelling unit behind it, the courtyard rules (3.1.2.4(a), 3.1.2.8(a), 3.1.2.11(c), 3.1.2.5(a)). Options that do not fit say which rule they fail.</p></details>
           </div>
           <div id="unitsPanel"></div>
@@ -325,6 +347,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
 <script src="rooms.js"></script>
 <script src="plans.js"></script>
 <script src="siteplan.js"></script>
+<script src="summary.js"></script>
 <script src="ui.js"></script>
 <script src="app.js"></script>
 </body>

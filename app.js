@@ -16,7 +16,7 @@ var App = (function () {
   var ui = {};          // DOM handles
   // the components (ui.js): props in, callbacks out; the app never touches their DOM
   var statusC, tabsC, modeC, schemeC, cmhcC, leftC, rightC, pickC, pickSiteC, tables = {}, mixC = {}, plansBusy = null;
-  var TAB_ITEMS = [{ id: "map", label: "Map", panel: "paneMap" }, { id: "siteplan", label: "Site plan", panel: "paneSitePlan" }, { id: "3d", label: "3D", panel: "pane3d" }, { id: "section", label: "Site section", panel: "paneSection" }, { id: "plans", label: "Floor plans", panel: "panePlans" }];
+  var TAB_ITEMS = [{ id: "map", label: "Map", panel: "paneMap" }, { id: "siteplan", label: "Site plan", panel: "paneSitePlan" }, { id: "3d", label: "3D", panel: "pane3d" }, { id: "section", label: "Site section", panel: "paneSection" }, { id: "plans", label: "Floor plans", panel: "panePlans" }, { id: "summary", label: "Summary", panel: "paneSummary" }];
   var SCHEME_LABELS = { single: "Single building", courtyard: "Courtyard", side_by_side: "Side by side" };
   var map, layers = {}, tileLayer = null, presetLayer = null, three = null, pickMode = false, sitePickMode = false, sectionDirty = true, threeDirty = true;
 
@@ -69,9 +69,9 @@ var App = (function () {
     ui.edgeSelect.disabled = !haveSite; pickC.update({ disabled: !haveSite });
     schemeC.update({ disabled: !haveEnv });
     var bylawUp = !!(S.form && S.form.status === "ok" && S.form.scheme !== "cmhc");
-    ui.btnFormClear.disabled = !bylawUp; ui.unitParams.disabled = !bylawUp; ui.btnFormPlans.disabled = !(bylawUp && S.unitsOption); ui.btnFormSection.disabled = !haveEnv;
-    ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc"); ui.btnCmhcPlans.disabled = !S.cmhcPick; ui.btnCmhcSection.disabled = !haveEnv;
-    tabsC.update({ items: tabItems({ "3d": !haveModel, section: !haveSite, plans: !S.unitsOption, siteplan: !haveEnv }) });
+    ui.btnFormClear.disabled = !bylawUp; ui.unitParams.disabled = !bylawUp; ui.btnFormPlans.disabled = !(bylawUp && S.unitsOption); ui.btnFormSection.disabled = !haveEnv; ui.btnFormSummary.disabled = !(bylawUp && S.unitsOption);
+    ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc"); ui.btnCmhcPlans.disabled = !S.cmhcPick; ui.btnCmhcSection.disabled = !haveEnv; ui.btnCmhcSummary.disabled = !S.cmhcPick;
+    tabsC.update({ items: tabItems({ "3d": !haveModel, section: !haveSite, plans: !S.unitsOption, siteplan: !haveEnv, summary: !S.unitsOption }) });
     rightC.update({ disabled: !haveEnv && ui.rightPanel.hidden });
     ui.stepBadges.forEach(function (b, i) {
       var done = [haveModel, !!S.ev, haveEnv, !!(S.form && S.form.status === "ok")][i];
@@ -575,10 +575,11 @@ var App = (function () {
     if (name === "section" && sectionDirty) drawSection();
     if (name === "plans" && plansDirty) drawPlans();
     if (name === "siteplan" && sitePlanDirty) drawSitePlan();
+    if (name === "summary" && summaryDirty) drawSummary();
   }
   function markDirty() {
-    threeDirty = true; sectionDirty = true; plansDirty = true; sitePlanDirty = true;
-    if (!ui.panes.section.hidden) drawSection(); if (!ui.panes["3d"].hidden && S.square) build3D(); if (!ui.panes.plans.hidden) drawPlans(); if (!ui.panes.siteplan.hidden) drawSitePlan();
+    threeDirty = true; sectionDirty = true; plansDirty = true; sitePlanDirty = true; summaryDirty = true;
+    if (!ui.panes.section.hidden) drawSection(); if (!ui.panes["3d"].hidden && S.square) build3D(); if (!ui.panes.plans.hidden) drawPlans(); if (!ui.panes.siteplan.hidden) drawSitePlan(); if (!ui.panes.summary.hidden) drawSummary();
   }
   // the plan sheets read as a rotation of the map (street at the top): when side 1 lies on the right of that view, the floor plans mirror to match
   function plansMirror() { return S.ev && S.ev.status === "ok" ? R1SitePlan.frame(S.ev).mirror : false; }
@@ -669,6 +670,137 @@ var App = (function () {
   function showFloorPlans() {
     if (!(S.unitsOption && S.form && S.form.status === "ok")) { status("Draw a massing option first (step 4).", "error"); return; }
     plansDirty = true; showView("plans");
+  }
+
+  // ------------------------------------------------------------------ the development summary: the end of the flow (R1Summary)
+  // the key statistics of the drawn option with its FSR, the by-law checks, the unit schedule and the drawings on one
+  // page, and the same as an A4 PDF report with the 3D view, the site plan, the section and the floor plans
+  var summaryDirty = true, summaryBusy = null, summaryTimer = null, SUMMARY_EMPTY = "Draw a massing option in step 4: the summary gathers its statistics, checks, unit schedule and drawings.";
+  var PDF_LIBS = ["https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js", "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"];
+  var SECTION_SVG_CSS = ".secdim{font-family:Consolas,'Courier New',monospace;fill:#2c3e50}.sectitle{font-family:Helvetica,Arial,sans-serif;fill:#6b7280}.seclbl{font-family:Helvetica,Arial,sans-serif;fill:#6b7280;letter-spacing:.04em}.secmark{font-family:Helvetica,Arial,sans-serif;fill:#b42828;letter-spacing:.04em}.secunit{font-family:Helvetica,Arial,sans-serif}";
+  function summaryReady() { return !!(S.ev && S.ev.status === "ok" && S.placed && S.unitsOption && S.form && S.form.status === "ok"); }
+  function summaryCtx() {
+    var form = S.form, o = S.unitsOption;
+    var sheet = R1SitePlan.sheet({ ev: S.ev, form: form, option: o, res: S.res, det: S.det, parcel: S.parcel, address: S.address }, sitePlanOpts);
+    return { ev: S.ev, form: form, option: o, parcel: S.parcel, zone: S.zone, address: S.address, site: { stalls: sheet.stalls, shared_m2: sheet.shared_m2, patios: sheet.patios }, planIssues: R1Plans.check(o), sheet: sheet };
+  }
+  function drawSummary() {   // the sheet takes a moment (the plans are laid out and checked again): say so, then draw
+    var host = ui.summaryHost; summaryDirty = false;
+    if (summaryBusy) { summaryBusy.destroy(); summaryBusy = null; }
+    if (!summaryReady()) { host.innerHTML = ""; host.appendChild(el("p", "empty", SUMMARY_EMPTY)); return; }
+    host.innerHTML = ""; summaryBusy = R1UI.busy(host, { text: "Gathering the statistics, checks, unit schedule and drawings…" });
+    if (summaryTimer) clearTimeout(summaryTimer);
+    summaryTimer = setTimeout(function () { summaryTimer = null; drawSummaryNow(); }, 30);
+  }
+  function drawSummaryNow() {
+    var host = ui.summaryHost;
+    if (summaryBusy) { summaryBusy.destroy(); summaryBusy = null; }
+    host.innerHTML = "";
+    if (!summaryReady()) { host.appendChild(el("p", "empty", SUMMARY_EMPTY)); return; }
+    var ctx = summaryCtx(), data = R1Summary.stats(ctx), o = ctx.option;
+    var head = el("div", "sheet-head");
+    head.appendChild(el("h2", null, "Development summary: " + (data.address || "site") + " · " + data.option));
+    head.appendChild(el("p", null, "The end of the flow: the key statistics of the drawn option with its FSR, the by-law checks, the unit schedule and the drawings, as of " + data.date + ". Export PDF writes them to an A4 report with the 3D view, the site plan, the section and the floor plans."));
+    host.appendChild(head);
+    var tools = el("div", "sheet-tools ui-toolbar"); tools.setAttribute("role", "toolbar"); tools.setAttribute("aria-label", "Summary actions");
+    var btnPdf = el("button", "primary", "Export PDF"); btnPdf.type = "button"; btnPdf.title = "An A4 landscape PDF: statistics and 3D view, site plan and section with the unit schedule, floor plans";
+    btnPdf.addEventListener("click", function () { exportSummaryPdf(btnPdf); }); tools.appendChild(btnPdf);
+    if (!BUNDLED) { var btnPrint = el("button", "secondary", "Print"); btnPrint.type = "button"; btnPrint.title = "Print this page (the summary only)"; btnPrint.addEventListener("click", function () { window.print(); }); tools.appendChild(btnPrint); }
+    host.appendChild(tools);
+    // the statistics on the left; the 3D view and the checks on the right
+    var grid = el("div", "summary-grid"), left = el("div"), right = el("div"); grid.appendChild(left); grid.appendChild(right); host.appendChild(grid);
+    data.groups.forEach(function (g) {
+      var t = el("div"); left.appendChild(t);
+      R1UI.table(t, { caption: g.title, captionHidden: true, columns: [{ label: g.title, width: "30%" }, { label: "Value", hidden: true, width: "54%" }, { label: "Clause", kind: "clause", width: "16%" }], rows: g.rows.map(function (r) { return { cells: [r[0], r[1], r[2] || ""] }; }) });
+    });
+    var shot = capture3D(1200, 760);
+    if (shot) { var im = el("img", "summary-3d"); im.src = shot.data; im.width = 600; im.height = 380; im.alt = "3D view of " + data.option + " on " + data.address; right.appendChild(im); }
+    var chk = el("div"); right.appendChild(chk);
+    R1UI.table(chk, { caption: "Checks", captionHidden: true, emptyText: "No checks for this option.", columns: [{ label: "Check", width: "26%" }, { label: "Result", kind: "status", width: "58%" }, { label: "Clause", kind: "clause", width: "16%" }], rows: data.checks.map(function (c) { return { cells: [c[0], c[1], c[2]], state: c[3] }; }) });
+    host.appendChild(el("h3", "summary-h", "Unit schedule"));
+    var ut = el("div"); host.appendChild(ut);
+    R1UI.table(ut, { caption: "Unit schedule", captionHidden: true, columns: [{ label: "Unit" }, { label: "Bedrooms" }, { label: "Baths" }, { label: "Floors" }, { label: "Area" }, { label: "Note" }],
+      rows: data.units.map(function (u) { var tag = el("span"); tag.style.borderLeft = "10px solid " + u.color; tag.style.paddingLeft = "6px"; tag.textContent = u.cells[0]; return { cells: [tag].concat(u.cells.slice(1)) }; }) });
+    host.appendChild(el("h3", "summary-h", "Site plan"));
+    var sp = el("div", "summary-sheet"); sp.innerHTML = ctx.sheet.svg; host.appendChild(sp);
+    host.appendChild(el("h3", "summary-h", "Site section A-A"));
+    var sc = el("div", "summary-sheet"), secSvg = sectionSvg(Math.min(1100, Math.max(600, (host.clientWidth || 1000) - 40)));
+    if (typeof secSvg === "string") sc.appendChild(el("p", "empty", secSvg)); else sc.appendChild(secSvg);
+    host.appendChild(sc);
+    host.appendChild(el("h3", "summary-h", "Schematic floor plans"));
+    var fp = el("div", "summary-sheet"), plans = R1Plans.sheet(o, { k: 14, mirror: plansMirror() }); fp.innerHTML = plans.svg; host.appendChild(fp);
+    var lg = el("div", "sheet-legend"); lg.innerHTML = plans.legend; host.appendChild(lg);
+    var notes = el("div", "summary-notes");
+    notes.innerHTML = "<p>" + esc(data.source.document + ", " + data.source.version + " (accessed " + data.source.accessed + "). City of Vancouver Open Data. Gross floor area counts every storey full (a catalogue design: its gross building area); the by-law's FSR exclusions are not modelled. Unit areas are each unit's share of the footprint. A schematic design aid, not a permit submission.") + "</p>";
+    host.appendChild(notes);
+    status("Summary of " + o.name + ": FSR " + fmt(data.fsr, 2) + ", " + o.units + " units" + (data.checks.some(function (c) { return c[3] === "fail"; }) ? "; some checks fail." : "; every check passes."), "ok");
+  }
+  // the 3D view as a PNG, rendered off the live scene at w x h (the view is left as the user set it)
+  function capture3D(w, h) {
+    if (!S.square) return null;
+    if (!three || threeDirty) build3D();
+    var r = three.renderer, cam = three.camera;
+    r.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
+    three.controls.update(); r.render(three.scene, cam);
+    var cv = document.createElement("canvas"); cv.width = r.domElement.width; cv.height = r.domElement.height;
+    cv.getContext("2d").drawImage(r.domElement, 0, 0);
+    three.resize();
+    return { data: cv.toDataURL("image/jpeg", 0.85), w: cv.width, h: cv.height };
+  }
+  // an SVG (text, or the section element) as a JPEG `scale` times its size, on white (a PNG of a sheet makes a 20 MB report)
+  function svgToPng(svg, scale) {
+    return new Promise(function (resolve) {
+      var root = typeof svg === "string" ? new DOMParser().parseFromString(svg, "image/svg+xml").documentElement : svg.cloneNode(true);
+      var w = parseFloat(root.getAttribute("data-w") || root.getAttribute("width")), h = parseFloat(root.getAttribute("data-h") || root.getAttribute("height")), vb = (root.getAttribute("viewBox") || "").split(/\s+/);
+      if (!(w > 0) && vb.length === 4) w = parseFloat(vb[2]); if (!(h > 0) && vb.length === 4) h = parseFloat(vb[3]);
+      if (!(w > 0 && h > 0)) { resolve(null); return; }
+      root.setAttribute("xmlns", "http://www.w3.org/2000/svg"); root.setAttribute("width", w); root.setAttribute("height", h);
+      if (typeof svg !== "string") { var st = document.createElementNS("http://www.w3.org/2000/svg", "style"); st.textContent = SECTION_SVG_CSS; root.insertBefore(st, root.firstChild); }
+      var text = new XMLSerializer().serializeToString(root), img = new Image(), url = URL.createObjectURL(new Blob([text], { type: "image/svg+xml;charset=utf-8" }));
+      img.onload = function () {
+        var cv = document.createElement("canvas"); cv.width = Math.round(w * scale); cv.height = Math.round(h * scale);
+        var c = cv.getContext("2d"); c.fillStyle = "#ffffff"; c.fillRect(0, 0, cv.width, cv.height); c.drawImage(img, 0, 0, cv.width, cv.height);
+        URL.revokeObjectURL(url); resolve({ data: cv.toDataURL("image/jpeg", 0.92), w: cv.width, h: cv.height });
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); resolve(null); };
+      img.src = url;
+    });
+  }
+  function loadScript(src) { return new Promise(function (res, rej) { var s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = function () { rej(new Error("the PDF library could not be loaded (" + src.split("/")[5] + ")")); }; document.head.appendChild(s); }); }
+  function loadPdfLibs() {   // jsPDF and its AutoTable plugin, fetched from cdnjs the first time a PDF is exported
+    if (window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API.autoTable) return Promise.resolve();
+    return loadScript(PDF_LIBS[0]).then(function () { return loadScript(PDF_LIBS[1]); });
+  }
+  function savePdf(doc, name) {
+    if (!BUNDLED) { doc.save(name); return Promise.resolve("saved as " + name); }
+    // the shared copy cannot start a download itself: the artifact host offers the file to the viewer
+    if (!(window.claude && window.claude.use)) return Promise.reject(new Error("downloads are not available in this view; open the GitHub Pages copy to save the PDF"));
+    return window.claude.use("downloads").then(function (d) {
+      if (!d) throw new Error("downloads are not available in this view; open the GitHub Pages copy to save the PDF");
+      return d.save({ filename: name, data: doc.output("blob") }).then(function () { return "offered as " + name; }, function (err) {
+        if (err && err.code === "declined") return "not saved (declined)";
+        throw new Error(err && err.message ? err.message : "the download was refused");
+      });
+    });
+  }
+  function exportSummaryPdf(button) {
+    if (!summaryReady()) { status("Draw a massing option first (step 4).", "error"); return Promise.resolve(); }
+    if (button) button.disabled = true;
+    status("Writing the summary PDF (drawings rendered, library loaded the first time)…", "busy");
+    var ctx = summaryCtx(), data = R1Summary.stats(ctx), o = ctx.option;
+    var name = "lotwise-summary-" + ((data.address || "site").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "site") + ".pdf";
+    var secSvg = sectionSvg(1100), plans = R1Plans.sheet(o, { k: 14, mirror: plansMirror() });
+    return loadPdfLibs().then(function () {
+      return Promise.all([svgToPng(ctx.sheet.svg, 2), typeof secSvg === "string" ? null : svgToPng(secSvg, 2), svgToPng(plans.svg, 1.5)]);
+    }).then(function (imgs) {
+      var doc = R1Summary.pdf(data, { three: capture3D(1400, 900), siteplan: imgs[0], section: imgs[1], plans: imgs[2] });
+      return savePdf(doc, name);
+    }).then(function (how) { status("Summary PDF " + how + ".", "ok"); }, function (e) { status("The summary PDF could not be written: " + (e && e.message ? e.message : e), "error"); })
+      .then(function () { if (button) button.disabled = false; });
+  }
+  function showSummary() {
+    if (!summaryReady()) { status("Draw a massing option first (step 4).", "error"); return; }
+    summaryDirty = true; showView("summary");
   }
 
   // ------------------------------------------------------------------ data source: live portal, opened site file, or preloaded site
@@ -1014,11 +1146,11 @@ var App = (function () {
       "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "btnFormPlans", "unitParams", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
       "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "viewTabs", "plansHost", "sitePlanHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
       "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnFormSection", "btnCmhcSection", "btnPickSite", "massingMode", "schemeSeg", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightToggle", "btnLeftToggle", "sidePanel",
-      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto", "btnTour"].forEach(function (id) { ui[id] = $(id); });
-    ui.panes = { map: $("paneMap"), siteplan: $("paneSitePlan"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans") };
+      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto", "btnTour", "summaryHost", "btnFormSummary", "btnCmhcSummary"].forEach(function (id) { ui[id] = $(id); });
+    ui.panes = { map: $("paneMap"), siteplan: $("paneSitePlan"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans"), summary: $("paneSummary") };
     // ---- the components: the status strip, the view tabs, the two segmented controls, the tables, the option list, the mix steppers, the toggles
     statusC = R1UI.status(ui.status, { text: "Ready.", level: "info" });
-    tabsC = R1UI.tabs(ui.viewTabs, { ariaLabel: "Views", items: tabItems({ siteplan: true, "3d": true, section: true, plans: true }), value: "map", onChange: showView });
+    tabsC = R1UI.tabs(ui.viewTabs, { ariaLabel: "Views", items: tabItems({ siteplan: true, "3d": true, section: true, plans: true, summary: true }), value: "map", onChange: showView });
     modeC = R1UI.segmented(ui.massingMode, { ariaLabel: "Massing source", items: [{ id: "forms", label: "By-law forms" }, { id: "cmhc", label: "CMHC catalogue" }], value: "forms", onChange: setMassingMode });
     schemeC = R1UI.segmented(ui.schemeSeg, { ariaLabel: "Form", disabled: true, value: null, items: M.SCHEMES.map(function (s) { return { id: s.key, label: SCHEME_LABELS[s.key] || s.name, title: s.name }; }),
       onChange: function (k) { applyForm(k, false); }, onReselect: function (k) { applyForm(k, true); } });   // choosing the drawn form again keeps its unit settings
@@ -1053,6 +1185,7 @@ var App = (function () {
     ui.btnRightClose.addEventListener("click", function () { openRight(false); });
     ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans); ui.btnFormPlans.addEventListener("click", showFloorPlans);
     ui.btnFormSection.addEventListener("click", function () { showView("section"); }); ui.btnCmhcSection.addEventListener("click", function () { showView("section"); });
+    ui.btnFormSummary.addEventListener("click", showSummary); ui.btnCmhcSummary.addEventListener("click", showSummary);
     R1Units.TENURES.forEach(function (t) { var o = el("option", null, t.name); o.value = t.key; ui.tenureSel.appendChild(o); });
     R1Units.GROUND_USES.forEach(function (g) { var o = el("option", null, g.name); o.value = g.key; ui.groundSel.appendChild(o); });
     R1Units.ACCESS.forEach(function (a) { var o = el("option", null, a.name); o.value = a.key; o.title = a.note; ui.accessSel.appendChild(o); });
@@ -1080,10 +1213,10 @@ var App = (function () {
     ui.btnCopy.addEventListener("click", onCopy); ui.btnClear.addEventListener("click", onClear);
     ["chkRoads", "chkParcels", "chkBuildings"].forEach(function (id) { ui[id].addEventListener("change", function () { if (S.square) { drawContext(); if (S.placed) { drawEnvelope(); drawForm(); setExistingVisible(!ui.chkHide.checked); } markDirty(); } }); });
     window.addEventListener("resize", function () { if (!ui.panes.section.hidden) drawSection(); });
-    // shortcuts: Alt+1..5 views, Alt+M massing options, Alt+S steps
+    // shortcuts: Alt+1..6 views, Alt+M massing options, Alt+S steps
     window.addEventListener("keydown", function (e) {
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
-      var views = { "1": "map", "2": "siteplan", "3": "3d", "4": "section", "5": "plans" };
+      var views = { "1": "map", "2": "siteplan", "3": "3d", "4": "section", "5": "plans", "6": "summary" };
       if (views[e.key]) { if (!tabsC.isDisabled(views[e.key])) showView(views[e.key]); e.preventDefault(); }
       else if (e.key.toLowerCase() === "m") { if (!ui.btnRightToggle.disabled) openRight(ui.rightPanel.hidden); e.preventDefault(); }
       else if (e.key.toLowerCase() === "s") { leftC.toggle(); e.preventDefault(); }
@@ -1118,7 +1251,8 @@ var App = (function () {
       { title: "Site plan", target: "#paneSitePlan", placement: "inside", text: "The lot with its yard lines, the ground-floor units and their entries, the exit stairs and walkways, a car-share stall off the lane and the shared outdoor space, dimensions in halftone.", run: function () { if (!placed()) return; showView("siteplan"); return wait(500); } },
       { title: "Site section", target: "#paneSection", placement: "inside", text: "The cut through the site and the first unit: one box per unit per floor, the walkway and stair, the yard lines and height limits with their clauses, the heights dimensioned outside the drawing.", run: function () { if (!placed()) return; showView("section"); return wait(400); } },
       { title: "3D", target: "#pane3d", placement: "inside", text: "The site as a terrain with the surrounding buildings and every unit as a labelled box, the walkways and stairs in place. Drag to orbit, scroll to zoom.", run: function () { if (!S.square) return; showView("3d"); return wait(500); } },
-      { title: "Report and shortcuts", target: ".report", text: "Everything the run did, with every number tied to its clause; Copy report puts it on the clipboard. Keyboard: Alt+1 to Alt+5 switch the views, Alt+M the massing options, Alt+S the steps. That is the tour: try your own address.", run: function () { showSide(); showView("map"); return wait(200); } }
+      { title: "Report and shortcuts", target: ".report", text: "Everything the run did, with every number tied to its clause; Copy report puts it on the clipboard. Keyboard: Alt+1 to Alt+6 switch the views, Alt+M the massing options, Alt+S the steps.", run: function () { showSide(); showView("map"); return wait(200); } },
+      { title: "6. Summary", target: "#paneSummary", placement: "inside", text: "The end of the flow: the key development statistics of the option (site, envelope, coverage, gross floor area and FSR against the 1.0 cap, units and family units, access, car share, outdoor space), the by-law checks, the unit schedule, the 3D view and the drawings on one page. Export PDF writes them to an A4 report. That is the tour: try your own address.", run: function () { withForm(); if (summaryReady()) { summaryDirty = true; showView("summary"); } return wait(1500); } }
     ];
   }
   function start() {
@@ -1147,6 +1281,13 @@ var App = (function () {
   }
 
   return { start: start, state: function () { return S; }, map: function () { return map; }, three: function () { return three; }, zoomToSite: zoomToSite, showView: showView, tour: function () { return tourC; },
-    applyForm: applyForm, onFetch: onFetch, onImport: onImport, onGenerate: onGenerate, exportSite: exportSite, bundled: BUNDLED };
+    applyForm: applyForm, onFetch: onFetch, onImport: onImport, onGenerate: onGenerate, exportSite: exportSite, bundled: BUNDLED,
+    summary: function () { return summaryReady() ? R1Summary.stats(summaryCtx()) : null; },
+    summaryPdf: function () {   // the report as a jsPDF document without saving it (for checks)
+      if (!summaryReady()) return Promise.reject(new Error("no option drawn"));
+      var ctx = summaryCtx(), data = R1Summary.stats(ctx), secSvg = sectionSvg(1100), plans = R1Plans.sheet(ctx.option, { k: 14, mirror: plansMirror() });
+      return loadPdfLibs().then(function () { return Promise.all([svgToPng(ctx.sheet.svg, 2), typeof secSvg === "string" ? null : svgToPng(secSvg, 2), svgToPng(plans.svg, 1.5)]); })
+        .then(function (imgs) { return R1Summary.pdf(data, { three: capture3D(1400, 900), siteplan: imgs[0], section: imgs[1], plans: imgs[2] }); });
+    } };
 })();
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", App.start); else App.start();

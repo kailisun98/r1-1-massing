@@ -89,8 +89,22 @@ var App = (function () {
   }
 
   // ------------------------------------------------------------------ map drawing
+  // a phone (touch, stacked layout): the map takes half the screen, so one finger scrolls the page past it and two
+  // fingers move and pinch it (a one-finger drag shows a hint); the legend starts folded so it does not cover the lot
+  function phoneMap() {
+    var mq = window.matchMedia("(pointer: coarse) and (max-width: 820px)"), host = map.getContainer();
+    var hint = L.DomUtil.create("div", "maphint", host), hintTimer = null; hint.textContent = "Use two fingers to move the map"; hint.setAttribute("aria-hidden", "true");
+    host.addEventListener("touchmove", function (e) {
+      if (!mq.matches || e.touches.length !== 1) { hint.classList.remove("on"); return; }
+      hint.classList.add("on"); clearTimeout(hintTimer); hintTimer = setTimeout(function () { hint.classList.remove("on"); }, 1200);
+    }, { passive: true });
+    function apply() { if (mq.matches) map.dragging.disable(); else map.dragging.enable(); }
+    apply(); if (mq.addEventListener) mq.addEventListener("change", apply);
+    if (window.matchMedia("(max-width: 820px)").matches) document.getElementById("mapLegend").open = false;
+  }
   function initMap() {
     map = L.map("map", { zoomControl: true, attributionControl: true, maxBoundsViscosity: 1.0 }).setView([49.2483, -123.1841], 17);
+    phoneMap();
     // the shared copy only has tiles around its stored sites: anywhere else the layer shows a blank tile without asking the server
     var StoredTiles = L.TileLayer.extend({ getTileUrl: function (coords) {
       var b = this._tileCoordsToBounds(coords), hit = presets.some(function (p) { return p.centre && siteBox(p.centre).overlaps(b); });
@@ -572,7 +586,14 @@ var App = (function () {
   function showView(name) {
     tabsC.update({ value: name });   // the tab strip marks the tab and shows its pane
     if (name === "map") setTimeout(function () { map.invalidateSize(); if (S.parcel && map.getZoom() < 14) zoomToSite(); }, 30);
-    if (name === "3d" && S.square) { if (threeDirty) build3D(); else three.resize(); }
+    if (name === "3d" && S.square) {
+      if (three && !threeDirty) three.resize();
+      else {
+        if (!window.THREE) status("Loading the 3D viewer…", "busy");
+        loadThree().then(function () { if (ui.panes["3d"].hidden) return; var first = !three; if (threeDirty || !three) build3D(); else three.resize(); if (first) status("3D view: drag to orbit, scroll to zoom.", "info"); },
+          function (e) { status("The 3D view could not be shown: " + e.message + ".", "error"); });
+      }
+    }
     if (name === "section" && sectionDirty) drawSection();
     if (name === "plans" && plansDirty) drawPlans();
     if (name === "siteplan" && sitePlanDirty) drawSitePlan();
@@ -580,7 +601,7 @@ var App = (function () {
   }
   function markDirty() {
     threeDirty = true; sectionDirty = true; plansDirty = true; sitePlanDirty = true; summaryDirty = true;
-    if (!ui.panes.section.hidden) drawSection(); if (!ui.panes["3d"].hidden && S.square) build3D(); if (!ui.panes.plans.hidden) drawPlans(); if (!ui.panes.siteplan.hidden) drawSitePlan(); if (!ui.panes.summary.hidden) drawSummary();
+    if (!ui.panes.section.hidden) drawSection(); if (!ui.panes["3d"].hidden && S.square && window.THREE) build3D(); if (!ui.panes.plans.hidden) drawPlans(); if (!ui.panes.siteplan.hidden) drawSitePlan(); if (!ui.panes.summary.hidden) drawSummary();
   }
   // the plan sheets read as a rotation of the map (street at the top): when side 1 lies on the right of that view, the floor plans mirror to match
   function plansMirror() { return S.ev && S.ev.status === "ok" ? R1SitePlan.frame(S.ev).mirror : false; }
@@ -676,7 +697,7 @@ var App = (function () {
   // ------------------------------------------------------------------ the development summary: the end of the flow (R1Summary)
   // the key statistics of the drawn option with its FSR, the by-law checks, the unit schedule and the drawings on one
   // page, and the same as an A4 PDF report with the 3D view, the site plan, the section and the floor plans
-  var summaryDirty = true, summaryBusy = null, summaryTimer = null, SUMMARY_EMPTY = "Draw a massing option in step 4: the summary gathers its statistics, checks, unit schedule and drawings.";
+  var summaryDirty = true, summaryBusy = null, summaryTimer = null, summaryTok = 0, SUMMARY_EMPTY = "Draw a massing option in step 4: the summary gathers its statistics, checks, unit schedule and drawings.";
   var PDF_LIBS = ["https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js", "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"];
   var SECTION_SVG_CSS = ".secdim{font-family:Consolas,'Courier New',monospace;fill:#2c3e50}.sectitle{font-family:Helvetica,Arial,sans-serif;fill:#6b7280}.seclbl{font-family:Helvetica,Arial,sans-serif;fill:#6b7280;letter-spacing:.04em}.secmark{font-family:Helvetica,Arial,sans-serif;fill:#b42828;letter-spacing:.04em}.secunit{font-family:Helvetica,Arial,sans-serif}";
   function summaryReady() { return !!(S.ev && S.ev.status === "ok" && S.placed && S.unitsOption && S.form && S.form.status === "ok"); }
@@ -691,7 +712,8 @@ var App = (function () {
     if (!summaryReady()) { host.innerHTML = ""; host.appendChild(el("p", "empty", SUMMARY_EMPTY)); return; }
     host.innerHTML = ""; summaryBusy = R1UI.busy(host, { text: "Gathering the statistics, checks, unit schedule and drawings…" });
     if (summaryTimer) clearTimeout(summaryTimer);
-    summaryTimer = setTimeout(function () { summaryTimer = null; drawSummaryNow(); }, 30);
+    var tok = ++summaryTok;   // the 3D view in the summary needs three.js: load it first (the summary draws without it if it fails)
+    summaryTimer = setTimeout(function () { summaryTimer = null; loadThree().then(null, function () {}).then(function () { if (tok === summaryTok) drawSummaryNow(); }); }, 30);
   }
   function drawSummaryNow() {
     var host = ui.summaryHost, o = S.unitsOption;
@@ -731,7 +753,7 @@ var App = (function () {
     host.appendChild(el("h3", "summary-h", "Unit schedule"));
     var ut = el("div"); host.appendChild(ut);
     R1UI.table(ut, { caption: "Unit schedule", captionHidden: true, columns: [{ label: "Unit" }, { label: "Bedrooms" }, { label: "Baths" }, { label: "Floors" }, { label: "Area" }, { label: "Note" }],
-      rows: data.units.map(function (u) { var tag = el("span"); tag.style.borderLeft = "10px solid " + u.color; tag.style.paddingLeft = "6px"; tag.textContent = u.cells[0]; return { cells: [tag].concat(u.cells.slice(1)) }; }) });
+      rows: data.units.map(function (u) { var tag = el("span"), sw = el("span", "unitsw"); sw.style.background = u.color; sw.setAttribute("aria-hidden", "true"); tag.appendChild(sw); tag.appendChild(document.createTextNode(" " + u.cells[0])); return { cells: [tag].concat(u.cells.slice(1)) }; }) });
     host.appendChild(el("h3", "summary-h", "Site plan"));
     var sp = el("div", "summary-sheet"); sp.innerHTML = ctx.sheet.svg; host.appendChild(sp);
     host.appendChild(el("h3", "summary-h", "Site section A-A"));
@@ -748,7 +770,7 @@ var App = (function () {
   }
   // the 3D view as a PNG, rendered off the live scene at w x h (the view is left as the user set it)
   function capture3D(w, h) {
-    if (!S.square) return null;
+    if (!S.square || !window.THREE || !THREE.OrbitControls) return null;   // three.js not loaded (offline): the report goes without the 3D view
     if (!three || threeDirty) build3D();
     var r = three.renderer, cam = three.camera;
     r.setSize(w, h, false); cam.aspect = w / h; cam.updateProjectionMatrix();
@@ -777,10 +799,18 @@ var App = (function () {
       img.src = url;
     });
   }
-  function loadScript(src) { return new Promise(function (res, rej) { var s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = function () { rej(new Error("the PDF library could not be loaded (" + src.split("/")[5] + ")")); }; document.head.appendChild(s); }); }
+  function loadScript(src, what) { return new Promise(function (res, rej) { var s = document.createElement("script"); s.src = src; s.onload = res; s.onerror = function () { s.remove(); rej(new Error(what + " could not be loaded (" + src.split("/").slice(-1)[0] + ")")); }; document.head.appendChild(s); }); }
   function loadPdfLibs() {   // jsPDF and its AutoTable plugin, fetched from cdnjs the first time a PDF is exported
     if (window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API.autoTable) return Promise.resolve();
-    return loadScript(PDF_LIBS[0]).then(function () { return loadScript(PDF_LIBS[1]); });
+    return loadScript(PDF_LIBS[0], "the PDF library").then(function () { return loadScript(PDF_LIBS[1], "the PDF library"); });
+  }
+  // three.js and its orbit controls, fetched the first time the 3D view or the summary needs them (about 600 KB the map never uses)
+  var THREE_LIBS = ["https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js", "https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"], threeLoad = null;
+  function loadThree() {
+    if (window.THREE && THREE.OrbitControls) return Promise.resolve();
+    if (!threeLoad) threeLoad = (window.THREE ? Promise.resolve() : loadScript(THREE_LIBS[0], "the 3D library")).then(function () { return loadScript(THREE_LIBS[1], "the 3D controls"); })
+      .then(null, function (e) { threeLoad = null; throw e; });   // a failed load may be retried
+    return threeLoad;
   }
   function savePdf(doc, name) {
     if (!BUNDLED) { doc.save(name); return Promise.resolve("saved as " + name); }
@@ -801,7 +831,7 @@ var App = (function () {
     var ctx = summaryCtx(), data = R1Summary.stats(ctx), o = ctx.option;
     var name = "lotwise-summary-" + ((data.address || "site").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "site") + ".pdf";
     var secSvg = sectionSvg(1100), plans = R1Plans.sheet(o, { k: 14, mirror: plansMirror() });
-    return loadPdfLibs().then(function () {
+    return Promise.all([loadPdfLibs(), loadThree().then(null, function () {})]).then(function () {
       return Promise.all([svgToPng(ctx.sheet.svg, 2), typeof secSvg === "string" ? null : svgToPng(secSvg, 2), svgToPng(plans.svg, 1.5)]);
     }).then(function (imgs) {
       var doc = R1Summary.pdf(data, { three: capture3D(1400, 900), siteplan: imgs[0], section: imgs[1], plans: imgs[2] });
@@ -1298,7 +1328,7 @@ var App = (function () {
     summaryPdf: function () {   // the report as a jsPDF document without saving it (for checks)
       if (!summaryReady()) return Promise.reject(new Error("no option drawn"));
       var ctx = summaryCtx(), data = R1Summary.stats(ctx), secSvg = sectionSvg(1100), plans = R1Plans.sheet(ctx.option, { k: 14, mirror: plansMirror() });
-      return loadPdfLibs().then(function () { return Promise.all([svgToPng(ctx.sheet.svg, 2), typeof secSvg === "string" ? null : svgToPng(secSvg, 2), svgToPng(plans.svg, 1.5)]); })
+      return Promise.all([loadPdfLibs(), loadThree().then(null, function () {})]).then(function () { return Promise.all([svgToPng(ctx.sheet.svg, 2), typeof secSvg === "string" ? null : svgToPng(secSvg, 2), svgToPng(plans.svg, 1.5)]); })
         .then(function (imgs) { return R1Summary.pdf(data, { three: capture3D(1400, 900), siteplan: imgs[0], section: imgs[1], plans: imgs[2] }); });
     } };
 })();

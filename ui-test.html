@@ -224,13 +224,16 @@ body { font: 13px/1.5 var(--mono); padding: 16px; background: var(--page); color
     key(tcard, "ArrowLeft"); check("tour: ArrowLeft goes back (its run() runs again)", q(tcard, ".ui-tour-count").textContent === "Step 2 of 3" && tRuns.join() === "1,2,1");
     key(tcard, "Escape");
     check("tour: Escape leaves the tour: everything removed, onDone('skipped'), focus back on the launcher", !q(document.body, ".ui-tour-card") && !q(document.body, ".ui-tour-backdrop") && tDone.join() === "skipped" && document.activeElement === launcher && tr.open === false, [tDone, document.activeElement && document.activeElement.textContent]);
-    tr.start(2); var tcard2 = q(document.body, ".ui-tour-card");
-    check("tour: start(2) opens at the third step", tcard2 && q(tcard2, ".ui-tour-count").textContent === "Step 3 of 3");
-    click(qa(tcard2, "button").filter(function (b) { return b.textContent === "Finish"; })[0]);
-    check("tour: Finish closes with onDone('done')", !q(document.body, ".ui-tour-card") && tDone.join() === "skipped,done");
-    var empty = R1UI.tour(document.body, { steps: [] }); empty.start();
-    check("tour: no steps, nothing opens", !q(document.body, ".ui-tour-card") && empty.open === false);
-    finish();
+    tr.start(2);
+    setTimeout(function () {   // the third step's run() is asynchronous
+      var tcard2 = q(document.body, ".ui-tour-card");
+      check("tour: start(2) opens at the third step", tcard2 && q(tcard2, ".ui-tour-count").textContent === "Step 3 of 3", tcard2 && q(tcard2, ".ui-tour-count").textContent);
+      var fin = tcard2 && qa(tcard2, "button").filter(function (b) { return b.textContent === "Finish"; })[0]; if (fin) click(fin);
+      check("tour: Finish closes with onDone('done')", !q(document.body, ".ui-tour-card") && tDone.join() === "skipped,done", tDone);
+      var empty = R1UI.tour(document.body, { steps: [] }); empty.start();
+      check("tour: no steps, nothing opens", !q(document.body, ".ui-tour-card") && empty.open === false);
+      finish();
+    }, 60);
   });
 
   // ---------------------------------------------------------------- the element helper

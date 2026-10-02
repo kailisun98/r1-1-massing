@@ -647,7 +647,7 @@ var R1Massing = (function () {
       if (span2) blds.push({ key: "envelope", name: "ENVELOPE", s0: span2[0], s1: span2[1], z0: baseZ, z1: baseZ + ev.height, storeys: ev.storeys, max_h: R.max_height_m.value, max_clause: R.max_height_m.clause.split(" ")[0] });
     }
     blds.sort(function (a, b) { return a.s0 - b.s0; });
-    var zTop = Math.max.apply(null, blds.map(function (b) { return Math.max(b.z1, b.z0 + b.max_h); }).concat([baseZ])), zString = zTop + off;
+    var zTop = Math.max.apply(null, blds.map(function (b) { return Math.max(b.z1, b.z0 + b.max_h); }).concat([baseZ])), zString = zTop + off * 1.5;   // the string stands clear of the height-limit labels under it
     var zLow = Math.min.apply(null, blds.map(function (b) { return b.z0; }).concat([baseZ])) - SECTION_HEAD_M;
     var lines = [], dims = [], marks = [];
     function vline(key, s, style) { lines.push({ key: key, style: style, a: [s, zLow], b: [s, zString + off * 0.4] }); }

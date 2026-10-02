@@ -208,8 +208,9 @@ var R1UI = (function () {
     tbl.classList.add("ui-table");
     function build() {
       clear(tbl);
-      tbl.classList.toggle("dense", !!state.dense); tbl.setAttribute("aria-busy", state.loading ? "true" : "false");
+      tbl.classList.toggle("dense", !!state.dense); tbl.classList.toggle("fixed", state.columns.some(function (c) { return c.width; })); tbl.setAttribute("aria-busy", state.loading ? "true" : "false");
       if (state.caption) tbl.appendChild(h("caption", { className: state.captionHidden ? "vh" : null, text: state.caption }));
+      if (state.columns.some(function (c) { return c.width; })) tbl.appendChild(h("colgroup", null, state.columns.map(function (c) { var col = h("col"); if (c.width) col.style.width = c.width; return col; })));   // column widths: the table keeps them and wraps its text
       var tr = h("tr"); state.columns.forEach(function (c) { tr.appendChild(h("th", { scope: "col", className: c.kind === "num" ? "num" : null }, [c.hidden ? h("span", { className: "vh", text: c.label }) : c.label])); });   // a hidden label still names the column for a screen reader
       tbl.appendChild(h("thead", null, [tr]));
       var tbody = h("tbody"), n = state.columns.length;

@@ -68,7 +68,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, [role="option"]
 
 /* ------------------------------------------------------------------ segmented control (R1UI.segmented): a radio group drawn as one bar */
 .seg { display: flex; border: 1px solid var(--line); border-radius: 4px; overflow: hidden; margin-bottom: 10px; }
-.segbtn { flex: 1 1 0; min-width: 0; background: var(--panel); color: var(--muted); border-radius: 0; border: none; padding: 6px 8px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.segbtn { flex: 1 1 auto; min-width: 0; background: var(--panel); color: var(--muted); border-radius: 0; border: none; padding: 6px 8px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }   /* each button as wide as its label, spare width shared */
 .segbtn + .segbtn { border-left: 1px solid var(--line); }
 .segbtn.on, .segbtn[aria-checked="true"] { background: var(--ink); color: var(--panel); }
 .segbtn:disabled { opacity: .5; }
@@ -109,7 +109,10 @@ table.ui-table, .ui-table { width: 100%; border-collapse: collapse; font-size: 1
 .ui-table caption { text-align: left; font-weight: 600; padding: 0 0 4px; color: var(--muted); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
 .ui-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
 .ui-table td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.ui-table.fixed { table-layout: fixed; }   /* columns keep their widths; every cell wraps inside them */
 .ui-table td.clause { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
+.ui-table.fixed td.clause { white-space: normal; overflow-wrap: anywhere; }
+.ui-table .rule-value { display: block; color: var(--muted); font-variant-numeric: tabular-nums; }
 /* the status text wraps inside its cell (the mark stays on the first line), so a long status never runs out of the bar */
 .ui-table td.status-cell { font-variant-numeric: tabular-nums; white-space: normal; overflow-wrap: anywhere; min-width: 9em; }
 .ui-table th.num, .ui-table td.num { text-align: right; font-variant-numeric: tabular-nums; }

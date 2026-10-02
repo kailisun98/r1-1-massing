@@ -51,10 +51,14 @@ var App = (function () {
   function tableRows(rows, stateCol) {
     return rows.map(function (r) { return r.header ? { group: r.header } : { cells: r, state: stateCol !== undefined ? r[stateCol] : undefined }; });
   }
+  // the by-law table: three columns in the narrow bar (the regulation with its R1-1 value under it, the clause, this site)
   function fillRules() {
     var form = S.form && S.form.status === "ok" ? S.form : null, rows = [];
-    M.rulesGroups(S.ev, form).forEach(function (g) { rows.push({ header: g.title }); g.rows.forEach(function (r) { rows.push(r); }); });
-    tables.rules.update({ rows: tableRows(rows, 4) });
+    M.rulesGroups(S.ev, form).forEach(function (g) {
+      rows.push({ group: g.title });
+      g.rows.forEach(function (r) { var reg = el("span"); reg.appendChild(document.createTextNode(r[0])); reg.appendChild(el("span", "rule-value", r[1])); rows.push({ cells: [reg, r[2], r[3]], state: r[4] }); });
+    });
+    tables.rules.update({ rows: rows });
   }
   function fillResults() { tables.results.update({ rows: tableRows(M.resultsRows(S.ev, S.base, S.zone, S.parcel)) }); }
   function fillForm() { tables.form.update({ rows: tableRows(S.form ? M.formRows(S.form, S.ev) : []) }); }
@@ -317,8 +321,10 @@ var App = (function () {
     (sp.marks || []).forEach(function (mk) {
       if (mk.kind !== "height") return;
       add("line", { x1: X(mk.s0), y1: Y(mk.z), x2: X(mk.s1), y2: Y(mk.z), stroke: COLORS.setback, "stroke-width": 1, "stroke-dasharray": "8 4" });
-      var endA = mk.label_anchor === "end";
-      add("text", { x: X(mk.label_s !== undefined ? mk.label_s : mk.s0) + (endA ? -4 : 6), y: Y(mk.z) - 4, "font-size": 8.5, "text-anchor": endA ? "end" : "start", "class": "secmark" }, mk.label + " [" + mk.clause + "]");
+      // one line when it fits the building's span, else the limit over its clause on two lines
+      var endA = mk.label_anchor === "end", lx = X(mk.label_s !== undefined ? mk.label_s : mk.s0) + (endA ? -4 : 6), full = mk.label + " [" + mk.clause + "]", spanPx = (mk.s1 - mk.s0) * k;
+      if (full.length * 5.0 + 10 <= spanPx) add("text", { x: lx, y: Y(mk.z) - 4, "font-size": 8.5, "text-anchor": endA ? "end" : "start", "class": "secmark" }, full);
+      else { add("text", { x: lx, y: Y(mk.z) - 14, "font-size": 8.5, "text-anchor": endA ? "end" : "start", "class": "secmark" }, mk.label); add("text", { x: lx, y: Y(mk.z) - 4, "font-size": 8.5, "text-anchor": endA ? "end" : "start", "class": "secmark" }, "[" + mk.clause + "]"); }
     });
     // the yard lines and property lines run up into the head band and end under their own names. The names take rows
     // so that no name sits across another line: a name may span a neighbouring mark only when that mark's name is on
@@ -367,7 +373,7 @@ var App = (function () {
         if (xb - xa >= tw) add("text", { x: (xa + xb) / 2, y: y - 4, "font-size": 11, "text-anchor": "middle", "class": "secdim" }, val);
         else if (di === 0) add("text", { x: xa - 5, y: y - 4, "font-size": 11, "text-anchor": "end", "class": "secdim" }, val);
         else add("text", { x: xb + 5, y: y - 4, "font-size": 11, "text-anchor": "start", "class": "secdim" }, val);
-        if (xb - xa > dm.name.length * 4.6 + 6) add("text", { x: (xa + xb) / 2, y: y - 15, "font-size": 8, "text-anchor": "middle", "class": "seclbl" }, dm.name);
+        if (xb - xa >= dm.name.length * 5.4 + 8) add("text", { x: (xa + xb) / 2, y: y - 15, "font-size": 8, "text-anchor": "middle", "class": "seclbl" }, dm.name);   // only a name that fits its span (the yard lines are named in the head band anyway)
       }
     });
     // street / lane names at the ends
@@ -1015,7 +1021,7 @@ var App = (function () {
     modeC = R1UI.segmented(ui.massingMode, { ariaLabel: "Massing source", items: [{ id: "forms", label: "By-law forms" }, { id: "cmhc", label: "CMHC catalogue" }], value: "forms", onChange: setMassingMode });
     schemeC = R1UI.segmented(ui.schemeSeg, { ariaLabel: "Form", disabled: true, value: null, items: M.SCHEMES.map(function (s) { return { id: s.key, label: SCHEME_LABELS[s.key] || s.name, title: s.name }; }),
       onChange: function (k) { applyForm(k, false); }, onReselect: function (k) { applyForm(k, true); } });   // choosing the drawn form again keeps its unit settings
-    tables.rules = R1UI.table(ui.rules, { caption: "By-law rules for this site", captionHidden: true, emptyText: "Fetch a site to check its rules.", columns: [{ label: "Regulation" }, { label: "R1-1" }, { label: "Clause", kind: "clause" }, { label: "This site", kind: "status" }], rows: [] });
+    tables.rules = R1UI.table(ui.rules, { caption: "By-law rules for this site", captionHidden: true, emptyText: "Fetch a site to check its rules.", columns: [{ label: "Regulation, R1-1 value", width: "40%" }, { label: "Clause", kind: "clause", width: "22%" }, { label: "This site", kind: "status", width: "38%" }], rows: [] });
     tables.results = R1UI.table(ui.results, { caption: "Permitted envelope", captionHidden: true, emptyText: "Fetch a site to size its envelope.", columns: [{ label: "Item" }, { label: "Value" }], rows: [] });
     tables.form = R1UI.table(ui.formTable, { caption: "The drawn form", captionHidden: true, emptyText: "No form drawn.", columns: [{ label: "Item" }, { label: "Value" }], rows: [] });
     cmhcC = R1UI.optionList(ui.cmhcList, { ariaLabel: "Catalogue designs", emptyText: "Generate the envelope: the catalogue designs are tested against it.", loadingText: "Testing the catalogue designs against the envelope…", items: [], value: null,

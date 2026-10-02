@@ -663,15 +663,24 @@ var R1Massing = (function () {
       vline("v|" + b.key + "|0", b.s0, "face"); vline("v|" + b.key + "|1", b.s1, "face");
       lines.push({ key: "h|" + b.key + "|base", style: "marks", a: [b.s1, b.z0], b: [b.s1 + off, b.z0] });
       lines.push({ key: "h|" + b.key + "|top", style: "marks", a: [b.s1, b.z1], b: [b.s1 + off, b.z1] });
-      marks.push({ kind: "height", s0: b.s0 - off * 0.3, s1: b.s1 + off * 0.3, z: b.z0 + b.max_h, label: "MAX HEIGHT " + b.max_h + " m", clause: b.max_clause });
+      // the label reads along the line from the end nearer the middle of the lot: rightward over a front building, leftward over a rear one
+      marks.push({ kind: "height", s0: b.s0 - off * 0.3, s1: b.s1 + off * 0.3, label_s: b.key === "rear" ? b.s1 + off * 0.3 : b.s0, label_anchor: b.key === "rear" ? "end" : "start", z: b.z0 + b.max_h, label: "MAX HEIGHT " + b.max_h + " m", clause: b.max_clause });
       if (b.s0 - prevS > 0.05) dims.push({ name: i === 0 ? "FRONT YARD" : gapName, s: [prevS, b.s0], z: zString, value_m: b.s0 - prevS });
       dims.push({ name: b.name, s: [b.s0, b.s1], z: zString, value_m: b.s1 - b.s0 });
       prevS = b.s1;
     });
     if (lot[1] - prevS > 0.05) dims.push({ name: "REAR YARD", s: [prevS, lot[1]], z: zString, value_m: lot[1] - prevS });
-    blds.forEach(function (b) {   // the height string stands behind the building and behind any stair or walkway on its rear face
-      var behind = Math.max.apply(null, [b.s1].concat(access.filter(function (a) { return a.block === b.key && a.s1 > b.s1; }).map(function (a) { return a.s1; })));
-      dims.push({ name: b.name + " HEIGHT", s: behind + off * 0.6, z: [b.z0, b.z1], value_m: b.z1 - b.z0, vertical: true });
+    // the height strings stand outside everything: the front (or only) building's in the front yard on the left, a rear
+    // building's beyond the rear property line on the right, each clear of any stair or walkway on that face
+    blds.forEach(function (b) {
+      var rear = b.key === "rear";
+      if (rear) {
+        var behind = Math.max.apply(null, [b.s1, lot[1]].concat(access.filter(function (a) { return a.s1 > b.s1; }).map(function (a) { return a.s1; })));
+        dims.push({ name: b.name + " HEIGHT", s: behind + off * 0.6, z: [b.z0, b.z1], value_m: b.z1 - b.z0, vertical: true, side: "right" });
+      } else {
+        var frontAccess = access.filter(function (a) { return a.block === b.key && a.s0 < b.s0; }), before = Math.min.apply(null, [b.s0].concat(frontAccess.map(function (a) { return a.s0; })));
+        dims.push({ name: b.name + " HEIGHT", s: before - off * (frontAccess.length ? 1.9 : 0.6), z: [b.z0, b.z1], value_m: b.z1 - b.z0, vertical: true, side: "left" });   // further out past a walkway's name
+      }
     });
     return { c: c, dir: nIn, lot: lot, buildings: blds, units: units, access: access, marks: marks, cell: cellOf, lines: lines, dims: dims, z_low: zLow, z_high: zString + off * 0.4 + SECTION_HEAD_M, z_string: zString };
   }

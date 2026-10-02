@@ -19,7 +19,11 @@ var R1Plans = (function () {
   var OPEN_PAIRS = [["Entry", "Living"], ["Living", "Dining"], ["Dining", "Kitchen"], ["Entry", "Stair"], ["Living", "Stair"], ["Hall", "Stair"], ["Landing", "Stair"], ["Landing", "Hall"], ["Hall", "Hall"],
     ["Entry", "Lobby, mail"], ["Lobby, mail", "Common room"], ["Common room", "Kitchenette"], ["Entry", "Play room"], ["Play room", "Play room"], ["Living", "Kitchen"], ["Dining", "Hall"], ["Entry", "Hall"], ["Living", "Living"], ["Living", "Hall"], ["Kitchen", "Hall"],
     ["Entry", "Living / dining"], ["Living / dining", "Living / dining"], ["Living / dining", "Kitchen"], ["Living / dining", "Hall"], ["Living / dining", "Dining"], ["Hall", "Den"], ["Hall", "Flex room"], ["Den", "Den"],
-    ["Entry", "Studio"], ["Studio", "Studio"], ["Studio", "Kitchen"], ["Vestibule", "Corridor"], ["Vestibule", "Stair"], ["Corridor", "Stair"], ["Landing", "Corridor"], ["Corridor", "Corridor"], ["Kitchen", "Stair"], ["Dining", "Stair"], ["Den", "Stair"], ["Flex room", "Stair"]];
+    ["Entry", "Studio"], ["Studio", "Studio"], ["Studio", "Kitchen"], ["Vestibule", "Corridor"], ["Vestibule", "Stair"], ["Corridor", "Stair"], ["Landing", "Corridor"], ["Corridor", "Corridor"], ["Kitchen", "Stair"], ["Dining", "Stair"], ["Den", "Stair"], ["Flex room", "Stair"],
+    ["Living", "Den"], ["Living / dining", "Den"], ["Landing", "Living"], ["Landing", "Living / dining"], ["Landing", "Den"], ["Landing", "Dining"], ["Living / dining", "Stair"],
+    ["Hall", "Family room"], ["Hall", "Hobby room"], ["Hall", "Play room"]];
+  // the open-plan rooms: no wall at all between them (a cased opening with stub walls stands between the others)
+  var OPEN_FULL = ["Living", "Dining", "Kitchen", "Living / dining", "Studio", "Den"];
   var HABITABLE = ["Living", "Living / dining", "Studio", "Dining", "Kitchen", "Bedroom", "Bedroom 1", "Bedroom 2", "Bedroom 3", "Primary bedroom", "Study", "Den", "Office", "Play room", "Nap room", "Common room", "Shop floor", "Flex room", "Kitchenette"];
   var OUTDOOR = ["Terrace", "Patio"], SMALL_WINDOW = ["Bath", "Ensuite", "WC", "Laundry", "Corridor", "Vestibule", "Landing"];
   // rooms that may open off the room they serve rather than a hall: a walk-in closet off a bedroom, a pantry off the kitchen
@@ -69,7 +73,7 @@ var R1Plans = (function () {
         if (j <= i) return;
         var e = sharedEdge(r, s); if (!e) return;
         if (r.name === s.name && (r.part || s.part)) out.push({ kind: "join", side: e.side, at: e.at, from: e.from, to: e.to, room: r, other: s });
-        else if (isOpen(r.name, s.name)) out.push({ kind: "open", side: e.side, at: e.at, from: e.from + 0.15, to: e.to - 0.15, room: r, other: s });
+        else if (isOpen(r.name, s.name)) { var full = OPEN_FULL.indexOf(r.name) >= 0 && OPEN_FULL.indexOf(s.name) >= 0, inset = full ? 0 : 0.15; out.push({ kind: "open", side: e.side, at: e.at, from: e.from + inset, to: e.to - inset, room: r, other: s, full: full }); }
       });
     });
     rooms.forEach(function (r) {
@@ -146,16 +150,16 @@ var R1Plans = (function () {
       if (op.kind !== "door" && op.kind !== "entry") return;
       var mine = op.room === r, other = op.other === r;
       if (!mine && !other) return;
-      var w = op.to - op.from, swings = op.out ? other : mine;   // the leaf lands in the served room, or out in the other room
+      var w = op.to - op.from, swings = op.out ? other : mine, approach = !(op.out && mine);   // the leaf lands in the served room, or out in the other room; a closet reached from its doorway needs no approach inside
       if (op.side === "h") {
         var top = Math.abs(op.at - r.y) < 0.03, bot = Math.abs(op.at - (r.y + r.h)) < 0.03; if (!top && !bot) return;
         var x0 = op.from - r.x, x1 = op.to - r.x;
-        Z.push({ x: x0, y: top ? 0 : r.h - APPROACH, w: x1 - x0, h: APPROACH, kind: "approach", door: op });
+        if (approach) Z.push({ x: x0, y: top ? 0 : r.h - APPROACH, w: x1 - x0, h: APPROACH, kind: "approach", door: op });
         if (swings) Z.push({ x: x0, y: top ? 0 : r.h - w, w: w, h: w, kind: "swing", door: op });
       } else {
         var left = Math.abs(op.at - r.x) < 0.03, right = Math.abs(op.at - (r.x + r.w)) < 0.03; if (!left && !right) return;
         var y0 = op.from - r.y, y1 = op.to - r.y;
-        Z.push({ x: left ? 0 : r.w - APPROACH, y: y0, w: APPROACH, h: y1 - y0, kind: "approach", door: op });
+        if (approach) Z.push({ x: left ? 0 : r.w - APPROACH, y: y0, w: APPROACH, h: y1 - y0, kind: "approach", door: op });
         if (swings) Z.push({ x: left ? 0 : r.w - w, y: y0, w: w, h: w, kind: "swing", door: op });
       }
     });
@@ -569,7 +573,8 @@ var R1Plans = (function () {
      does not stack between the levels of a unit, or a unit with no way in (no entry door on the face it is
      reached from, or an upper entry level with no walkway and exit stair). Empty when the plans meet all of them. */
   function check(o) {
-    var issues = [], MIN = (typeof R1Rooms !== "undefined") ? R1Rooms.MIN : { hall: 0.9, bath_w: 1.5, wc_w: 1.35, bed_w: 2.5, bed_area: 7.5, kitchen: 1.7, kitchen_run: 2.1, living_w: 3.2, dining_w: 2.6, stair_w: 0.86, stair_l: 3.0, door: 0.86 };
+    var issues = [], MIN = (typeof R1Rooms !== "undefined") ? R1Rooms.MIN : { hall: 0.9, bath_w: 1.5, wc_w: 1.35, bed_w: 2.5, bed_area: 7.5, kitchen: 1.7, kitchen_run: 2.1, living_w: 3.2, dining_w: 2.6, stair_w: 0.86, stair_l: 3.0, door: 0.86, service_m2: 4.5, bed_max_m2: 22 };
+    var HALLS = ["Hall", "Landing", "Entry", "Vestibule", "Corridor"], LIVINGS = ["Living", "Living / dining", "Dining", "Studio"];
     var stairs = {}, access = (typeof R1Access !== "undefined") ? R1Access.plan(o) : null, bedsDrawn = {}, unitOf = {};
     C.unitRooms(o).forEach(function (ur) {
       var uu = C.unitOf(C.blockOf(o, ur.block), ur.unit); if (uu && !uu.kind) { unitOf[ur.block + "|" + ur.unit] = uu; bedsDrawn[ur.block + "|" + ur.unit] = (bedsDrawn[ur.block + "|" + ur.unit] || 0) + ur.rooms.filter(function (r) { return isBed(r.name) && !r.part; }).length; }
@@ -610,6 +615,44 @@ var R1Plans = (function () {
           zones.forEach(function (z) { if (overlaps(b, z)) issues.push(where + ": " + r.name.toLowerCase() + ": the " + p.g.name + " stands in the door " + z.kind); });
         });
       });
+      // the circulation: what opens off what (as the catalogue plans do), the open kitchen, no closets grown into rooms,
+      // and every room reached from the entry (or the stair above) through halls and living space, never through another room
+      var dwelling = !ur.core && ur.role !== "core" && ur.role !== "shop" && ur.role !== "daycare" && ur.role !== "common";
+      if (dwelling) {
+        ops.forEach(function (op) {
+          if (op.kind !== "door" || !op.other) return;
+          var to = op.room.name, from = op.other.name, lo = to.toLowerCase(), lf = from.toLowerCase();
+          if ((to === "Bath" || to === "Ensuite") && HALLS.indexOf(from) < 0 && !isBed(from) && from !== "Studio") issues.push(where + ": the " + lo + " opens off the " + lf + " (a bathroom opens off a hall, the entry or its bedroom)");
+          if (to === "WC" && HALLS.indexOf(from) < 0 && LIVINGS.indexOf(from) < 0 && from !== "Kitchen") issues.push(where + ": the powder room opens off the " + lf + " (it opens off the entry hall or the dining area)");
+          if (isBed(to) && HALLS.indexOf(from) < 0) issues.push(where + ": " + lo + " opens off the " + lf + " (a bedroom opens off a hall)");
+        });
+        var kit = ur.rooms.filter(function (r) { return r.name === "Kitchen"; })[0];
+        if (kit && !ops.some(function (op) { return op.kind === "open" && (op.room === kit || op.other === kit) && LIVINGS.indexOf((op.room === kit ? op.other : op.room).name) >= 0 && op.to - op.from >= 1.2; })) issues.push(where + ": the kitchen is closed off (it opens along its front to the living or dining area)");
+        ur.rooms.forEach(function (r) {
+          var walkIn = r.name === "Closet" && ops.some(function (op) { return op.kind === "door" && op.room === r && op.other && isBed(op.other.name); }), capM2 = walkIn ? 6.5 : MIN.service_m2;   // a walk-in off its bedroom may be bigger
+          if (/^(Laundry|Storage|Mechanical|Closet|Linen)$/.test(r.name) && r.area_m2 > capM2 + 0.01) issues.push(where + ": " + r.name.toLowerCase() + " is " + fmt(r.area_m2, 1) + " m2 (a closet, not a room: " + capM2 + " m2 at most)");
+          if (isBed(r.name) && !r.part && r.area_m2 > MIN.bed_max_m2 + 0.01) issues.push(where + ": " + r.name.toLowerCase() + " is " + fmt(r.area_m2, 1) + " m2 (over " + MIN.bed_max_m2 + " m2: space the living rooms should have)");
+        });
+        var startOp = ops.filter(function (op) { return op.kind === "entry" && !op.exit; })[0], start = ur.level_index === 0 ? (startOp ? startOp.room : null) : (ur.rooms.filter(function (r) { return r.name === "Stair"; })[0] || null);
+        if (startOp && !/^(Entry|Vestibule|Lobby, mail|Shop floor|Living|Living \/ dining|Studio|Hall|Corridor)$/.test(startOp.room.name)) issues.push(where + ": the entry door opens into the " + startOp.room.name.toLowerCase());
+        if (start) {
+          var seen = {}, queue = [ur.rooms.indexOf(start)]; seen[queue[0]] = true;
+          var through = function (r) { return isCirc(r.name) || r.name === "Landing"; };
+          while (queue.length) {
+            var ci = queue.shift(), ri = ur.rooms[ci];
+            ops.forEach(function (op) {
+              if (op.kind !== "open" && op.kind !== "join" && op.kind !== "door") return;
+              var other = op.room === ri ? op.other : (op.other === ri ? op.room : null); if (!other) return;
+              var j = ur.rooms.indexOf(other); if (j < 0 || seen[j]) return;
+              if (op.kind !== "join" && !through(ri) && !(isBed(ri.name) && (OFF_ANY.indexOf(other.name) >= 0 || other.name === "Ensuite"))) return;   // past a bedroom only its closet or ensuite
+              seen[j] = true; queue.push(j);
+            });
+          }
+          ur.rooms.forEach(function (r, j) { if (!seen[j] && !r.part && !isOutdoor(r.name)) issues.push(where + ": " + r.name.toLowerCase() + " cannot be reached from the " + (ur.level_index === 0 ? "entry" : "stair") + " without passing through another room"); });
+          var stairR = ur.rooms.filter(function (r) { return r.name === "Stair"; })[0];
+          if (stairR && !ops.some(function (op) { return op.kind === "open" && (op.room === stairR || op.other === stairR); })) issues.push(where + ": the stair opens off no hall, landing or living space");
+        }
+      }
       if (ur.level_index === 0 || ur.role === "core") {
         var ent = ops.filter(function (op) { return op.kind === "entry" && !op.exit; })[0];
         if (ur.role === "core" && ur.level_index > 0) ent = { face: null };   // an upper corridor has no door of its own
@@ -624,6 +667,7 @@ var R1Plans = (function () {
     Object.keys(unitOf).forEach(function (k) {   // a unit's plans hold the bedrooms of its type (a studio has none)
       var u = unitOf[k], n = bedsDrawn[k] || 0;
       if (u.beds > 0 && n < u.beds) issues.push(k.split("|")[1] + " is a " + u.beds + "-bedroom unit but only " + n + " bedroom" + (n === 1 ? "" : "s") + " fit" + (n === 1 ? "s" : "") + " on its levels");
+      if (n > u.beds) issues.push(k.split("|")[1] + " is a " + (u.beds ? u.beds + "-bedroom" : "studio") + " unit but " + n + " bedrooms are drawn");
     });
     Object.keys(stairs).forEach(function (k) {   // the same place and width on every level (the length may take in a landing or a sliver)
       var st = stairs[k];

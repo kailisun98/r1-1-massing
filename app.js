@@ -267,7 +267,7 @@ var App = (function () {
     for (var s = s0; s <= s1 + 1e-9; s += 1) prof.push([s, M.groundZ(S.res, sp.c[0] + sp.dir[0] * s, sp.c[1] + sp.dir[1] * s)]);
     var gmin = Math.min.apply(null, prof.map(function (p) { return p[1]; })), gmax = Math.max.apply(null, prof.map(function (p) { return p[1]; }));
     zLo = Math.min(zLo, gmin - 3); zHi = Math.max(zHi, gmax + 2);
-    var pad = 36, k = (W - 2 * pad) / (s1 - s0), head = 60, H = (zHi - zLo) * k + 2 * pad + head;
+    var ROW_H = 12, ROWS = 5, pad = 36, k = (W - 2 * pad) / (s1 - s0), head = 11 + ROWS * ROW_H + 6, H = (zHi - zLo) * k + 2 * pad + head;
     var svgNS = "http://www.w3.org/2000/svg", svg = document.createElementNS(svgNS, "svg");
     svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("width", "100%"); svg.style.maxWidth = "100%"; svg.setAttribute("data-w", W); svg.setAttribute("data-h", Math.round(H)); svg.setAttribute("font-family", "Helvetica Neue, Helvetica, Arial, sans-serif");
     function X(sv) { return pad + (sv - s0) * k; } function Y(z) { return pad + head + (zHi - z) * k; }
@@ -299,7 +299,8 @@ var App = (function () {
         add("rect", { x: X(a.s0), y: Y(a.z), width: (a.s1 - a.s0) * k, height: Math.max(2, 0.25 * k), fill: "#b8bec6", stroke: "#1f2933", "stroke-width": 0.8 });
         var gx = a.face === "rear" ? X(a.s1) : X(a.s0);
         add("line", { x1: gx, y1: Y(a.z), x2: gx, y2: Y(a.z + R1Access.GUARD_H), stroke: "#1f2933", "stroke-width": 1 });
-        if (!sp.access.some(function (b) { return b.kind === "stair" && b.block === a.block && b.face === a.face; })) add("text", { x: X((a.s0 + a.s1) / 2), y: Y(a.z) - 3, "font-size": 8, "text-anchor": "middle", "class": "seclbl" }, "WALKWAY");
+        // the name stands outside the walkway, away from the building face it hangs on
+        if (!sp.access.some(function (b) { return b.kind === "stair" && b.block === a.block && b.face === a.face; })) add("text", { x: a.face === "rear" ? X(a.s1) + 3 : X(a.s0) - 3, y: Y(a.z) - 3, "font-size": 7, "text-anchor": a.face === "rear" ? "start" : "end", "class": "seclbl" }, "WALKWAY");
       } else {
         add("rect", { x: X(a.s0), y: Y(a.z1), width: (a.s1 - a.s0) * k, height: (a.z1 - a.z0) * k, fill: "#f1f2ef", "fill-opacity": 0.9, stroke: "#1f2933", "stroke-width": 0.8, "stroke-dasharray": "3 2" });
         add("text", { x: X((a.s0 + a.s1) / 2), y: Y((a.z0 + a.z1) / 2), "font-size": 8, "text-anchor": "middle", transform: "rotate(-90 " + X((a.s0 + a.s1) / 2) + " " + Y((a.z0 + a.z1) / 2) + ")", "class": "seclbl" }, "EXIT STAIR");
@@ -312,32 +313,61 @@ var App = (function () {
       var a = { x1: X(ln.a[0]), y1: Y(ln.a[1]), x2: X(ln.b[0]), y2: Y(ln.b[1]) }; Object.keys(st).forEach(function (kk) { a[kk] = st[kk]; });
       add("line", a);
     });
-    // the yard lines of the schedule, the property lines and the height limits, labelled: the vertical lines run up
-    // into the head band, where their names sit on two rows (yard lines above, property lines below), clear of the strings
+    // the height limits: a dashed line over each building, named above it from inside the building's span (clear of the yard lines)
     (sp.marks || []).forEach(function (mk) {
-      if (mk.kind === "height") {
-        add("line", { x1: X(mk.s0), y1: Y(mk.z), x2: X(mk.s1), y2: Y(mk.z), stroke: COLORS.setback, "stroke-width": 1, "stroke-dasharray": "8 4" });
-        add("text", { x: X(mk.s0) + 4, y: Y(mk.z) - 4, "font-size": 8.5, "class": "secmark" }, mk.label + " [" + mk.clause + "]");   // above the line, inside the building's span
-        return;
-      }
-      var x = X(mk.s), top = pad + (mk.kind === "setback" ? (/rear building/.test(mk.label) ? 42 : 14) : 28);   // three rows: yard lines, property lines, the courtyard rear yard
-      add("line", { x1: x, y1: Y(zLo), x2: x, y2: top + 3, stroke: mk.kind === "setback" ? COLORS.setback : COLORS.site, "stroke-width": mk.kind === "setback" ? 1 : 1.5, "stroke-dasharray": mk.kind === "setback" ? "6 4" : "none" });
-      add("text", { x: x, y: top, "font-size": 8.5, "text-anchor": "middle", "class": mk.kind === "setback" ? "secmark" : "seclbl" }, mk.label + (mk.clause ? " [" + mk.clause + "]" : ""));
+      if (mk.kind !== "height") return;
+      add("line", { x1: X(mk.s0), y1: Y(mk.z), x2: X(mk.s1), y2: Y(mk.z), stroke: COLORS.setback, "stroke-width": 1, "stroke-dasharray": "8 4" });
+      var endA = mk.label_anchor === "end";
+      add("text", { x: X(mk.label_s !== undefined ? mk.label_s : mk.s0) + (endA ? -4 : 6), y: Y(mk.z) - 4, "font-size": 8.5, "text-anchor": endA ? "end" : "start", "class": "secmark" }, mk.label + " [" + mk.clause + "]");
     });
-    // dimensions, named
-    sp.dims.forEach(function (dm) {
+    // the yard lines and property lines run up into the head band and end under their own names. The names take rows
+    // so that no name sits across another line: a name may span a neighbouring mark only when that mark's name is on
+    // a lower row (its line then stops short), and a name is anchored to the left or right of its line when centring
+    // it would cross a neighbour. Long names are placed first.
+    var vm = (sp.marks || []).filter(function (mk) { return mk.kind !== "height"; }).map(function (mk) { var t = mk.label + (mk.clause ? " [" + mk.clause + "]" : ""); return { mk: mk, text: t, x: X(mk.s), w: t.length * 4.8, row: -1, minRow: 0, box: null, anchor: "middle" }; });
+    vm.slice().sort(function (a, b) { return b.w - a.w; }).forEach(function (m) {
+      var best = null;
+      for (var row = m.minRow; row < ROWS; row++) {
+        ["middle", "end", "start"].forEach(function (anchor, ai) {
+          var x0 = anchor === "middle" ? m.x - m.w / 2 : (anchor === "end" ? m.x - 3 - m.w : m.x + 3), x1 = x0 + m.w;
+          if (x0 < 2 || x1 > W - 2) return;
+          var under = 0, ok = vm.every(function (o) {
+            if (o === m) return true;
+            if (o.row === row && o.box && x0 < o.box[1] + 8 && x1 > o.box[0] - 8) return false;   // the same row: no overlap
+            if (o.x > x0 - 3 && o.x < x1 + 3) { if (o.row >= 0 && o.row <= row) return false; under++; }   // a placed mark under this name would run through it; an unplaced one will have to go lower
+            return true;
+          });
+          if (!ok) return;
+          var score = row * 10 + ai + under * 4;   // the highest row, centred, spanning as few other marks as possible
+          if (!best || score < best.score) best = { row: row, anchor: anchor, box: [x0, x1], score: score };
+        });
+      }
+      if (!best) best = { row: ROWS - 1, anchor: "middle", box: [m.x - m.w / 2, m.x + m.w / 2], fallback: true };
+      m.row = best.row; m.anchor = best.anchor; m.box = best.box;
+      if (!best.fallback) vm.forEach(function (o) { if (o !== m && o.row < 0 && o.x > m.box[0] - 3 && o.x < m.box[1] + 3) o.minRow = Math.min(ROWS - 1, Math.max(o.minRow, m.row + 1)); });   // marks under this name get their names below it
+    });
+    vm.forEach(function (m) {
+      var mk = m.mk, top = pad + 11 + m.row * ROW_H, setback = mk.kind === "setback";
+      add("line", { x1: m.x, y1: Y(zLo), x2: m.x, y2: top + 3, stroke: setback ? COLORS.setback : COLORS.site, "stroke-width": setback ? 1 : 1.5, "stroke-dasharray": setback ? "6 4" : "none" });
+      add("text", { x: m.anchor === "middle" ? m.x : (m.anchor === "end" ? m.x - 3 : m.x + 3), y: top, "font-size": 8.5, "text-anchor": m.anchor, "class": setback ? "secmark" : "seclbl" }, m.text);
+    });
+    // dimensions, named: the heights stand outside the drawing (front building on the left, rear building on the right),
+    // their figures and names read upward beside the line; a horizontal figure too wide for its span sits past its end
+    sp.dims.forEach(function (dm, di) {
       if (dm.vertical) {
-        var x = X(dm.s), y0 = Y(dm.z[0]), y1 = Y(dm.z[1]);
+        var x = X(dm.s), y0 = Y(dm.z[0]), y1 = Y(dm.z[1]), ym = (y0 + y1) / 2, left = dm.side === "left", tx = left ? x - 3 : x + 10, nx = left ? x - 13 : x + 21;
         add("line", { x1: x, y1: y0, x2: x, y2: y1, stroke: COLORS.dim, "stroke-width": 1 });
         [y0, y1].forEach(function (yy) { add("line", { x1: x - 4, y1: yy + 4, x2: x + 4, y2: yy - 4, stroke: COLORS.dim, "stroke-width": 1.5 }); });
-        add("text", { x: x + 6, y: (y0 + y1) / 2, "font-size": 11, "text-anchor": "middle", transform: "rotate(-90 " + (x + 6) + " " + ((y0 + y1) / 2) + ")", "class": "secdim" }, mm(dm.value_m));
-        add("text", { x: x + 17, y: (y0 + y1) / 2, "font-size": 8, "text-anchor": "middle", transform: "rotate(-90 " + (x + 17) + " " + ((y0 + y1) / 2) + ")", "class": "seclbl" }, dm.name);
+        add("text", { x: tx, y: ym, "font-size": 11, "text-anchor": "middle", transform: "rotate(-90 " + tx + " " + ym + ")", "class": "secdim" }, mm(dm.value_m));
+        add("text", { x: nx, y: ym, "font-size": 8, "text-anchor": "middle", transform: "rotate(-90 " + nx + " " + ym + ")", "class": "seclbl" }, dm.name);
       } else {
-        var xa = X(dm.s[0]), xb = X(dm.s[1]), y = Y(dm.z);
+        var xa = X(dm.s[0]), xb = X(dm.s[1]), y = Y(dm.z), val = String(mm(dm.value_m)), tw = val.length * 6.4 + 6;
         add("line", { x1: xa, y1: y, x2: xb, y2: y, stroke: COLORS.dim, "stroke-width": 1 });
         [xa, xb].forEach(function (xx) { add("line", { x1: xx - 4, y1: y + 4, x2: xx + 4, y2: y - 4, stroke: COLORS.dim, "stroke-width": 1.5 }); });
-        add("text", { x: (xa + xb) / 2, y: y - 4, "font-size": 11, "text-anchor": "middle", "class": "secdim" }, mm(dm.value_m));
-        if (xb - xa > 46) add("text", { x: (xa + xb) / 2, y: y - 15, "font-size": 8, "text-anchor": "middle", "class": "seclbl" }, dm.name);
+        if (xb - xa >= tw) add("text", { x: (xa + xb) / 2, y: y - 4, "font-size": 11, "text-anchor": "middle", "class": "secdim" }, val);
+        else if (di === 0) add("text", { x: xa - 5, y: y - 4, "font-size": 11, "text-anchor": "end", "class": "secdim" }, val);
+        else add("text", { x: xb + 5, y: y - 4, "font-size": 11, "text-anchor": "start", "class": "secdim" }, val);
+        if (xb - xa > dm.name.length * 4.6 + 6) add("text", { x: (xa + xb) / 2, y: y - 15, "font-size": 8, "text-anchor": "middle", "class": "seclbl" }, dm.name);
       }
     });
     // street / lane names at the ends

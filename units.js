@@ -146,15 +146,15 @@ var R1Units = (function () {
   function capacityOf(u, b) {
     if (typeof R1Rooms === "undefined" || typeof R1Cmhc === "undefined") return u.area_est_m2 >= TYPE_MIN_M2[3] ? 3 : (u.area_est_m2 >= TYPE_MIN_M2[2] ? 2 : 1);
     var levels = [], nf = b.floors.length, fh = b.height_m / nf;
-    b.floors.forEach(function (f) { C.unitCells(f.units, f.split, f.cols, f.core).forEach(function (c) { if (c.key === u.key) levels.push({ w: (c.a1 - c.a0) * b.width_m, d: (c.b1 - c.b0) * b.depth_m }); }); });
+    b.floors.forEach(function (f, fi) { C.unitCells(f.units, f.split, f.cols, f.core).forEach(function (c) { if (c.key === u.key) levels.push({ w: (c.a1 - c.a0) * b.width_m, d: (c.b1 - c.b0) * b.depth_m, fi: fi }); }); });
     if (!levels.length) return 1;
-    var roles = C.levelRoles(levels.length, { key: "bylaw" }), ctx = R1Rooms.unitCtx(levels[0].w, levels[0].d, { fh: fh }), MINW = R1Rooms.MIN.living_w;
+    var roles = C.levelRoles(levels.length, { key: "bylaw" }, levels[0].fi > 0 && levels[0].d >= 8.4), ctx = R1Rooms.unitCtx(levels[0].w, levels[0].d, { fh: fh, levels: levels.length }), MINW = R1Rooms.MIN.living_w;
     // a type fits when its rooms hold that many beds (0.76 m clear on the open sides) and the living room is wide enough for a sofa
     for (var t = 3; t >= 1; t--) {
       if (u.area_est_m2 < TYPE_MIN_M2[t] * 0.9) continue;
       var probe = bedsOf(t, u.area_est_m2), beds = 0, livingOk = true;
       levels.forEach(function (lv, i) {
-        var rooms = R1Rooms.layout(roles[i], probe, lv.w, lv.d, ctx);
+        var rooms = R1Rooms.layout(roles[i], probe, lv.w, lv.d, Object.assign({}, ctx, { level: i, beds: C.bedsOnLevel(probe, roles, i) }));
         rooms.forEach(function (r) {
           if (/bedroom/i.test(r.name) && !r.part && (typeof R1Fits === "undefined" || R1Fits.bedFor(r.w, r.h))) beds++;
           if (/^Living/.test(r.name) && !r.part) {   // the whole of an L-shaped living room

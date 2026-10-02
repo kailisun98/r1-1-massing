@@ -355,9 +355,22 @@ var R1Cmhc = (function () {
      living, dining, kitchen, powder room) under a "bedroom" level; a three-level unit adds an "entry" level with
      the den below (townhouse) or, for the duplex whose third level is in the roof, an "attic" level above. Each
      role is a list of bands from the street side back, each band split across the width. Fractions of the unit. */
-  function levelRoles(nLevels, design) {
-    if (nLevels >= 3) return design.key === "duplex" ? ["living", "bedroom", "attic"] : ["entry", "living", "bedroom"];
-    return nLevels === 2 ? ["living", "bedroom"] : ["flat"];
+  /* levelRoles(nLevels, design, aboveGrade): as the catalogue arranges them: a two-level unit entered at grade has its
+     living level below its bedroom level (Rowhouse, Duplex, the Sixplex's rear units); one entered above grade from an
+     exterior stair has its bedrooms on the entry level and the living level, with its terrace, on top (Fourplex 01,
+     the Sixplex's U3 and U4); a three-level unit has living, bedrooms, then a last bedroom with a terrace in the roof
+     (Duplex, Fourplex 02). */
+  function levelRoles(nLevels, design, aboveGrade) {
+    if (nLevels >= 3) return ["living", "bedroom", "attic"];
+    if (nLevels === 2) return aboveGrade ? ["bedroom", "living"] : ["living", "bedroom"];
+    return ["flat"];
+  }
+  // how many bedrooms a level should hold: all of them on the bedroom level, one in the attic (the bedroom level then holds the rest)
+  function bedsOnLevel(u, roles, li) {
+    var beds = u ? u.beds : 1, role = roles[li];
+    if (role === "bedroom") return roles.indexOf("attic") >= 0 ? Math.max(1, beds - 1) : beds;
+    if (role === "attic") return beds >= 1 ? 1 : 0;
+    return 0;
   }
   function bedsLabel(beds) { return beds ? beds + " BED" : "STUDIO"; }
   function programme(role, u) {
@@ -403,8 +416,8 @@ var R1Cmhc = (function () {
           out.push({ block: b.key, unit: CORE_KEY, floor: f.name, floor_index: fi, level_index: fi, levels: nf, role: "core", cell: coreCell(f), width_m: cwm, depth_m: b.depth_m, rooms: coreRooms, entry_face: fi === 0 ? "front" : null, entry_floor: 0, walkway: false, core: true });
         }
         unitCells(f.units, f.split, f.cols, f.core).forEach(function (c) {
-          var u = unitOf(b, c.key), lv = levelsOf[c.key], li = lv.indexOf(fi), role = u && u.kind ? u.kind : (levelRoles(lv.length, b.design)[li] || "flat");
           var cw = (c.a1 - c.a0) * b.width_m, cd = (c.b1 - c.b0) * b.depth_m;
+          var u = unitOf(b, c.key), lv = levelsOf[c.key], li = lv.indexOf(fi), roles = u && u.kind ? [u.kind] : levelRoles(lv.length, b.design, lv[0] > 0 && cd >= 8.4), role = roles[li] || "flat";   // a shallow upper unit keeps its living level at its entry
           var ent = ap ? ap.entries[c.key + "@" + b.key] : null, face = ent ? ent.face : null;
           // which faces of the unit are exterior, in the unit's own frame (its entry face in front)
           var ext = { front: c.b0 < 0.02, rear: c.b1 > 0.98, left: c.a0 < 0.02, right: c.a1 > 0.98 };
@@ -412,11 +425,13 @@ var R1Cmhc = (function () {
           // a wide, shallow one-level flat entered from a side face (the rear cell of two stacked flats, reached by the side
           // path) is laid out across its depth and transposed, so that its entry sits on that face: the shallow template
           // puts the entry between two bedrooms, away from the sides
-          var side = (face === "left" || face === "right") && lv.length === 1 && role === "flat" && cw > cd + 0.5;
+          // a wide flat entered from a side face carries its entry in the wing on that side (R1Rooms.flatWide); a narrower one is
+          // laid out across its depth and transposed so its entry sits on that face
+          var sideFace = (face === "left" || face === "right") && lv.length === 1 && role === "flat", wide = cw >= 9.6 && cd >= 6.2, side = sideFace && !wide && cw > cd + 0.5;
           if (side) win = face === "left" ? { front: ext.left, back: ext.right, left: ext.front, right: ext.rear } : { front: ext.right, back: ext.left, left: ext.front, right: ext.rear };
           var lw = side ? cd : cw, ld = side ? cw : cd;
           // rooms: the layout engine (standard test fits, the same stair on every level of a unit) when it is loaded, else the band programme
-          var rs = (typeof R1Rooms !== "undefined") ? R1Rooms.layout(role, u, lw, ld, R1Rooms.unitCtx(lw, ld, { fh: b.height_m / b.floors.length, win: win })) : rooms(role, u, lw, ld);
+          var rs = (typeof R1Rooms !== "undefined") ? R1Rooms.layout(role, u, lw, ld, R1Rooms.unitCtx(lw, ld, { fh: b.height_m / b.floors.length, win: win, walk: !!(ent && ent.walkway), entry: sideFace && wide ? face : "front", level: li, levels: lv.length, beds: u && u.kind ? 0 : bedsOnLevel(u, roles, li) })) : rooms(role, u, lw, ld);
           if (side) rs = rs.map(function (r) { return Object.assign({}, r, { x: r.y, y: r.x, w: r.h, h: r.w }); });
           if (face === "rear") rs = rs.map(function (r) { return Object.assign({}, r, { y: r2(cd - r.y - r.h) }); });
           if (face === "right") rs = rs.map(function (r) { return Object.assign({}, r, { x: r2(cw - r.x - r.w) }); });
@@ -489,5 +504,5 @@ var R1Cmhc = (function () {
 
   return { SOURCE: SOURCE, DESIGNS: DESIGNS, UNIT_COLORS: UNIT_COLORS, design: design, url: url, fits: fits, form: form, fitRows: fitRows, fitLines: fitLines,
     unitRows: unitRows, unitSvg: unitSvg, unitMix: unitMix, optionGfa: optionGfa, unitColor: unitColor, unitVolumes: unitVolumes, unitAreas: unitAreas,
-    levelRoles: levelRoles, bedsLabel: bedsLabel, programme: programme, rooms: rooms, unitRooms: unitRooms, unitCells: unitCells, coreCell: coreCell, CORE_KEY: CORE_KEY, CORE_COLOR: CORE_COLOR, blockOf: blockOf, unitOf: unitOf, bilinear: bilinear, floorPlansSvg: floorPlansSvg };
+    levelRoles: levelRoles, bedsOnLevel: bedsOnLevel, bedsLabel: bedsLabel, programme: programme, rooms: rooms, unitRooms: unitRooms, unitCells: unitCells, coreCell: coreCell, CORE_KEY: CORE_KEY, CORE_COLOR: CORE_COLOR, blockOf: blockOf, unitOf: unitOf, bilinear: bilinear, floorPlansSvg: floorPlansSvg };
 })();

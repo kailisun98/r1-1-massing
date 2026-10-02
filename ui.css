@@ -110,7 +110,8 @@ table.ui-table, .ui-table { width: 100%; border-collapse: collapse; font-size: 1
 .ui-table th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 6px; border-bottom: 1px solid var(--line); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
 .ui-table td { padding: 4px 6px; border-bottom: 1px solid var(--line); vertical-align: top; }
 .ui-table td.clause { font-family: var(--mono); color: var(--muted); white-space: nowrap; }
-.ui-table td.status-cell { font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* the status text wraps inside its cell (the mark stays on the first line), so a long status never runs out of the bar */
+.ui-table td.status-cell { font-variant-numeric: tabular-nums; white-space: normal; overflow-wrap: anywhere; min-width: 9em; }
 .ui-table th.num, .ui-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .ui-table tr.group th { background: var(--group); color: var(--ink); font-weight: 600; padding: 5px 6px; text-transform: none; letter-spacing: 0; font-size: 11.5px; }
 .ui-table td.empty { color: var(--muted); padding: 8px 6px; }

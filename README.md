@@ -1,8 +1,22 @@
-# R1-1 Massing tool — Revit 2026 (pyRevit)
+# Lotwise
 
-Lotwise is a tool that helps architects and designers study schematic designs in minutes. Users pick any R1-1 site within the city of Vancouver and the tool will import the surrounding topography and context within a radius selected by the user. THe tool then confirms the street edge automatically and users are alowed to generate their own test fit based on the permissable build areas on the site. Alternatively, they can select from the CMHC Housing Catalogue's inventory of recommended typologies of units and the tool automatically fits them to size. Lotwise also creates a working site plan as well as unit test fits with areas and FSRs accounted for for preliminary massing generation. Future versions to come will include the option to export massings to Revit along with the created site. 
+*City of Vancouver R1-1 schematic design tool.* Live: https://kailisun98.github.io/r1-1-massing/
 
+Lotwise is a tool that helps architects and designers study schematic designs in minutes. Users
+pick any R1-1 site within the City of Vancouver and the tool imports the surrounding topography and
+context within a radius selected by the user. The tool then confirms the street edge automatically,
+and users can generate their own test fit based on the permissible build area on the site.
+Alternatively, they can select from the CMHC Housing Design Catalogue's inventory of recommended
+unit typologies and the tool fits them to size automatically. Lotwise also creates a working site
+plan as well as unit test fits, with areas and FSR accounted for, for preliminary massing
+generation. Future versions will include the option to export the massing to Revit along with the
+created site.
 
+The web app is described under [Web app: Lotwise](#web-app-lotwise). This repository also holds
+the Revit 2026 (pyRevit) version of the same workflow, **R1-1 Massing**, described from
+[Install](#install) on: one panel that stays open beside the model, from site selection and
+topography import to the permitted envelope and the form options, with every number in its report
+tied to its clause (model standard: millimetres; the by-law's metres shown alongside).
 
 ## Source
 

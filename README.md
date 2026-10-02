@@ -1,6 +1,9 @@
 # Lotwise
 
-*City of Vancouver R1-1 schematic design tool.* Live: https://kailisun98.github.io/r1-1-massing/
+*City of Vancouver R1-1 schematic design tool.*
+**Live tool (GitHub Pages): https://kailisun98.github.io/r1-1-massing/** · Repository: https://github.com/kailisun98/r1-1-massing
+
+## 1. Purpose
 
 Lotwise is a tool that helps architects and designers study schematic designs in minutes. Users
 pick any R1-1 site within the City of Vancouver and the tool imports the surrounding topography and
@@ -12,13 +15,48 @@ plan as well as unit test fits, with areas and FSR accounted for, for preliminar
 generation. Future versions will include the option to export the massing to Revit along with the
 created site.
 
-The web app is described under [Web app: Lotwise](#web-app-lotwise). This repository also holds
-the Revit 2026 (pyRevit) version of the same workflow, **R1-1 Massing**, described from
-[Install](#install) on: one panel that stays open beside the model, from site selection and
-topography import to the permitted envelope and the form options, with every number in its report
-tied to its clause (model standard: millimetres; the by-law's metres shown alongside).
+## 2. How to use it
 
-## Source
+Lotwise is a web page (HTML, CSS and JavaScript; no server, no account), published with GitHub
+Pages at the link above. It talks to the City of Vancouver Open Data portal directly from the
+browser.
+
+1. Open https://kailisun98.github.io/r1-1-massing/ in a desktop browser (Chrome, Edge, Firefox or
+   Safari). The example lot, 3567 W 27th Ave, loads by itself: the site is fetched, the street edge
+   detected and the permitted envelope drawn, so the page opens in a working state.
+2. In **Site** (step 1) type another Vancouver address and press Enter or **Fetch site**, or click
+   **Pick a lot on the map** and click inside any lot. The site cut (200 × 200 m by default) sets
+   how much context is imported. The by-law table (step 2) says whether the lot is zoned R1-1 and
+   which rules it meets; if the street edge is not detected, choose it in the list that appears or
+   pick a point on the map.
+3. Read the **by-law table** (step 2) and the **permitted envelope** (step 3). Every row cites its
+   clause: a green check is a rule applied and met, a red cross a rule not met, an amber dash a
+   rule that does not apply to what is drawn.
+4. Open **Massing options** (step 4, the panel on the right). Under **By-law forms** pick a form
+   (single building, courtyard, side by side) and set the dwellings, tenure, ground-floor use,
+   access (exterior stair and walkway, or a shared internal stair) and the unit mix; under
+   **CMHC catalogue** click a design that fits the envelope. The unit table and stack diagram
+   appear below.
+5. Switch the stage with the tabs **Map**, **Site plan**, **3D**, **Site section** and
+   **Floor plans** (keyboard: Alt+1 to Alt+5). The floor plans sheet carries the plan check under
+   the drawing; the site plan has car-share and outdoor-space options above it.
+6. **Copy report** (left bar, Report) copies the whole run with every clause; **Save site file**
+   keeps the fetched data for the shared copy of the app.
+
+To run it on your own machine: clone the repository and serve the folder, for example
+
+```bash
+python -m http.server 8765
+```
+
+then open http://localhost:8765/. Opening `index.html` straight from disk also works in most
+browsers. `selftest.html` runs the engine checks (79) and `ui-test.html` the component checks (86);
+`ui-gallery.html` shows the interface components.
+
+This repository also holds the Revit 2026 (pyRevit) version of the same workflow, **R1-1
+Massing**: see [Install](#install) and [The panel](#the-panel) for how to install and run it.
+
+## 3. Source
 
 City of Vancouver, Zoning and Development By-law No. 3575, **R1-1 District Schedule**, June 2026
 consolidation. https://bylaws.vancouver.ca/zoning/zoning-by-law-district-schedule-r1-1.pdf —
@@ -61,6 +99,77 @@ Site data: City of Vancouver Open Data (Open Government Licence – Vancouver), 
 CDEM as a point-elevation fallback. Everything
 imported is **approximate context**; parcel dimensions must be checked against a legal survey
 before they are relied on.
+
+## 4. Example
+
+**Input:** the address *3567 W 27th Ave* (an R1-1 lot in Dunbar-Southlands, 15.2 × 39.8 m, the
+example that loads with the page), the 200 m site cut, then the **Single building** form with the
+default 6 strata units.
+
+**Result:** the site is fetched from the City's open data and the street edge found on W 27th Ave.
+The by-law table reads: the site qualifies for up to 6 units [3.1.2.1]; front yard 4.9 m, side yards
+1.2 m and rear yard 10.7 m applied [3.1.2.6 to 3.1.2.8]; the maximum building depth of 19.8 m
+controls the envelope [3.1.2.9]; envelope 12.78 × 19.80 m, 11.5 m high [3.1.2.5(b)]. The form is
+drawn as six stacked two-bedroom flats, two per floor, trimmed to FSR 1.00, and every tab follows.
+
+![Lotwise after the fetch: the site on the map with the form drawn, the by-law table on the left and the massing options on the right](docs/lotwise-app.jpg)
+
+![The site plan: the yard lines, the ground-floor units with their entries, the exterior exit stair and walkway, a car-share stall and the shared outdoor space, dimensions in mm](docs/lotwise-siteplan.png)
+
+![The floor plans of the six flats, with the plan check passed under the sheet](docs/lotwise-plans.png)
+
+![The site section through unit U1: the units, the walkway and stair, the yard lines and the height limits with their clauses](docs/lotwise-section.png)
+
+The report of the same run (copied with **Copy report**) reads, in part:
+
+```
+YARDS APPLIED (single principal building):
+  Front  4900 mm (4.9 m)   [3.1.2.6]
+  Side   1200 mm (1.2 m)   flat; s.3.2.2.11 reduction does not apply to multiple dwelling  [3.1.2.7]
+  Rear   10700 mm (10.7 m)   [3.1.2.8(b) (all other buildings)]
+
+ENVELOPE:
+  Depth  19800 mm (19.80 m)   controlled by: max building depth  [3.1.2.9; measured per 4.2.3 ...]
+  Width  12777 mm (12.78 m)   within max width  [3.1.2.10]
+  Height 11500 mm (11.5 m) / 3 storeys   [3.1.2.5(b) (all other buildings: 11.5 m and 3 storeys)]
+
+FORM OPTION: Single building
+  Single building: 12.81 x 19.80 m, 253.4 m2, 11.5 m / 3 storeys [3.1.2.5(b)]
+  Floor area if every storey is full: 760 m2 = FSR 1.26; cap 1.00 [3.1.1.2]; ...
+```
+
+## 5. Skill and limits
+
+There is no separate skill file; the reusable knowledge is in the code and the source extract:
+[`web/core.js`](web/core.js) (`RULES`: every schedule value with its clause, the evaluation and the
+report), [`web/units.js`](web/units.js) (unit counts by tenure, the family-unit minimum, the mix
+limits), [`web/rooms.js`](web/rooms.js) (room sizes, clearances and the adjacency rules distilled
+from dimensions.com and the CMHC catalogue plans), [`web/plans.js`](web/plans.js) (the plan check)
+and `../source/r1-1_extract.md` (the cited passages of the schedule). The Revit version shares the
+same values in `lib/r1_1_core.py`.
+
+What Lotwise does not do, and where a person must check the result:
+
+- It is a schematic design aid, not a permit or code review. Nothing it draws is a submission.
+- The by-law is applied as numeric rules from the June 2026 schedule. Conditional and discretionary
+  provisions (Director of Planning approvals, design guidelines, heritage, trees, parking,
+  servicing, flood plain and lane-access preconditions) are listed as assumptions or not checked;
+  the table marks them.
+- FSR counts the gross area of every storey; the schedule's exclusions (for example 7.5 m² per
+  stacked unit, 4.1.2(l)) are not modelled, so a scheme shown at FSR 1.00 may have room to spare.
+- The ground comes from the City's 1 m contours and building heights, interpolated; street-edge
+  detection is automatic and must be overridden when it is wrong (a corner lot, an odd parcel).
+- The floor plans are test fits: rooms are sized to standard furniture and clearances and checked
+  for circulation, but structure, services, egress distances, window areas, accessibility and
+  energy are not. Stairs are sized on a 3.1 m storey; the real floor-to-floor is a design decision.
+- The single exit stair arrangements assume the BC Building Code 2024 and Vancouver Building
+  By-law single-exit provisions apply; confirm with a code consultant.
+- Catalogue designs are fitted by their published footprints and unit lists; CMHC's own drawings
+  govern, and the designs are illustrative, not for permit.
+- The shared claude.ai copy works only on its six stored lots or a saved site file; the live site
+  needs the City's open-data portal to be reachable from the browser.
+
+The sections below document the web app and the Revit tool in detail.
 
 ## Web app: Lotwise
 

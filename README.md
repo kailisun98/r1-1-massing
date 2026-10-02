@@ -1,19 +1,8 @@
 # R1-1 Massing tool — Revit 2026 (pyRevit)
 
-One panel that stays open beside the model: **select the site → import its topography and context,
-cut to a square site model → confirm the street edge → read the R1-1 by-law values that apply →
-generate the permitted envelope with setback lines and dimensions (hiding the existing house) →
-toggle the form options: single building, courtyard (front + rear building), side by side**, with
-every number in the report tied to its clause.
+Lotwise is a tool that helps architects and designers study schematic designs in minutes. Users pick any R1-1 site within the city of Vancouver and the tool will import the surrounding topography and context within a radius selected by the user. THe tool then confirms the street edge automatically and users are alowed to generate their own test fit based on the permissable build areas on the site. Alternatively, they can select from the CMHC Housing Catalogue's inventory of recommended typologies of units and the tool automatically fits them to size. Lotwise also creates a working site plan as well as unit test fits with areas and FSRs accounted for for preliminary massing generation. Future versions to come will include the option to export massings to Revit along with the created site. 
 
-It is the Revit version of the Rhino script [`r1_1_envelope.py`](r1_1_envelope.py) in this folder,
-with the site-selection and topography-import stage in front of the setback-to-envelope operation.
-**Model standard: millimetres.** The by-law states its values in metres, so the report shows both,
-e.g. `4900 mm (4.9 m) [3.1.2.6]`. Areas stay in m² because that is how the schedule states them.
-Developed and tested against the office template `PUBLIC TEMPLATE.rte`
-(`Desktop\Work\0000 Public Template`); it also runs in the stock metric template.
 
-![The panel after a run at 3567 W 27th Ave](tests/panel.png)
 
 ## Source
 

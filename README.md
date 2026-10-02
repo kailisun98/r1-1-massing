@@ -47,7 +47,8 @@ browser.
    development statistics of the drawn option (site, envelope, coverage, gross floor area and FSR
    against the 1.0 cap, units and family units, tenure, access, car share, outdoor space), the
    by-law checks, the unit schedule, the 3D view, the site plan, the section and the floor plans
-   on one page. **Export PDF** writes them to a four-page A4 report.
+   on one page. **Export PDF** (on the sheet, and in the title bar once an option is drawn)
+   writes them to a four-page A4 report.
 7. **Copy report** (left bar, Report) copies the whole run with every clause; **Save site file**
    keeps the fetched data for the shared copy of the app.
 

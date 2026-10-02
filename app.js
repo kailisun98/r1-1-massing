@@ -71,6 +71,7 @@ var App = (function () {
     var bylawUp = !!(S.form && S.form.status === "ok" && S.form.scheme !== "cmhc");
     ui.btnFormClear.disabled = !bylawUp; ui.unitParams.disabled = !bylawUp; ui.btnFormPlans.disabled = !(bylawUp && S.unitsOption); ui.btnFormSection.disabled = !haveEnv; ui.btnFormSummary.disabled = !(bylawUp && S.unitsOption);
     ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc"); ui.btnCmhcPlans.disabled = !S.cmhcPick; ui.btnCmhcSection.disabled = !haveEnv; ui.btnCmhcSummary.disabled = !S.cmhcPick;
+    ui.btnPdf.disabled = !summaryReady();
     tabsC.update({ items: tabItems({ "3d": !haveModel, section: !haveSite, plans: !S.unitsOption, siteplan: !haveEnv, summary: !S.unitsOption }) });
     rightC.update({ disabled: !haveEnv && ui.rightPanel.hidden });
     ui.stepBadges.forEach(function (b, i) {
@@ -693,20 +694,30 @@ var App = (function () {
     summaryTimer = setTimeout(function () { summaryTimer = null; drawSummaryNow(); }, 30);
   }
   function drawSummaryNow() {
-    var host = ui.summaryHost;
+    var host = ui.summaryHost, o = S.unitsOption;
     if (summaryBusy) { summaryBusy.destroy(); summaryBusy = null; }
     host.innerHTML = "";
     if (!summaryReady()) { host.appendChild(el("p", "empty", SUMMARY_EMPTY)); return; }
-    var ctx = summaryCtx(), data = R1Summary.stats(ctx), o = ctx.option;
-    var head = el("div", "sheet-head");
-    head.appendChild(el("h2", null, "Development summary: " + (data.address || "site") + " · " + data.option));
-    head.appendChild(el("p", null, "The end of the flow: the key statistics of the drawn option with its FSR, the by-law checks, the unit schedule and the drawings, as of " + data.date + ". Export PDF writes them to an A4 report with the 3D view, the site plan, the section and the floor plans."));
+    // the heading and the actions first, so the buttons stand even if a drawing below them fails
+    var name = (o.source === "cmhc" ? "CMHC " : "") + o.name, head = el("div", "sheet-head");
+    head.appendChild(el("h2", null, "Development summary: " + (S.address || "site") + " · " + name.charAt(0).toUpperCase() + name.slice(1)));
+    head.appendChild(el("p", null, "The end of the flow: the key statistics of the drawn option with its FSR, the by-law checks, the unit schedule and the drawings, as of " + new Date().toISOString().slice(0, 10) + ". Export PDF writes them to an A4 report with the 3D view, the site plan, the section and the floor plans."));
     host.appendChild(head);
     var tools = el("div", "sheet-tools ui-toolbar"); tools.setAttribute("role", "toolbar"); tools.setAttribute("aria-label", "Summary actions");
-    var btnPdf = el("button", "primary", "Export PDF"); btnPdf.type = "button"; btnPdf.title = "An A4 landscape PDF: statistics and 3D view, site plan and section with the unit schedule, floor plans";
+    var btnPdf = el("button", "primary", "Export PDF"); btnPdf.type = "button"; btnPdf.title = "An A4 landscape PDF: statistics and checks, the 3D view, site plan and section with the unit schedule, floor plans";
     btnPdf.addEventListener("click", function () { exportSummaryPdf(btnPdf); }); tools.appendChild(btnPdf);
     if (!BUNDLED) { var btnPrint = el("button", "secondary", "Print"); btnPrint.type = "button"; btnPrint.title = "Print this page (the summary only)"; btnPrint.addEventListener("click", function () { window.print(); }); tools.appendChild(btnPrint); }
     host.appendChild(tools);
+    try { summaryBody(host, o); }
+    catch (e) {
+      console.error(e);
+      var err = el("div"); host.appendChild(err);
+      R1UI.notice(err, { tone: "error", title: "The summary could not be drawn.", text: (e && e.message ? e.message : String(e)) + " The floor plans and site plan tabs may say why." });
+      status("The summary could not be drawn: " + (e && e.message ? e.message : e), "error");
+    }
+  }
+  function summaryBody(host, o) {
+    var ctx = summaryCtx(), data = R1Summary.stats(ctx);
     // the statistics on the left; the 3D view and the checks on the right
     var grid = el("div", "summary-grid"), left = el("div"), right = el("div"); grid.appendChild(left); grid.appendChild(right); host.appendChild(grid);
     data.groups.forEach(function (g) {
@@ -1146,7 +1157,7 @@ var App = (function () {
       "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "btnFormPlans", "unitParams", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
       "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "viewTabs", "plansHost", "sitePlanHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
       "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnFormSection", "btnCmhcSection", "btnPickSite", "massingMode", "schemeSeg", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightToggle", "btnLeftToggle", "sidePanel",
-      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto", "btnTour", "summaryHost", "btnFormSummary", "btnCmhcSummary"].forEach(function (id) { ui[id] = $(id); });
+      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto", "btnTour", "summaryHost", "btnFormSummary", "btnCmhcSummary", "btnPdf"].forEach(function (id) { ui[id] = $(id); });
     ui.panes = { map: $("paneMap"), siteplan: $("paneSitePlan"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans"), summary: $("paneSummary") };
     // ---- the components: the status strip, the view tabs, the two segmented controls, the tables, the option list, the mix steppers, the toggles
     statusC = R1UI.status(ui.status, { text: "Ready.", level: "info" });
@@ -1186,6 +1197,7 @@ var App = (function () {
     ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans); ui.btnFormPlans.addEventListener("click", showFloorPlans);
     ui.btnFormSection.addEventListener("click", function () { showView("section"); }); ui.btnCmhcSection.addEventListener("click", function () { showView("section"); });
     ui.btnFormSummary.addEventListener("click", showSummary); ui.btnCmhcSummary.addEventListener("click", showSummary);
+    ui.btnPdf.addEventListener("click", function () { if (!summaryReady()) { status("Draw a massing option first (step 4).", "error"); return; } showSummary(); exportSummaryPdf(ui.btnPdf); });   // the top-bar export: the summary opens and its report is written
     R1Units.TENURES.forEach(function (t) { var o = el("option", null, t.name); o.value = t.key; ui.tenureSel.appendChild(o); });
     R1Units.GROUND_USES.forEach(function (g) { var o = el("option", null, g.name); o.value = g.key; ui.groundSel.appendChild(o); });
     R1Units.ACCESS.forEach(function (a) { var o = el("option", null, a.name); o.value = a.key; o.title = a.note; ui.accessSel.appendChild(o); });

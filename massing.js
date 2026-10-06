@@ -364,14 +364,14 @@ var R1Massing = (function () {
     return E.map(function (e) {
       var what = "";
       if (det && e.kind) {
-        if (e.kind === "neighbour") what = "   neighbouring parcel (side)";
+        if (e.kind === "neighbour") what = " · next to a neighbouring lot";
         else if (e.gap_m !== null) {
-          what = "   open, " + fmt(e.gap_m, 1) + " m gap (" + (e.gap_m >= STREET_MIN_GAP_M ? "street" : "lane") + ")";
-          if (roads) { var seg = roadNameNear(roads, [e.mid[0] + e.out[0] * e.gap_m / 2, e.mid[1] + e.out[1] * e.gap_m / 2]); if (seg) what += "   " + seg.name; }
-        } else if (e.beyond_data) what = "   open, beyond the fetched radius";
-        else what = "   open, nothing within " + PROBE_MAX_M + " m";
+          var kind = e.gap_m >= STREET_MIN_GAP_M ? "street" : "lane", seg = roads ? roadNameNear(roads, [e.mid[0] + e.out[0] * e.gap_m / 2, e.mid[1] + e.out[1] * e.gap_m / 2]) : null;
+          what = " · " + (seg ? (seg.name.toLowerCase().indexOf(kind) === 0 ? seg.name : kind + " (" + seg.name + ")") : kind) + ", " + fmt(e.gap_m, 1) + " m across";
+        } else if (e.beyond_data) what = " · open, past the fetched area";
+        else what = " · open, nothing within " + PROBE_MAX_M + " m";
       }
-      return { label: "Edge " + e.i + "   faces " + e.facing + "   " + fmt(e.len, 2) + " m" + what, edge: e };
+      return { label: "Side facing " + e.facing + " · " + fmt(e.len, 2) + " m" + what, edge: e };
     });
   }
   function setbackSegments(ev) {
@@ -548,7 +548,7 @@ var R1Massing = (function () {
   function formRows(form, ev) {
     var FR = FORM_RULES, rows = [["Form", form.name]];
     if (form.status !== "ok") {
-      rows.push(["Status", form.reason || form.status]);
+      rows.push(["Does not fit", form.reason || form.status]);
       if (form.status === "single" && ev) rows.push(["Single building", fmt(ev.env_width, 2) + " x " + fmt(ev.env_depth, 2) + " m, " + fmt(ev.footprint_area, 1) + " m2, " + ev.height + " m / " + ev.storeys + " storeys"]);
       return rows;
     }
@@ -753,7 +753,7 @@ var R1Massing = (function () {
     if (parcel) { var wd = site.approxDims(parcel.ring); rows.push(["Site", parcel.civic + " " + parcel.street + "   " + fmt(wd[0], 2) + " x " + fmt(wd[1], 2) + " m"]); }
     if (zone) { var d = zone.district || "?"; rows.push(["Zoning district", d + (d.indexOf(R1_1_PREFIX) === 0 ? "" : "   NOT R1-1: numbers for comparison only")]); }
     if (!ev) return rows;
-    rows.push(["Status", ev.status]);
+    rows.push(["Envelope", ev.status === "ok" ? "fits on this lot" : "none fits (" + ev.status + ")"]);
     if ("area" in ev) {
       rows.push(["Site area", fmt(ev.area, 1) + " m2"], ["Frontage", fmt(ev.frontage, 2) + " m  (" + Math.round(ev.frontage * 1000) + " mm)"], ["Site depth", fmt(ev.site_depth, 2) + " m  (" + Math.round(ev.site_depth * 1000) + " mm)"]);
     }
@@ -765,7 +765,7 @@ var R1Massing = (function () {
         ["Envelope height", ev.height + " m / " + ev.storeys + " storeys"], ["Footprint area", fmt(ev.footprint_area, 1) + " m2 (not floor area)"]);
       if (ev.width_exceeds_max) rows.push(["Width check", "EXCEEDS max building width; human decision needed"]);
     }
-    if (base) rows.push(["Envelope base", (base.mean >= 0 ? "+" : "") + fmt(base.mean, 2) + " m = mean ground under the corners (range " + fmt(base.range, 2) + " m)"]);
+    if (base) rows.push(["Ground level", (base.mean >= 0 ? "+" : "") + fmt(base.mean, 2) + " m, the average ground under the envelope's corners (they differ by " + fmt(base.range, 2) + " m)"]);
     return rows;
   }
 

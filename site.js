@@ -175,7 +175,7 @@ var R1Site = (function () {
 
   function geocode(text) {
     var na = normaliseAddress(text), civic = na[0], street = na[1];
-    if (civic === null) return Promise.reject(new Error("Address must start with a civic number, e.g. '1560 W 13th Ave'."));
+    if (civic === null) return Promise.reject(new Error("Start the address with its house number, e.g. 3567 W 27th Ave."));
     var where = 'civic_number="' + civic + '" and std_street="' + street + '"';
     return getJSON(exportUrl(DATASETS.addresses.id, where)).then(function (json) {
       var feats = features(json);

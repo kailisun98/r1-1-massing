@@ -14,7 +14,8 @@ var R1Plans = (function () {
   function r2(v) { return Math.round(v * 100) / 100; }
 
   var WALL = { ext: 0.30, party: 0.25, int: 0.12 }, DOOR = 0.9, EPS = 0.02;
-  var INK = "#1f2933", WALL_FILL = "#2c3e50", FLOOR = "#ffffff", GLASS = "#8fc1e3", FIX = "#4b5563", LIGHT = "#9aa4b1", WALK = "#e9ebe6", STAIR = "#f1f2ef";
+  // LIGHT draws the fine lines (door swings, walkways over, stair treads); TEXT2 is the secondary text (6:1 on white)
+  var INK = "#1f2933", WALL_FILL = "#2c3e50", FLOOR = "#ffffff", GLASS = "#8fc1e3", FIX = "#4b5563", LIGHT = "#9aa4b1", TEXT2 = "#5f6672", WALK = "#e9ebe6", STAIR = "#f1f2ef";
   var CIRC = ["Entry", "Lobby, mail", "Living", "Living / dining", "Studio", "Dining", "Hall", "Landing", "Kitchen", "Stair", "Shop floor", "Common room", "Play room", "Kitchenette", "Den", "Flex room", "Vestibule", "Corridor"];
   var OPEN_PAIRS = [["Entry", "Living"], ["Living", "Dining"], ["Dining", "Kitchen"], ["Entry", "Stair"], ["Living", "Stair"], ["Hall", "Stair"], ["Landing", "Stair"], ["Landing", "Hall"], ["Hall", "Hall"],
     ["Entry", "Lobby, mail"], ["Lobby, mail", "Common room"], ["Common room", "Kitchenette"], ["Entry", "Play room"], ["Play room", "Play room"], ["Living", "Kitchen"], ["Dining", "Hall"], ["Entry", "Hall"], ["Living", "Living"], ["Living", "Hall"], ["Kitchen", "Hall"],
@@ -31,7 +32,7 @@ var R1Plans = (function () {
   // small service rooms whose door swings out into the room it is entered from, so the fixtures inside stay clear of it
   var OUT_SWING = ["WC", "Laundry", "Closet", "Linen", "Storage", "Mechanical", "Bike room", "Pantry"];
   var SHORT = { "Primary bedroom": "Primary bed", "Bedroom 1": "Bed 1", "Bedroom 2": "Bed 2", "Bedroom 3": "Bed 3", "Ensuite": "Ens.", "Mechanical": "Mech.", "Lobby, mail": "Lobby", "Back of house": "Back", "Kitchenette": "Kit'ette", "Storage": "Stor.", "Laundry": "Ldry", "Kitchen": "Kit.", "Dining": "Din.", "Living": "Liv.", "Living / dining": "Liv / din", "Hall": "H", "Shop floor": "Shop", "Common room": "Common", "Play room": "Play", "Nap room": "Nap", "Flex room": "Flex", "Terrace": "Terr.", "Bedroom": "Bed", "Closet": "Clo.", "Linen": "Lin." };
-  var SHORTER = { "Primary bedroom": "P.bed", "Ensuite": "Ens", "Bath": "Bath", "WC": "WC", "Laundry": "L", "Storage": "S", "Kitchen": "K", "Dining": "D", "Living": "L", "Living / dining": "L/D", "Entry": "E", "Hall": "H", "Study": "St", "Den": "Den", "Office": "Off", "Bedroom": "Bed", "Bedroom 1": "B1", "Bedroom 2": "B2", "Bedroom 3": "B3", "Closet": "C", "Linen": "Ln", "Mechanical": "M" };
+  var SHORTER = { "Primary bedroom": "P.bed", "Ensuite": "Ens", "Bath": "Bath", "WC": "WC", "Laundry": "Ldy", "Storage": "S", "Kitchen": "K", "Dining": "D", "Living": "L", "Living / dining": "L/D", "Entry": "E", "Hall": "H", "Study": "St", "Den": "Den", "Office": "Off", "Bedroom": "Bed", "Bedroom 1": "B1", "Bedroom 2": "B2", "Bedroom 3": "B3", "Closet": "C", "Linen": "Ln", "Mechanical": "M" };
   var DOOR_PRIORITY = ["Hall", "Landing", "Corridor", "Entry", "Vestibule", "Living", "Living / dining", "Studio", "Dining", "Kitchen", "Den", "Flex room", "Lobby, mail", "Common room", "Play room", "Shop floor", "Primary bedroom", "Stair"];
   var FLOOR_WORD = ["ground", "second", "third", "fourth"];
 
@@ -384,7 +385,7 @@ var R1Plans = (function () {
       var W = Wm * k, D = Dm * k, x = pad + 26, yTop = y + fs * 5.2 + 6, y0 = yTop + topExtra * k, isRear = b.key === "rear";
       var topCaption = isRear ? "COURTYARD" : "STREET", botCaption = isRear ? "LANE" : (o.blocks.some(function (z) { return z.key === "rear"; }) ? "COURTYARD" : "REAR YARD");
       parts.push(textSvg(x, y + 4, b.name, 'font-size="' + (fs + 3) + '" font-weight="700" fill="' + INK + '"'));
-      parts.push(textSvg(x + (fs + 3) * 0.62 * (b.name.length + 1), y + 4, fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m, " + b.storeys + " storeys, " + b.units + " unit" + (b.units === 1 ? "" : "s"), 'font-size="' + fs + '" fill="' + LIGHT + '"'));
+      parts.push(textSvg(x + (fs + 3) * 0.62 * (b.name.length + 1), y + 4, fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m, " + b.storeys + " storeys, " + b.units + " unit" + (b.units === 1 ? "" : "s"), 'font-size="' + fs + '" fill="' + TEXT2 + '"'));
       floors.forEach(function (fx, col) {
         var f = fx.f, fi = fx.i, x0 = x + col * (W + gapX), cells0 = C.unitCells ? C.unitCells(f.units, f.split, f.cols, f.core) : [];
         if (f.core && C.coreCell) cells0 = cells0.concat([C.coreCell(f)]);
@@ -484,7 +485,7 @@ var R1Plans = (function () {
             if (R[2] > fs * 6) parts.push(textSvg(R[0] + R[2] / 2, R[1] + R[3] / 2 + fs2 * 0.38, "WALKWAY", 'text-anchor="middle" font-size="' + fs2 + '" fill="' + FIX + '" letter-spacing="1"'));
           } else if (fi === 0 && w.floor_index === Math.min.apply(null, A.walkways.filter(function (z) { return z.face === w.face; }).map(function (z) { return z.floor_index; }))) {
             parts.push(rectSvg(R[0], R[1], R[2], R[3], 'fill="none" stroke="' + LIGHT + '" stroke-width="0.8" stroke-dasharray="4 3"'));
-            if (R[2] > fs * 8) parts.push(textSvg(R[0] + R[2] / 2, R[1] + R[3] / 2 + fs2 * 0.38, "WALKWAY OVER", 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="' + LIGHT + '" letter-spacing="1"'));
+            if (R[2] > fs * 8) parts.push(textSvg(R[0] + R[2] / 2, R[1] + R[3] / 2 + fs2 * 0.38, "WALKWAY OVER", 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="' + TEXT2 + '" letter-spacing="1"'));
           }
         });
         A.stairs.forEach(function (st) {
@@ -517,22 +518,25 @@ var R1Plans = (function () {
           ur.rooms.forEach(function (r) {
             if (r.part || r.name === "Stair" || r.name === "Landing") return;   // no name on the second part of an L-shaped room, the stair or its landing
             var small = r.name === "Hall", size = small ? fs2 : fs;
-            var tx = cx + (r.x + 0.16) * k, ty = cy + r.y * k + size * 1.25;
+            // a kitchen's name stands clear of the counter row and its fridge ("F") whichever wall they run along
+            var inset = /^Kitchen/.test(r.name) ? 0.75 : 0.16;
+            var tx = cx + (r.x + inset) * k, ty = cy + r.y * k + size * 1.25;
             if (r.y < EPS) ty += fs * 1.7;   // rooms along the top edge sit under the unit tag line
             if (r.h * k < size * 1.4 + (r.y < EPS ? fs * 1.7 : 0)) return;
+            if (r.name === "Mechanical" && r.h * k < 0.9 * k + size * 1.6) return;   // too small for a name over its "M" unit: the symbol names it
             // the name must fit the room's width: full name, then a short form, then nothing
-            var avail = r.w * k - 6, est = function (s) { return s.length * size * 0.56; }, nm = r.name;
+            var avail = r.w * k - 6 - (inset - 0.16) * k, est = function (s) { return s.length * size * 0.56; }, nm = r.name;
             if (est(nm) > avail) nm = SHORT[r.name] || nm;
             if (est(nm) > avail) nm = SHORTER[r.name] || (nm.length > 3 ? nm.slice(0, 3) + "." : nm);
             if (est(nm) > avail) return;
             parts.push(textSvg(tx, ty, nm, 'font-size="' + size + '" font-weight="600" fill="' + INK + '"'));
-            if (!small && nm === r.name && r.h >= 2.3 && r.h * k > size * 3.4 && est(fmt(r.area_m2, 1) + " m2") <= avail) parts.push(textSvg(tx, ty + size * 1.15, fmt(r.area_m2, 1) + " m2", 'font-size="' + fs2 + '" fill="' + LIGHT + '"'));
+            if (!small && nm === r.name && r.h >= 2.3 && r.h * k > size * 3.4 && est(fmt(r.area_m2, 1) + " m2") <= avail) parts.push(textSvg(tx, ty + size * 1.15, fmt(r.area_m2, 1) + " m2", 'font-size="' + fs2 + '" fill="' + TEXT2 + '"'));
           });
         });
         // 6. captions (what lies beyond the top and bottom edges), floor name, dimensions
         var yBot = y0 + D + botExtra * k;
-        parts.push(textSvg(x0 + W / 2, yTop - fs * 3.9, topCaption, 'text-anchor="middle" font-size="' + fs2 + '" fill="' + LIGHT + '" letter-spacing="1"'));
-        parts.push(textSvg(x0 + W / 2, yBot + fs * 1.2, botCaption, 'text-anchor="middle" font-size="' + fs2 + '" fill="' + LIGHT + '" letter-spacing="1"'));
+        parts.push(textSvg(x0 + W / 2, yTop - fs * 3.9, topCaption, 'text-anchor="middle" font-size="' + fs2 + '" fill="' + TEXT2 + '" letter-spacing="1"'));
+        parts.push(textSvg(x0 + W / 2, yBot + fs * 1.2, botCaption, 'text-anchor="middle" font-size="' + fs2 + '" fill="' + TEXT2 + '" letter-spacing="1"'));
         parts.push(textSvg(x0 + W / 2, yBot + fs * 2.8, f.name + " floor", 'text-anchor="middle" font-size="' + (fs + 2) + '" font-weight="700" fill="' + INK + '"'));
         if (col === 0) {
           // overall width along the top, depth along the left, with ticks
@@ -547,7 +551,7 @@ var R1Plans = (function () {
             cells.filter(function (c) { return c.b0 < EPS; }).forEach(function (c) {
               var a1 = x0 + c.a0 * W, a2 = x0 + c.a1 * W;
               parts.push('<line x1="' + a1 + '" y1="' + by + '" x2="' + a2 + '" y2="' + by + '" stroke="' + LIGHT + '" stroke-width="0.7"/><line x1="' + a1 + '" y1="' + (by - 3) + '" x2="' + a1 + '" y2="' + (by + 3) + '" stroke="' + LIGHT + '" stroke-width="0.7"/><line x1="' + a2 + '" y1="' + (by - 3) + '" x2="' + a2 + '" y2="' + (by + 3) + '" stroke="' + LIGHT + '" stroke-width="0.7"/>');
-              parts.push(textSvg((a1 + a2) / 2, by - 2, String(Math.round((c.a1 - c.a0) * b.width_m * 1000)), 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="' + LIGHT + '"'));
+              parts.push(textSvg((a1 + a2) / 2, by - 2, String(Math.round((c.a1 - c.a0) * b.width_m * 1000)), 'text-anchor="middle" font-size="' + (fs2 - 1) + '" fill="' + TEXT2 + '"'));
             });
           }
         }
@@ -558,12 +562,13 @@ var R1Plans = (function () {
     // scale bar
     parts.push('<line x1="' + (pad + 26) + '" y1="' + (y - 4) + '" x2="' + (pad + 26 + 5 * k) + '" y2="' + (y - 4) + '" stroke="' + INK + '" stroke-width="2"/>');
     for (var sb = 0; sb <= 5; sb++) parts.push('<line x1="' + (pad + 26 + sb * k) + '" y1="' + (y - 8) + '" x2="' + (pad + 26 + sb * k) + '" y2="' + (y - 4) + '" stroke="' + INK + '" stroke-width="1"/>');
-    parts.push('<text x="' + (pad + 26 + 5 * k + 5) + '" y="' + (y - 2) + '" font-size="' + fs2 + '" fill="' + LIGHT + '">0 to 5 m; dimensions in mm</text>');
+    parts.push('<text x="' + (pad + 26 + 5 * k + 5) + '" y="' + (y - 2) + '" font-size="' + fs2 + '" fill="' + TEXT2 + '">0 to 5 m; dimensions in mm</text>');
     y += 12;
     var totalW = Math.max(width, 300), totalH = y;
     var legend = o.blocks.map(function (b) { return b.unit_list.map(function (u) { return '<span class="lg"><i style="background:' + C.unitColor(o, u.key, b.key) + '"></i>' + esc(u.key) + " " + (u.kind ? esc(u.name) : (u.beds ? u.beds + " bed" : "studio") + " / " + u.baths + " bath") + ", ~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2</span>"; }).join(""); }).join("") +
       '<span class="lg"><i style="background:#c81e1e"></i>entry</span><span class="lg"><i style="background:' + GLASS + '"></i>window</span>' +
-      (R1Access && R1Access.hasStairs(access) ? '<span class="lg"><i style="background:' + WALK + ';border:1px solid ' + INK + '"></i>open walkway</span><span class="lg"><i style="background:' + STAIR + ';border:1px solid ' + INK + '"></i>exterior exit stair</span>' : "");
+      (R1Access && R1Access.hasStairs(access) ? '<span class="lg"><i style="background:' + WALK + ';border:1px solid ' + INK + '"></i>open walkway</span><span class="lg"><i style="background:' + STAIR + ';border:1px solid ' + INK + '"></i>exterior exit stair</span>' : "") +
+      '<span class="lg lg-abbr">Fixtures: F fridge, M mechanical unit. Short room names where a room is small: E entry, H hall, C closet, S storage, Ldy laundry, Ln linen, M mechanical, K kitchen, D dining, L living, St study, Ens ensuite, B1 to B3 bedrooms.</span>';
     var defs = '<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="' + FIX + '"/></marker></defs>';
     return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + " " + totalH + '" role="img" aria-label="Floor plans" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">' + defs + parts.join("") + "</svg>", legend: legend, width: totalW, height: totalH, access: access };
   }

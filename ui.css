@@ -10,7 +10,7 @@
   /* the ink of a mark or label on a signal fill (--ok, --red, --blue), and on amber --warn, each at 4.5:1 or better */
   --on-signal: #ffffff; --on-warn: #1f2933;
   /* the drawing colours, the same in both themes (the drawings sit on white paper): the map legend matches them */
-  --c-paper: #ffffff; --c-envelope: #3c8cdc; --c-street: #8e8e8e; --c-lane: #bdbdbd; --c-stair: #f1f2ef; --c-bldg: #f4f4f2; --c-drawink: #1f2933; --c-head: #2c3e50;
+  --c-paper: #ffffff; --c-envelope: #3c8cdc; --c-street: #8e8e8e; --c-lane: #bdbdbd; --c-stair: #f1f2ef; --c-bldg: #f4f4f2; --c-drawink: #1f2933; --c-drawmuted: #5f6672; --c-head: #2c3e50;
   --c-unit-1: #2a9d8f; --c-unit-2: #e76f51; --c-unit-3: #e9c46a;
   --status-info: #eaf0f8; --status-busy: #fff1d6; --status-ok: #e1f2e5; --status-error: #fbe1e1;
   --group: #e9eef4; --shadow: 0 1px 2px rgba(20, 30, 40, .06);
@@ -188,6 +188,46 @@ button.on, button[aria-pressed="true"].toggle { background: var(--blue); color: 
 .ui-tour-actions .secondary { background: var(--group); color: var(--ink); }
 .ui-tour-actions .primary { background: var(--ink); color: var(--panel); }
 @media (prefers-reduced-motion: reduce) { .ui-tour-spot { transition: none; } }
+
+/* ------------------------------------------------------------------ interaction states: every button answers the pointer
+   Hover: a dark button lightens a clear step and lifts; a light button deepens its fill and its edge goes dark; a
+   segmented or tab button tints and underlines. Press sinks the fill back and nudges the button down a pixel. Disabled
+   buttons never react. Each variant restates its own hover with :not(:disabled) so it outranks the generic dark-button
+   rule. The hover rules do not wait on a hover media query (a touch-screen laptop may report none): a device without
+   hover resets them below, so a tap leaves no stuck highlight. */
+button, .filebtn { transition: background-color .12s ease-out, border-color .12s ease-out, color .12s ease-out, box-shadow .12s ease-out, transform .06s ease-out; }
+button:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 76%, var(--panel)); box-shadow: 0 2px 6px rgba(20, 30, 40, .25); }
+button.secondary:hover:not(:disabled), .ui-tour-actions .secondary:hover:not(:disabled), .filebtn:hover { background: color-mix(in srgb, var(--ink) 18%, var(--group)); border-color: color-mix(in srgb, var(--ink) 60%, var(--line)); color: var(--ink); box-shadow: none; }
+.segbtn:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 14%, var(--panel)); color: var(--ink); box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--ink) 55%, transparent); }
+.segbtn.on:hover:not(:disabled), .segbtn[aria-checked="true"]:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 82%, var(--panel)); color: var(--panel); box-shadow: none; }
+.ui-tab:hover:not(:disabled):not(.on) { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); box-shadow: inset 0 -3px 0 color-mix(in srgb, var(--ink) 55%, transparent); }
+.ui-tab.on:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 18%, var(--group)); box-shadow: none; }
+.ui-collapse:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, transparent); box-shadow: none; }
+.ui-collapse:hover:not(:disabled)::after { border-color: var(--ink); }
+.ui-stepper-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 20%, var(--group)); box-shadow: none; }
+.ui-tour-skip:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 10%, transparent); color: var(--ink); box-shadow: none; }
+button.on:hover:not(:disabled), button[aria-pressed="true"].toggle:hover:not(:disabled) { background: color-mix(in srgb, var(--blue) 80%, var(--ink)); box-shadow: 0 2px 6px rgba(20, 30, 40, .25); }
+.toggle.on:hover:not(:disabled) { background: color-mix(in srgb, var(--amber) 80%, var(--ink)); }
+/* press: the fill sinks back toward rest and the button moves down a pixel */
+button:active:not(:disabled), .filebtn:active { transform: translateY(1px); box-shadow: none; }
+button.secondary:active:not(:disabled), .filebtn:active { background: color-mix(in srgb, var(--ink) 28%, var(--group)); }
+.segbtn:active:not(:disabled) { background: color-mix(in srgb, var(--ink) 24%, var(--panel)); }
+@media (hover: none) {
+  button:hover:not(:disabled) { background: var(--ink); box-shadow: none; }
+  button.secondary:hover:not(:disabled), .ui-tour-actions .secondary:hover:not(:disabled), .filebtn:hover { background: var(--group); border-color: var(--line); }
+  .segbtn:hover:not(:disabled) { background: var(--panel); color: var(--muted); box-shadow: none; }
+  .segbtn.on:hover:not(:disabled), .segbtn[aria-checked="true"]:hover:not(:disabled) { background: var(--ink); color: var(--panel); }
+  .ui-tab:hover:not(:disabled):not(.on) { background: transparent; color: var(--muted); box-shadow: none; }
+  .ui-tab.on:hover:not(:disabled) { background: var(--group); }
+  .ui-collapse:hover:not(:disabled), .ui-tour-skip:hover:not(:disabled) { background: transparent; }
+  .ui-collapse:hover:not(:disabled)::after { border-color: var(--muted); }
+  .ui-stepper-btn:hover:not(:disabled) { background: var(--group); }
+  button.on:hover:not(:disabled), button[aria-pressed="true"].toggle:hover:not(:disabled) { background: var(--blue); box-shadow: none; }
+  .toggle.on:hover:not(:disabled) { background: var(--amber); }
+}
+@media (prefers-reduced-motion: reduce) { button, .filebtn { transition: none; } button:active:not(:disabled), .filebtn:active { transform: none; } }
+/* the heading of a folding step is a full-width button: give it a little room so its hover tint reads as a row */
+.ui-collapse { padding: 4px 6px; margin: -4px -6px; width: calc(100% + 12px); }
 
 /* ------------------------------------------------------------------ touch: 44 px targets on a coarse pointer */
 @media (pointer: coarse) {

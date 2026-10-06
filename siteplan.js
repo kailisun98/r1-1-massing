@@ -7,7 +7,8 @@
 var R1SitePlan = (function () {
   "use strict";
   var core = R1Core, site = R1Site, M = R1Massing;
-  var INK = "#1f2933", LIGHT = "#9aa4b1", HALF = "#8f99a6", RED = "#c81e1e", SETBACK = "#b42828", ENV = "#3c8cdc";
+  // HALF is the halftone of the dimension lines; their figures and the notes on the sheet use TEXT2 (6:1 on white)
+  var INK = "#1f2933", LIGHT = "#9aa4b1", HALF = "#8f99a6", TEXT2 = "#5f6672", RED = "#c81e1e", SETBACK = "#b42828", ENV = "#3c8cdc";
   var STALL = { w: 2.5, d: 5.5 }, PATH_W = 1.2, FRONT_WALK_W = 1.5, EDGE = 0.6, PATIO_D = 3.0, WALK = 1.0;
   var NOTES = {
     parking: "Parking: a car-share stall is optional. The tool assumes no parking minimum applies to an R1-1 multiplex (verify against the Parking By-law); stalls are 2.5 x 5.5 m, entered from the lane, so a lane must exist and the rear yard must hold a 5.5 m stall.",
@@ -52,14 +53,14 @@ var R1SitePlan = (function () {
       var a = [X(x0), Y(y)], b = [X(x1), Y(y)], t = 3;
       parts.push('<line x1="' + a[0] + '" y1="' + a[1] + '" x2="' + b[0] + '" y2="' + b[1] + '" stroke="' + HALF + '" stroke-width="0.6"/>');
       [a, b].forEach(function (p) { parts.push('<line x1="' + (p[0] - t) + '" y1="' + (p[1] + t) + '" x2="' + (p[0] + t) + '" y2="' + (p[1] - t) + '" stroke="' + HALF + '" stroke-width="0.9"/>'); });
-      parts.push(text((a[0] + b[0]) / 2, above === false ? a[1] + fs2 + 2 : a[1] - 3, (label ? label + " " : "") + mm(Math.abs(x1 - x0)), 'text-anchor="middle" font-size="' + fs2 + '" fill="' + HALF + '" font-family="SF Mono, Menlo, Consolas, monospace"'));
+      parts.push(text((a[0] + b[0]) / 2, above === false ? a[1] + fs2 + 2 : a[1] - 3, (label ? label + " " : "") + mm(Math.abs(x1 - x0)), 'text-anchor="middle" font-size="' + fs2 + '" fill="' + TEXT2 + '" font-family="SF Mono, Menlo, Consolas, monospace"'));
     }
     function dimV(y0, y1, x, label, left) {
       var a = [X(x), Y(y0)], b = [X(x), Y(y1)], t = 3;
       parts.push('<line x1="' + a[0] + '" y1="' + a[1] + '" x2="' + b[0] + '" y2="' + b[1] + '" stroke="' + HALF + '" stroke-width="0.6"/>');
       [a, b].forEach(function (p) { parts.push('<line x1="' + (p[0] - t) + '" y1="' + (p[1] + t) + '" x2="' + (p[0] + t) + '" y2="' + (p[1] - t) + '" stroke="' + HALF + '" stroke-width="0.9"/>'); });
       var tx = left === false ? a[0] + fs2 + 2 : a[0] - 3, ty = (a[1] + b[1]) / 2;
-      parts.push('<text x="' + tx + '" y="' + ty + '" text-anchor="middle" font-size="' + fs2 + '" fill="' + HALF + '" font-family="SF Mono, Menlo, Consolas, monospace" transform="rotate(-90 ' + tx + " " + ty + ')">' + esc((label ? label + " " : "") + mm(Math.abs(y1 - y0))) + "</text>");
+      parts.push('<text x="' + tx + '" y="' + ty + '" text-anchor="middle" font-size="' + fs2 + '" fill="' + TEXT2 + '" font-family="SF Mono, Menlo, Consolas, monospace" transform="rotate(-90 ' + tx + " " + ty + ')">' + esc((label ? label + " " : "") + mm(Math.abs(y1 - y0))) + "</text>");
     }
     parts.push('<defs><clipPath id="siteclip"><rect x="' + pad + '" y="' + pad + '" width="' + (W - 2 * pad) + '" height="' + (H - 2 * pad) + '"/></clipPath>' +
       '<pattern id="lawn" width="6" height="6" patternUnits="userSpaceOnUse"><path d="M 0 6 L 6 0" stroke="#b9cfae" stroke-width="0.6"/></pattern>' +
@@ -76,8 +77,8 @@ var R1SitePlan = (function () {
     if (res.roads) {
       var pf = [F.o[0] - F.n[0] * frontGap / 2, F.o[1] - F.n[1] * frontGap / 2], sf = M.roadNameNear(res.roads, pf);
       var rm = core.mid(ev.edges[ev.idx.rear].a, ev.edges[ev.idx.rear].b), pr = [rm[0] + F.n[0] * rearGap / 2, rm[1] + F.n[1] * rearGap / 2], sr = M.roadNameNear(res.roads, pr);
-      if (sf) parts.push(textF((LB.x0 + LB.x1) / 2, LB.y0 - frontGap / 2 + 0.3, sf.name.toUpperCase(), 'text-anchor="middle" font-size="' + fs + '" fill="#8a8a86" letter-spacing="2"'));
-      if (sr) parts.push(textF((LB.x0 + LB.x1) / 2, LB.y1 + rearGap / 2 + 0.3, (sr.name || "LANE").toUpperCase(), 'text-anchor="middle" font-size="' + fs2 + '" fill="#8a8a86" letter-spacing="2"'));
+      if (sf) parts.push(textF((LB.x0 + LB.x1) / 2, LB.y0 - frontGap / 2 + 0.3, sf.name.toUpperCase(), 'text-anchor="middle" font-size="' + fs + '" fill="#5c5c57" letter-spacing="2"'));
+      if (sr) parts.push(textF((LB.x0 + LB.x1) / 2, LB.y1 + rearGap / 2 + 0.3, (sr.name || "LANE").toUpperCase(), 'text-anchor="middle" font-size="' + fs2 + '" fill="#5c5c57" letter-spacing="2"'));
     }
     // 2. the lot
     parts.push('<polygon points="' + polyF(lot) + '" fill="#f1f5ec" stroke="' + INK + '" stroke-width="1.6"/>');
@@ -223,9 +224,16 @@ var R1SitePlan = (function () {
     // 10. labels of the open space and the halftone dimensions
     shared.forEach(function (s) {
       if (!s.name) return;
-      var area = shared.reduce(function (t, z) { return t + (z.x1 - z.x0) * (z.y1 - z.y0); }, 0), cx = (s.x0 + s.x1) / 2, cy = (s.y0 + s.y1) / 2;
-      parts.push(textF(cx, cy, s.name, 'text-anchor="middle" font-size="' + fs + '" fill="' + INK + '" fill-opacity=".8" letter-spacing="1"', -1));
-      parts.push(textF(cx, cy, "~" + Math.round(area) + " m2", 'text-anchor="middle" font-size="' + fs2 + '" fill="' + INK + '" fill-opacity=".7"', fs * 1.2));
+      // the name sits clear of the width string along the top and the depth string down the left (both 0.9 m in): it
+      // shrinks to fit the width left over (down to 90% of the small text size), and only then goes onto two lines
+      var area = shared.reduce(function (t, z) { return t + (z.x1 - z.x0) * (z.y1 - z.y0); }, 0);
+      var left = s.x0 + 0.9 + (fs2 + 6) / k, top = s.y0 + 0.9 + (fs2 + 8) / k, cx = (left + s.x1) / 2;
+      var availPx = (s.x1 - left) * k - 6, n = s.name.length, spaced = n * (fs * 0.66 + 1) <= availPx;   // letter-spaced at full size when it fits
+      var size = spaced ? fs : Math.max(fs2 * 0.9, Math.min(fs, availPx / n / 0.66)), words = s.name.split(" "), half = Math.ceil(words.length / 2);
+      var lines = n * size * 0.66 <= availPx ? [s.name] : [words.slice(0, half).join(" "), words.slice(half).join(" ")];
+      var cy = Math.max((top + s.y1) / 2, top + (lines.length * size * 1.15) / k);
+      lines.forEach(function (ln, i) { parts.push(textF(cx, cy, ln, 'text-anchor="middle" font-size="' + size.toFixed(1) + '" fill="' + INK + '" fill-opacity=".8"' + (spaced ? ' letter-spacing="1"' : ""), -1 - (lines.length - 1 - i) * size * 1.15)); });
+      parts.push(textF(cx, cy, "~" + Math.round(area) + " m2", 'text-anchor="middle" font-size="' + fs2 + '" fill="' + INK + '" fill-opacity=".7"', size * 1.2));
       dimH(s.x0, s.x1, s.y0 + 0.9, null, false); dimV(s.y0, s.y1, s.x0 + 0.9, null, false);
     });
     stalls.forEach(function (s, i) { if (i === 0) { dimH(s.x0, s.x1, s.y0 - 0.6, null, true); dimV(s.y0, s.y1, s.x0 - 0.6, null, true); } });
@@ -252,7 +260,7 @@ var R1SitePlan = (function () {
     var sbx = pad + 8, sby = H - pad - 8;
     parts.push('<line x1="' + sbx + '" y1="' + sby + '" x2="' + (sbx + 10 * k) + '" y2="' + sby + '" stroke="' + INK + '" stroke-width="2"/>');
     for (var s5 = 0; s5 <= 10; s5 += 5) parts.push('<line x1="' + (sbx + s5 * k) + '" y1="' + (sby - 5) + '" x2="' + (sbx + s5 * k) + '" y2="' + sby + '" stroke="' + INK + '" stroke-width="1"/>');
-    parts.push(text(sbx + 10 * k + 5, sby + 1, "0 to 10 m; dimensions in mm", 'font-size="' + fs2 + '" fill="' + LIGHT + '"'));
+    parts.push(text(sbx + 10 * k + 5, sby + 1, "0 to 10 m; dimensions in mm", 'font-size="' + fs2 + '" fill="' + TEXT2 + '"'));
     // the schedule and the notes
     var footprint = blds.reduce(function (t, e) { return t + e.b.footprint_m2; }, 0), sharedArea = shared.reduce(function (t, z) { return t + (z.x1 - z.x0) * (z.y1 - z.y0); }, 0), dwellings = o ? o.units : 0;
     rows.push(["Site", fmt(ev.area, 1) + " m2, " + fmt(ev.frontage, 2) + " m frontage x " + fmt(ev.site_depth, 2) + " m deep"]);

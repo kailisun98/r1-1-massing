@@ -15,7 +15,7 @@ var App = (function () {
   var S = {};           // workflow state
   var ui = {};          // DOM handles
   // the components (ui.js): props in, callbacks out; the app never touches their DOM
-  var statusC, tabsC, modeC, schemeC, cmhcC, leftC, rightC, pickC, pickSiteC, tables = {}, mixC = {}, plansBusy = null;
+  var statusC, tabsC, modeC, schemeC, cmhcC, leftC, pickC, pickSiteC, tables = {}, mixC = {}, plansBusy = null;
   var TAB_ITEMS = [{ id: "map", label: "Map", panel: "paneMap" }, { id: "siteplan", label: "Site plan", panel: "paneSitePlan" }, { id: "3d", label: "3D", panel: "pane3d" }, { id: "section", label: "Site section", panel: "paneSection" }, { id: "plans", label: "Floor plans", panel: "panePlans" }, { id: "summary", label: "Summary", panel: "paneSummary" }];
   var SCHEME_LABELS = { single: "Single building", courtyard: "Courtyard", side_by_side: "Side by side" };
   var map, layers = {}, tileLayer = null, presetLayer = null, three = null, pickMode = false, sitePickMode = false, sectionDirty = true, threeDirty = true;
@@ -34,7 +34,14 @@ var App = (function () {
   }
 
   // ------------------------------------------------------------------ status / report
-  function status(text, level) { statusC.update({ text: text, level: level || "info" }); }
+  // a view's own hint (the 3D controls) gives way to the message it covered once the view is left
+  var lastStatus = null, viewHintRestore = null;
+  function status(text, level, hint) {
+    if (!hint) viewHintRestore = null;
+    lastStatus = { text: text, level: level || "info" };
+    statusC.update(lastStatus);
+  }
+  function viewHint(text, restoreTo) { var prev = restoreTo || lastStatus; status(text, "info", true); viewHintRestore = prev; }
   function report(lines) {
     if (typeof lines === "string") lines = [lines];
     ui.report.textContent += lines.join("\n") + "\n";
@@ -63,21 +70,108 @@ var App = (function () {
   function fillResults() { tables.results.update({ rows: tableRows(M.resultsRows(S.ev, S.base, S.zone, S.parcel)) }); }
   function fillForm() { tables.form.update({ rows: tableRows(S.form ? M.formRows(S.form, S.ev) : []) }); }
 
+  // ------------------------------------------------------------------ the checks, the step summaries and the title block
+  function cap1(s) { s = String(s || ""); return s.charAt(0).toUpperCase() + s.slice(1); }
+  function optionGfa(o) {
+    var g = 0; o.blocks.forEach(function (b) { g += b.gfa_m2 || 0; });
+    if (!g && o.blocks[0] && o.blocks[0].design) g = o.blocks[0].design.gfa_m2 || 0;
+    return g;
+  }
+  /* checkItems(): every rule that applies to what is drawn, met or not ({ name, detail, clause, state: "ok"|"fail" }).
+     The unit bands are eligibility, not compliance: only the band this lot qualifies for is listed. */
+  function checkItems() {
+    var items = [];
+    if (!S.parcel) return items;
+    if (S.zone) {
+      var d = S.zone.district || "?", r1 = d.indexOf(M.R1_1_PREFIX) === 0;
+      items.push({ name: "Zoning district", detail: r1 ? d + ": this schedule applies" : d + ": not R1-1, so the numbers are for comparison only", clause: "", state: r1 ? "ok" : "fail" });
+    }
+    if (S.ev && S.ev.status !== "ok") items.push({ name: "Permitted envelope", detail: "none fits on this lot: " + (S.ev.controlling || S.ev.status), clause: "", state: "fail" });
+    if (S.ev && S.ev.band) items.push({ name: "Units allowed on this lot", detail: "up to " + S.ev.band.max_units + ": its area and frontage qualify", clause: S.ev.band.clause.split(" ")[0], state: "ok" });
+    var form = S.form && S.form.status === "ok" ? S.form : null;
+    if (S.ev) M.rulesRows(S.ev, form).forEach(function (r) {
+      if (/^(Up to \d+ units|3 units)/.test(r[0])) return;
+      if (r[4] === "ok" || r[4] === "fail") items.push({ name: r[0], detail: "R1-1: " + r[1] + (r[3] ? "; this site: " + r[3] : ""), clause: r[2], state: r[4] });
+    });
+    if (S.form && S.form.status !== "ok") items.push({ name: cap1(S.form.name), detail: S.form.reason || S.form.status, clause: "", state: "fail" });
+    var o = S.unitsOption;
+    if (o && form) {
+      (o.checks || []).forEach(function (c) { items.push({ name: cap1(c.name), detail: c.detail, clause: c.clause, state: c.ok ? "ok" : "fail" }); });
+      if (!(o.checks || []).some(function (c) { return /fsr|floor space|floor area/i.test(c.name); })) {
+        var f = optionGfa(o) / S.ev.area, cap = M.FORM_RULES.fsr_max;
+        items.push({ name: "Floor space ratio", detail: fmt(f, 2) + " of " + fmt(cap.value, 2) + " allowed; the by-law's exclusions are not modelled", clause: cap.clause, state: f <= cap.value + 1e-3 ? "ok" : "fail" });
+      }
+    }
+    return items;
+  }
+  function verdict(items) {
+    if (!S.parcel) return { cls: "pending", text: "No site", sub: "fetch a lot" };
+    var fails = items.filter(function (i) { return i.state === "fail"; }).length;
+    if (fails) return { cls: "fail", text: fails + (fails > 1 ? " issues" : " issue"), sub: "of " + items.length + " checks" };
+    if (!(S.ev && S.ev.status === "ok" && S.placed)) return { cls: "pending", text: "No envelope", sub: "choose the street side" };
+    if (!(S.form && S.form.status === "ok")) return { cls: "pending", text: "Envelope fits", sub: "now pick a massing" };
+    return { cls: "pass", text: "Passes R1-1", sub: items.length + " checks met" };
+  }
+  function renderChecks(items) {
+    var host = ui.checksHost; host.innerHTML = "";
+    if (!items.length) { host.appendChild(el("p", "checks-empty", S.parcel ? "Choose the street side: the checks follow the envelope." : "Fetch a site: its checks appear here.")); return; }
+    var ul = el("ul", "checklist"); ul.setAttribute("aria-label", "Checks, unmet first");
+    items.filter(function (i) { return i.state === "fail"; }).concat(items.filter(function (i) { return i.state !== "fail"; })).forEach(function (it) {
+      var bad = it.state === "fail", li = el("li", bad ? "fail" : "ok"), mk = el("span", "st " + (bad ? "st-fail" : "st-ok"), bad ? "✕" : "✓");
+      mk.setAttribute("aria-hidden", "true"); li.appendChild(mk);
+      var nm = el("span", "ck-name"); nm.appendChild(el("span", "vh", bad ? "Not met: " : "Met: ")); nm.appendChild(document.createTextNode(it.name)); li.appendChild(nm);
+      li.appendChild(el("span", "ck-clause", it.clause || ""));
+      if (it.detail) li.appendChild(el("span", "ck-detail", it.detail));
+      ul.appendChild(li);
+    });
+    host.appendChild(ul);
+  }
+  // the title block under every view and the one line each folded step shows
+  function updateSheet() {
+    var items = checkItems(), v = verdict(items), o = S.unitsOption, form = S.form && S.form.status === "ok" ? S.form : null, placed = !!(S.ev && S.ev.status === "ok" && S.placed);
+    var cap = M.FORM_RULES.fsr_max.value, district = S.zone ? (S.zone.district || "?") : null, area = S.ev && S.ev.area ? fmt(S.ev.area, 0) + " m²" : null;
+    var optName = o ? cap1((o.source === "cmhc" ? "CMHC " : "") + o.name) : (form ? cap1(form.name) : (placed ? "Permitted envelope" : "–"));
+    renderChecks(items);
+    ui.tbSite.textContent = S.parcel ? [S.address || (S.parcel.civic + " " + S.parcel.street), district, area].filter(Boolean).join(" · ") : "No site yet";
+    ui.tbOption.textContent = optName;
+    ui.tbUnits.textContent = o ? String(o.units) : (placed && S.ev.band ? "up to " + S.ev.band.max_units : "–");
+    ui.tbFsr.textContent = o && placed ? fmt(optionGfa(o) / S.ev.area, 2) + " of " + fmt(cap, 2) : (placed ? "up to " + fmt(cap, 2) : "–");
+    ui.tbStamp.className = "tb-stamp " + v.cls; ui.tbStampText.textContent = v.text; ui.tbStampSub.textContent = v.sub;
+    ui.tbStamp.setAttribute("aria-label", v.text + ", " + v.sub + ". Open the checks.");
+    ui.sumSite.textContent = S.parcel ? [S.address || (S.parcel.civic + " " + S.parcel.street), area, district].filter(Boolean).join(" · ") : "";
+    var rules = S.ev ? M.rulesRows(S.ev, form).filter(function (r) { return !/^(Up to \d+ units|3 units)/.test(r[0]) && (r[4] === "ok" || r[4] === "fail"); }) : [], bad = rules.filter(function (r) { return r[4] === "fail"; }).length;
+    ui.sumRules.textContent = rules.length ? rules.length + " rules apply to what is drawn: " + (bad ? bad + " not met" : "all met") : "";
+    ui.sumEnvelope.textContent = placed ? fmt(S.ev.env_width, 2) + " × " + fmt(S.ev.env_depth, 2) + " m, " + S.ev.height + " m high, up to " + S.ev.band.max_units + " units" : (S.ev ? "No envelope fits: " + (S.ev.controlling || S.ev.status) : "");
+    ui.sumMassing.textContent = o ? optName + (/\bunits?\b/.test(optName) ? "" : " · " + o.units + " units") + " (" + R1Cmhc.unitMix(o) + ")" : (form ? optName : "");
+    ui.sumChecks.textContent = v.text + " · " + v.sub;
+  }
+  // a step opens, the rail shows it (and itself when it was hidden); with focus, its heading takes it
+  var folds = {};
+  function openStep(id, focus) {
+    if (ui.sidePanel.hidden) leftC.toggle();
+    var sec = $(id), rail = sec.parentElement;
+    if (folds[id]) folds[id].update({ open: true });
+    if (rail.scrollHeight > rail.clientHeight + 1 && getComputedStyle(rail).overflowY !== "visible") rail.scrollTop = sec.offsetTop - rail.offsetTop - 8;
+    else sec.scrollIntoView({ block: "start" });
+    if (focus && folds[id]) folds[id].button.focus({ preventScroll: true });
+  }
+
   // ------------------------------------------------------------------ enabling by state
   function setReady() {
     var haveSite = !!S.parcel, haveModel = !!S.square, haveEnv = !!(S.ev && S.ev.status === "ok" && S.placed);
     ui.edgeSelect.disabled = !haveSite; pickC.update({ disabled: !haveSite });
     schemeC.update({ disabled: !haveEnv });
     var bylawUp = !!(S.form && S.form.status === "ok" && S.form.scheme !== "cmhc");
-    ui.btnFormClear.disabled = !bylawUp; ui.unitParams.disabled = !bylawUp; ui.btnFormPlans.disabled = !(bylawUp && S.unitsOption); ui.btnFormSection.disabled = !haveEnv; ui.btnFormSummary.disabled = !(bylawUp && S.unitsOption);
-    ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc"); ui.btnCmhcPlans.disabled = !S.cmhcPick; ui.btnCmhcSection.disabled = !haveEnv; ui.btnCmhcSummary.disabled = !S.cmhcPick;
+    ui.btnFormClear.disabled = !bylawUp; ui.unitParams.disabled = !bylawUp; ui.unitParams.hidden = !bylawUp; ui.unitsPrompt.hidden = bylawUp;
+    ui.unitsPrompt.textContent = haveEnv ? "Pick a form above. Its units, tenure and bedroom mix appear here." : "Once the envelope is drawn (step 3), pick a form here: its units, tenure and bedroom mix follow.";
+    ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc");
     ui.btnPdf.disabled = !summaryReady();
     tabsC.update({ items: tabItems({ "3d": !haveModel, section: !haveSite, plans: !S.unitsOption, siteplan: !haveEnv, summary: !S.unitsOption }) });
-    rightC.update({ disabled: !haveEnv && ui.rightPanel.hidden });
     ui.stepBadges.forEach(function (b, i) {
       var done = [haveModel, !!S.ev, haveEnv, !!(S.form && S.form.status === "ok")][i];
       b.classList.toggle("done", !!done);
     });
+    updateSheet();
   }
   function tabItems(off) { return TAB_ITEMS.map(function (t) { return { id: t.id, label: t.label, panel: t.panel, disabled: !!off[t.id] }; }); }
   function setScheme(key) {
@@ -119,10 +213,24 @@ var App = (function () {
     tileLayer.addTo(map);
     presetLayer = L.layerGroup().addTo(map);
     ["topo", "roads", "parcels", "buildings", "cut", "site", "envelope", "forms", "dims", "section"].forEach(function (k) { layers[k] = L.layerGroup().addTo(map); });
+    hoverLayer = L.layerGroup().addTo(map);   // last, so the highlighted lot draws over everything
+    pickTip = L.DomUtil.create("div", "picktip", map.getContainer()); pickTip.hidden = true; pickTip.setAttribute("aria-hidden", "true");
+    map.on("mousemove", function (e) {
+      if (!sitePickMode) return;
+      hoverLast = e; if (hoverRaf) return;   // one update per frame, always at the latest pointer position
+      hoverRaf = requestAnimationFrame(function () { hoverRaf = 0; if (sitePickMode && hoverLast) pickHover(hoverLast.latlng, hoverLast.containerPoint); });
+    });
+    map.on("mouseout", function () { if (sitePickMode) clearHover(); });
     map.on("click", function (e) {
       if (sitePickMode) {
-        sitePickMode = false; pickSiteC.update({ pressed: false }); map.getContainer().classList.remove("leaflet-crosshair");
-        pickSiteAt(e.latlng.lat, e.latlng.lng); return;
+        var hit = parcelAt(e.latlng), addr = parcelAddress(hit);
+        endSitePick();
+        // a lot that was highlighted is fetched by its own address; anywhere else the portal (or the stored sites) is asked
+        var stored = BUNDLED && addr ? storedSite(addr) : null;
+        if (addr && hit !== S.parcel && (!BUNDLED || stored)) { ui.address.value = stored ? stored.address : addr; report(["Site picked on the map: " + ui.address.value]); onFetch(); }
+        else if (hit && hit === S.parcel) status("That lot is already the site.", "info");
+        else pickSiteAt(e.latlng.lat, e.latlng.lng);
+        return;
       }
       if (!pickMode || !S.parcel) return;
       var xy = S.res.frame.toXY(e.latlng.lng, e.latlng.lat);
@@ -130,7 +238,7 @@ var App = (function () {
       var E = S.det ? S.det.edges : M.edges(S.parcel.ring), best = 0, bestD = Infinity;
       E.forEach(function (ed, i) { var d = site.pointToSegment(xy, ed.a, ed.b); if (d < bestD) { bestD = d; best = i; } });
       ui.edgeSelect.value = String(best); S.click = E[best].mid;
-      ui.edgeNote.textContent = "Street edge picked on the map: edge " + E[best].i + " (faces " + E[best].facing + ").";
+      ui.edgeNote.textContent = "Street side picked on the map: the side facing " + E[best].facing + ".";
       onGenerate();
     });
   }
@@ -287,7 +395,7 @@ var App = (function () {
     for (var s = s0; s <= s1 + 1e-9; s += 1) prof.push([s, M.groundZ(S.res, sp.c[0] + sp.dir[0] * s, sp.c[1] + sp.dir[1] * s)]);
     var gmin = Math.min.apply(null, prof.map(function (p) { return p[1]; })), gmax = Math.max.apply(null, prof.map(function (p) { return p[1]; }));
     zLo = Math.min(zLo, gmin - 3); zHi = Math.max(zHi, gmax + 2);
-    var ROW_H = 12, ROWS = 5, pad = 36, k = (W - 2 * pad) / (s1 - s0), head = 11 + ROWS * ROW_H + 6, H = (zHi - zLo) * k + 2 * pad + head;
+    var ROW_H = 13, ROWS = 5, pad = 36, k = (W - 2 * pad) / (s1 - s0), head = 11 + ROWS * ROW_H + 6, H = (zHi - zLo) * k + 2 * pad + head;
     var svgNS = "http://www.w3.org/2000/svg", svg = document.createElementNS(svgNS, "svg");
     svg.setAttribute("viewBox", "0 0 " + W + " " + H); svg.setAttribute("width", "100%"); svg.style.maxWidth = "100%"; svg.setAttribute("data-w", W); svg.setAttribute("data-h", Math.round(H)); svg.setAttribute("font-family", "Helvetica Neue, Helvetica, Arial, sans-serif");
     function X(sv) { return pad + (sv - s0) * k; } function Y(z) { return pad + head + (zHi - z) * k; }
@@ -313,14 +421,20 @@ var App = (function () {
       }
     });
     sp.buildings.forEach(function (b) { add("rect", { x: X(b.s0), y: Y(b.z1), width: (b.s1 - b.s0) * k, height: (b.z1 - b.z0) * k, fill: "none", stroke: "#1f2933", "stroke-width": 1.3 }); });   // the outline over the units
-    // the exterior stair and the walkways the line crosses
+    // the exterior stair and the walkways the line crosses. A stack of walkways on one face is named once, on the top
+    // one, outside it; the height dimensions below keep clear of that name (wkLabels)
+    var wkLabels = [], CHAR = { 7: 4.9, 8: 5.6, 8.5: 5.9, 11: 6.9 };   // label widths per character at each size, for the face this app sets (uppercase)
     (sp.access || []).forEach(function (a) {
       if (a.kind === "walkway") {
         add("rect", { x: X(a.s0), y: Y(a.z), width: (a.s1 - a.s0) * k, height: Math.max(2, 0.25 * k), fill: "#b8bec6", stroke: "#1f2933", "stroke-width": 0.8 });
         var gx = a.face === "rear" ? X(a.s1) : X(a.s0);
         add("line", { x1: gx, y1: Y(a.z), x2: gx, y2: Y(a.z + R1Access.GUARD_H), stroke: "#1f2933", "stroke-width": 1 });
-        // the name stands outside the walkway, away from the building face it hangs on
-        if (!sp.access.some(function (b) { return b.kind === "stair" && b.block === a.block && b.face === a.face; })) add("text", { x: a.face === "rear" ? X(a.s1) + 3 : X(a.s0) - 3, y: Y(a.z) - 3, "font-size": 7, "text-anchor": a.face === "rear" ? "start" : "end", "class": "seclbl" }, "WALKWAY");
+        var top = !sp.access.some(function (b) { return b !== a && b.kind === "walkway" && b.block === a.block && b.face === a.face && b.z > a.z; });
+        if (top && !sp.access.some(function (b) { return b.kind === "stair" && b.block === a.block && b.face === a.face; })) {
+          var rear = a.face === "rear", lx = rear ? X(a.s1) + 3 : X(a.s0) - 3, lw = 7 * CHAR[7], ly = Y(a.z + R1Access.GUARD_H) - 3;
+          add("text", { x: lx, y: ly, "font-size": 7, "text-anchor": rear ? "start" : "end", "class": "seclbl" }, "WALKWAY");
+          wkLabels.push({ x0: rear ? lx : lx - lw, x1: rear ? lx + lw : lx, y0: ly - 8, y1: ly + 2 });
+        }
       } else {
         add("rect", { x: X(a.s0), y: Y(a.z1), width: (a.s1 - a.s0) * k, height: (a.z1 - a.z0) * k, fill: "#f1f2ef", "fill-opacity": 0.9, stroke: "#1f2933", "stroke-width": 0.8, "stroke-dasharray": "3 2" });
         add("text", { x: X((a.s0 + a.s1) / 2), y: Y((a.z0 + a.z1) / 2), "font-size": 8, "text-anchor": "middle", transform: "rotate(-90 " + X((a.s0 + a.s1) / 2) + " " + Y((a.z0 + a.z1) / 2) + ")", "class": "seclbl" }, "EXIT STAIR");
@@ -339,14 +453,14 @@ var App = (function () {
       add("line", { x1: X(mk.s0), y1: Y(mk.z), x2: X(mk.s1), y2: Y(mk.z), stroke: COLORS.setback, "stroke-width": 1, "stroke-dasharray": "8 4" });
       // one line when it fits the building's span, else the limit over its clause on two lines
       var endA = mk.label_anchor === "end", lx = X(mk.label_s !== undefined ? mk.label_s : mk.s0) + (endA ? -4 : 6), full = mk.label + " [" + mk.clause + "]", spanPx = (mk.s1 - mk.s0) * k;
-      if (full.length * 5.0 + 10 <= spanPx) add("text", { x: lx, y: Y(mk.z) - 4, "font-size": 8.5, "text-anchor": endA ? "end" : "start", "class": "secmark" }, full);
+      if (full.length * CHAR[8.5] + 10 <= spanPx) add("text", { x: lx, y: Y(mk.z) - 4, "font-size": 8.5, "text-anchor": endA ? "end" : "start", "class": "secmark" }, full);
       else { add("text", { x: lx, y: Y(mk.z) - 14, "font-size": 8.5, "text-anchor": endA ? "end" : "start", "class": "secmark" }, mk.label); add("text", { x: lx, y: Y(mk.z) - 4, "font-size": 8.5, "text-anchor": endA ? "end" : "start", "class": "secmark" }, "[" + mk.clause + "]"); }
     });
     // the yard lines and property lines run up into the head band and end under their own names. The names take rows
     // so that no name sits across another line: a name may span a neighbouring mark only when that mark's name is on
     // a lower row (its line then stops short), and a name is anchored to the left or right of its line when centring
     // it would cross a neighbour. Long names are placed first.
-    var vm = (sp.marks || []).filter(function (mk) { return mk.kind !== "height"; }).map(function (mk) { var t = mk.label + (mk.clause ? " [" + mk.clause + "]" : ""); return { mk: mk, text: t, x: X(mk.s), w: t.length * 4.8, row: -1, minRow: 0, box: null, anchor: "middle" }; });
+    var vm = (sp.marks || []).filter(function (mk) { return mk.kind !== "height"; }).map(function (mk) { var t = mk.label + (mk.clause ? " [" + mk.clause + "]" : ""); return { mk: mk, text: t, x: X(mk.s), w: t.length * CHAR[8.5] * 0.92, row: -1, minRow: 0, box: null, anchor: "middle" }; });
     vm.slice().sort(function (a, b) { return b.w - a.w; }).forEach(function (m) {
       var best = null;
       for (var row = m.minRow; row < ROWS; row++) {
@@ -377,19 +491,26 @@ var App = (function () {
     // their figures and names read upward beside the line; a horizontal figure too wide for its span sits past its end
     sp.dims.forEach(function (dm, di) {
       if (dm.vertical) {
-        var x = X(dm.s), y0 = Y(dm.z[0]), y1 = Y(dm.z[1]), ym = (y0 + y1) / 2, left = dm.side === "left", tx = left ? x - 3 : x + 10, nx = left ? x - 13 : x + 21;
+        // the column (tick, figure, name) runs from x - 21 to x + 4 on the left (mirrored on the right); it steps out past a walkway's name at its height
+        var x = X(dm.s), y0 = Y(dm.z[0]), y1 = Y(dm.z[1]), ym = (y0 + y1) / 2, left = dm.side === "left";
+        wkLabels.forEach(function (b) {
+          if (b.y1 < Math.min(y0, y1) || b.y0 > Math.max(y0, y1)) return;
+          if (left && x + 6 > b.x0) x = Math.max(24, b.x0 - 6);
+          if (!left && x - 6 < b.x1) x = Math.min(W - 24, b.x1 + 6);
+        });
+        var tx = left ? x - 4 : x + 11, nx = left ? x - 18 : x + 25;
         add("line", { x1: x, y1: y0, x2: x, y2: y1, stroke: COLORS.dim, "stroke-width": 1 });
         [y0, y1].forEach(function (yy) { add("line", { x1: x - 4, y1: yy + 4, x2: x + 4, y2: yy - 4, stroke: COLORS.dim, "stroke-width": 1.5 }); });
         add("text", { x: tx, y: ym, "font-size": 11, "text-anchor": "middle", transform: "rotate(-90 " + tx + " " + ym + ")", "class": "secdim" }, mm(dm.value_m));
         add("text", { x: nx, y: ym, "font-size": 8, "text-anchor": "middle", transform: "rotate(-90 " + nx + " " + ym + ")", "class": "seclbl" }, dm.name);
       } else {
-        var xa = X(dm.s[0]), xb = X(dm.s[1]), y = Y(dm.z), val = String(mm(dm.value_m)), tw = val.length * 6.4 + 6;
+        var xa = X(dm.s[0]), xb = X(dm.s[1]), y = Y(dm.z), val = String(mm(dm.value_m)), tw = val.length * CHAR[11] + 6;
         add("line", { x1: xa, y1: y, x2: xb, y2: y, stroke: COLORS.dim, "stroke-width": 1 });
         [xa, xb].forEach(function (xx) { add("line", { x1: xx - 4, y1: y + 4, x2: xx + 4, y2: y - 4, stroke: COLORS.dim, "stroke-width": 1.5 }); });
         if (xb - xa >= tw) add("text", { x: (xa + xb) / 2, y: y - 4, "font-size": 11, "text-anchor": "middle", "class": "secdim" }, val);
         else if (di === 0) add("text", { x: xa - 5, y: y - 4, "font-size": 11, "text-anchor": "end", "class": "secdim" }, val);
         else add("text", { x: xb + 5, y: y - 4, "font-size": 11, "text-anchor": "start", "class": "secdim" }, val);
-        if (xb - xa >= dm.name.length * 5.4 + 8) add("text", { x: (xa + xb) / 2, y: y - 15, "font-size": 8, "text-anchor": "middle", "class": "seclbl" }, dm.name);   // only a name that fits its span (the yard lines are named in the head band anyway)
+        if (xb - xa >= dm.name.length * CHAR[8] + 8) add("text", { x: (xa + xb) / 2, y: y - 17, "font-size": 8, "text-anchor": "middle", "class": "seclbl" }, dm.name);   // only a name that fits its span (the yard lines are named in the head band anyway)
       }
     });
     // street / lane names at the ends
@@ -585,12 +706,19 @@ var App = (function () {
   // ------------------------------------------------------------------ tabs
   function showView(name) {
     tabsC.update({ value: name });   // the tab strip marks the tab and shows its pane
+    var ti = TAB_ITEMS.map(function (t) { return t.id; }).indexOf(name);
+    if (ti >= 0) ui.tbView.innerHTML = TAB_ITEMS[ti].label + " <kbd>Alt+" + (ti + 1) + "</kbd>";
+    if (viewHintRestore && name !== "3d") { var back = viewHintRestore; status(back.text, back.level); }
     if (name === "map") setTimeout(function () { map.invalidateSize(); if (S.parcel && map.getZoom() < 14) zoomToSite(); }, 30);
     if (name === "3d" && S.square) {
       if (three && !threeDirty) three.resize();
       else {
+        var before = lastStatus;   // what the 3D hint gives back when the view is left (not the loading message)
         if (!window.THREE) status("Loading the 3D viewer…", "busy");
-        loadThree().then(function () { if (ui.panes["3d"].hidden) return; var first = !three; if (threeDirty || !three) build3D(); else three.resize(); if (first) status("3D view: drag to orbit, scroll to zoom.", "info"); },
+        loadThree().then(function () {
+          if (ui.panes["3d"].hidden) { if (before && lastStatus && lastStatus.level === "busy") status(before.text, before.level); return; }
+          var first = !three; if (threeDirty || !three) build3D(); else three.resize(); if (first) viewHint("3D view: drag to orbit, scroll to zoom.", before);
+        },
           function (e) { status("The 3D view could not be shown: " + e.message + ".", "error"); });
       }
     }
@@ -689,17 +817,13 @@ var App = (function () {
     host.appendChild(notes);
     plansDirty = false;
   }
-  function showFloorPlans() {
-    if (!(S.unitsOption && S.form && S.form.status === "ok")) { status("Draw a massing option first (step 4).", "error"); return; }
-    plansDirty = true; showView("plans");
-  }
 
   // ------------------------------------------------------------------ the development summary: the end of the flow (R1Summary)
   // the key statistics of the drawn option with its FSR, the by-law checks, the unit schedule and the drawings on one
   // page, and the same as an A4 PDF report with the 3D view, the site plan, the section and the floor plans
   var summaryDirty = true, summaryBusy = null, summaryTimer = null, summaryTok = 0, SUMMARY_EMPTY = "Draw a massing option in step 4: the summary gathers its statistics, checks, unit schedule and drawings.";
   var PDF_LIBS = ["https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js", "https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.4/jspdf.plugin.autotable.min.js"];
-  var SECTION_SVG_CSS = ".secdim{font-family:Consolas,'Courier New',monospace;fill:#2c3e50}.sectitle{font-family:Helvetica,Arial,sans-serif;fill:#6b7280}.seclbl{font-family:Helvetica,Arial,sans-serif;fill:#6b7280;letter-spacing:.04em}.secmark{font-family:Helvetica,Arial,sans-serif;fill:#b42828;letter-spacing:.04em}.secunit{font-family:Helvetica,Arial,sans-serif}";
+  var SECTION_SVG_CSS = ".secdim{font-family:Consolas,'Courier New',monospace;fill:#1f2933}.sectitle{font-family:Helvetica,Arial,sans-serif;fill:#5f6672}.seclbl{font-family:Helvetica,Arial,sans-serif;fill:#5f6672;letter-spacing:.04em}.secmark{font-family:Helvetica,Arial,sans-serif;fill:#b42828;letter-spacing:.04em}.secunit{font-family:Helvetica,Arial,sans-serif}";
   function summaryReady() { return !!(S.ev && S.ev.status === "ok" && S.placed && S.unitsOption && S.form && S.form.status === "ok"); }
   function summaryCtx() {
     var form = S.form, o = S.unitsOption;
@@ -723,7 +847,7 @@ var App = (function () {
     // the heading and the actions first, so the buttons stand even if a drawing below them fails
     var name = (o.source === "cmhc" ? "CMHC " : "") + o.name, head = el("div", "sheet-head");
     head.appendChild(el("h2", null, "Development summary: " + (S.address || "site") + " · " + name.charAt(0).toUpperCase() + name.slice(1)));
-    head.appendChild(el("p", null, "The end of the flow: the key statistics of the drawn option with its FSR, the by-law checks, the unit schedule and the drawings, as of " + new Date().toISOString().slice(0, 10) + ". Export PDF writes them to an A4 report with the 3D view, the site plan, the section and the floor plans."));
+    head.appendChild(el("p", null, "Statistics and FSR, the by-law checks, the unit schedule and the drawings of this option, as of " + new Date().toISOString().slice(0, 10) + ". Export PDF writes them to an A4 report with the 3D view, site plan, section and floor plans."));
     host.appendChild(head);
     var tools = el("div", "sheet-tools ui-toolbar"); tools.setAttribute("role", "toolbar"); tools.setAttribute("aria-label", "Summary actions");
     var btnPdf = el("button", "primary", "Export PDF"); btnPdf.type = "button"; btnPdf.title = "An A4 landscape PDF: statistics and checks, the 3D view, site plan and section with the unit schedule, floor plans";
@@ -851,6 +975,39 @@ var App = (function () {
     var dl = tileHalfM / 111320, dn = dl / Math.cos(centre[0] * Math.PI / 180);
     return L.latLngBounds([[centre[0] - dl, centre[1] - dn], [centre[0] + dl, centre[1] + dn]]);
   }
+  // ---- choosing a site: the lot under the pointer is outlined and named (from the lots already fetched around the site)
+  var hoverLayer = null, pickTip = null, hoverParcel = null, hoverRaf = 0, hoverLast = null;
+  function parcelAt(latlng) {
+    if (!S.res || !S.res.parcels) return null;
+    var xy = S.res.frame.toXY(latlng.lng, latlng.lat);
+    for (var i = 0; i < S.res.parcels.length; i++) if (site.pointInRing(xy, S.res.parcels[i].ring)) return S.res.parcels[i];
+    return null;
+  }
+  function parcelAddress(p) { return p && p.civic && p.street ? p.civic + " " + p.street : null; }
+  function storedSite(addr) {   // the shared copy's stored site at this address, if it has one
+    var na = site.normaliseAddress(addr);
+    return presets.filter(function (p) { return String(p.civic) === String(na[0]) && p.street === na[1]; })[0] || null;
+  }
+  function highlightParcel(p) {
+    if (p === hoverParcel) return;
+    hoverParcel = p; hoverLayer.clearLayers();
+    if (p) L.polygon(p.ring.map(ll), { color: "#2a6fb8", weight: 3, fillColor: "#2a6fb8", fillOpacity: 0.22, interactive: false }).addTo(hoverLayer);
+  }
+  function pickHover(latlng, cp) {
+    var p = parcelAt(latlng), addr = parcelAddress(p), line2;
+    highlightParcel(p);
+    if (p && p === S.parcel) line2 = "the current site";
+    else if (p && !addr) line2 = "no civic address: not a site";
+    else if (p && BUNDLED && !storedSite(addr)) line2 = "not stored in this shared copy";
+    else if (p) line2 = "click to make it the site";
+    else line2 = BUNDLED ? "click a red pin, or open a site file" : "outside the fetched area: click to look it up";
+    pickTip.innerHTML = (p ? "<b>" + esc(addr || "Unnamed lot") + "</b>" : "") + "<span>" + esc(line2) + "</span>";
+    var size = map.getSize(), right = cp.x > size.x - 220, below = cp.y < 60;
+    pickTip.style.transform = "translate(" + (right ? cp.x - 14 : cp.x + 14) + "px, " + (below ? cp.y + 16 : cp.y - 16) + "px) translate(" + (right ? "-100%" : "0") + ", " + (below ? "0" : "-100%") + ")";
+    pickTip.hidden = false;
+  }
+  function clearHover() { hoverLast = null; highlightParcel(null); if (pickTip) pickTip.hidden = true; }
+  function endSitePick() { sitePickMode = false; pickSiteC.update({ pressed: false }); map.getContainer().classList.remove("leaflet-crosshair"); clearHover(); }
   // "Pick a site on the map": the lot under the click becomes the address and is fetched. Live: the parcel dataset
   // is asked which lot is there. Shared copy: the nearest stored site within 120 m.
   function pickSiteAt(lat, lon) {
@@ -932,9 +1089,14 @@ var App = (function () {
   }
 
   // ------------------------------------------------------------------ step 1: fetch + import
+  // a problem with the address is said at the field (and marked on it for a screen reader), not only in the status strip
+  function addressError(msg) {
+    ui.addressError.hidden = !msg; ui.addressError.textContent = msg || "";
+    if (msg) ui.address.setAttribute("aria-invalid", "true"); else ui.address.removeAttribute("aria-invalid");
+  }
   function onFetch() {
     var text = ui.address.value.trim();
-    if (!text) { status("Type an address first.", "error"); return; }
+    if (!text) { addressError("Type an address first, e.g. " + EXAMPLE_ADDRESS + "."); status("Type an address first.", "error"); ui.address.focus(); return; }
     var side = parseFloat(ui.cutSide.value), radius = M.fetchRadiusFor(side);
     status("Fetching City of Vancouver Open Data within " + Math.round(radius) + " m for a " + side + " m square ...", "busy");
     ui.btnFetch.disabled = true;
@@ -952,12 +1114,15 @@ var App = (function () {
         });
       });
     }).then(function (out) {
-      resetState(); S.res = out.res; S.zone = out.zone; S.cutSide = side; S.hit = out.hit; S.address = text;
+      resetState(); S.res = out.res; S.zone = out.zone; S.cutSide = side; S.hit = out.hit; S.address = text; addressError(null);
       S.siteTape = site.tapeContents(); site.record(false);   // a live fetch was recorded: "Save site file" can store it
       report(site.reportLines(S.res)); var zl = M.zoningLines(S.zone); report(zl.concat([""]));
       if (S.res.roads) report(M.roadsLines(S.res.roads).concat([""]));
       ui.zoning.textContent = zl[0]; ui.zoning.className = "zoning " + (S.zone && (S.zone.district || "").indexOf(M.R1_1_PREFIX) === 0 ? "ok" : "warn");
-      S.choices = M.parcelChoices(S.res);
+      // the 30 nearest lots (the site among them): a short list to choose from, not every lot in the fetched radius
+      var allChoices = M.parcelChoices(S.res);
+      S.choices = allChoices.slice(0, 30);
+      if (!S.choices.some(function (ch) { return ch.parcel === S.res.target; })) S.choices = allChoices.filter(function (ch) { return ch.parcel === S.res.target; }).concat(S.choices);
       ui.parcelList.innerHTML = "";
       S.choices.forEach(function (ch, i) { var o = el("option", null, ch.label); o.value = String(i); if (ch.parcel === S.res.target) o.selected = true; ui.parcelList.appendChild(o); });
       clearLayers(Object.keys(layers)); fillRules(); fillResults(); fillForm(); setScheme(null); resetCmhc(); ui.edgeFallback.hidden = true;
@@ -966,14 +1131,15 @@ var App = (function () {
       status(S.res.parcels.length + " parcels, " + S.res.buildings.length + " buildings, " + roads + " road segments, " + S.res.topo_points.length + " elevation points fetched.", "ok");
       if (S.choices.length) onImport();   // the nearest parcel is the site; the envelope follows at once
     }).catch(function (e) {
-      status("Fetch failed: " + e.message, "error"); report(["STOP: data fetch failed: " + e.message]);
+      addressError(e.message);
+      status("Fetch failed: " + e.message + (S.address && S.address !== text ? " The site shown is still " + S.address + "." : ""), "error"); report(["STOP: data fetch failed: " + e.message]);
     }).then(function () { ui.btnFetch.disabled = false; ui.btnSaveSite.disabled = !S.siteTape; setReady(); });
   }
   function onImport() {
     var i = parseInt(ui.parcelList.value, 10);
     if (!S.res || isNaN(i)) { status("Fetch the site data and select the parcel first.", "error"); return; }
-    S.parcel = S.choices[i].parcel; S.square = M.siteSquare(S.parcel, S.cutSide);
-    S.ev = null; S.base = null; S.placed = false; S.form = null; S.formBases = null; S.click = null; S.envelopeLayer = null; S.unitsOption = null; ui.unitsPanel.innerHTML = ""; openRight(false);
+    S.parcel = S.choices[i].parcel; S.square = M.siteSquare(S.parcel, S.cutSide); highlightParcel(null);
+    S.ev = null; S.base = null; S.placed = false; S.form = null; S.formBases = null; S.click = null; S.envelopeLayer = null; S.unitsOption = null; ui.unitsPanel.innerHTML = "";
     clearLayers(["envelope", "forms", "dims", "section"]);
     drawContext();
     report(M.siteLines(S.parcel)); report(M.cutLines(S.square).concat([""]));
@@ -981,9 +1147,9 @@ var App = (function () {
     report(M.frontageLines(S.det).concat([""]));
     fillEdges(); fillRules(); fillResults(); fillForm(); setScheme(null); resetCmhc(); markDirty(); setReady();
     if (S.det && S.det.front) { ui.edgeFallback.hidden = true; onGenerate(); }
-    else {   // the only case that needs a hand: say which edge faces the street
-      ui.edgeFallback.hidden = false;
-      status("Site shown, cut to a " + S.cutSide + " m square, but the street edge could not be detected: choose it below or pick a point on the map; the envelope follows.", "error");
+    else {   // the only case that needs a hand: say which side faces the street
+      ui.edgeFallback.hidden = false; folds.stepSite.update({ open: true });
+      status("Site shown, but which side of the lot faces the street could not be worked out: choose it in step 1 or pick it on the map; the envelope follows.", "error");
     }
   }
   function fillEdges() {
@@ -992,11 +1158,11 @@ var App = (function () {
     choices.forEach(function (ch, i) { var o = el("option", null, ch.label); o.value = String(i); ui.edgeSelect.appendChild(o); });
     if (S.det.front) {
       ui.edgeSelect.value = String(S.det.edges.indexOf(S.det.front));
-      var note = "Detected: front faces " + S.det.front.facing + " (" + S.det.confidence + " confidence).";
-      if (S.det.rear && S.det.rear.gap_m !== null) note += " Rear faces " + S.det.rear.facing + " (" + fmt(S.det.rear.gap_m, 1) + " m gap = lane).";
+      var note = "Street side found: the side facing " + S.det.front.facing + " (" + S.det.confidence + " confidence).";
+      if (S.det.rear && S.det.rear.gap_m !== null) note += " The rear faces " + S.det.rear.facing + ", onto a lane " + fmt(S.det.rear.gap_m, 1) + " m across.";
       S.det.notes.forEach(function (n) { note += " " + n; });
       ui.edgeNote.textContent = note;
-    } else { ui.edgeSelect.value = ""; ui.edgeNote.textContent = "Street edge not detected: choose the edge that faces the street, or pick a point on the map."; }
+    } else { ui.edgeSelect.value = ""; ui.edgeNote.textContent = "Which side faces the street could not be worked out from the lots around it: choose it here, or pick it on the map."; }
   }
   function streetClick() {
     var i = parseInt(ui.edgeSelect.value, 10);
@@ -1014,13 +1180,16 @@ var App = (function () {
     S.ev = ev; S.base = base; S.form = null; S.formBases = null; S.unitsOption = null; ui.unitsPanel.innerHTML = ""; setScheme(null); clearLayers(["forms"]);
     fillRules(); fillResults(); fillForm();
     report(core.reportLines(ev, "mm").concat([""]).concat(M.groundLines(base)).concat([""]));
-    if (ev.status !== "ok") { S.placed = false; markDirty(); setReady(); openRight(false); status("No envelope: " + (ev.controlling || ev.status) + ". See the report and the by-law table.", "error"); return; }
+    if (ev.status !== "ok") { S.placed = false; markDirty(); setReady(); folds.stepRules.update({ open: true }); status("No envelope fits: " + (ev.controlling || ev.status) + ". The checks and the by-law rules say why.", "error"); return; }
     S.placed = true;
     drawEnvelope(); setExistingVisible(!ui.chkHide.checked); drawSectionMarker(); markDirty();
-    resetCmhc(); setReady(); openRight(true);
+    resetCmhc(); setReady();
+    // steps 1 to 3 are done: they fold to their one-line summaries and the massing step comes up
+    ["stepSite", "stepRules", "stepEnvelope"].forEach(function (id) { folds[id].update({ open: false }); });
+    folds.stepMassing.update({ open: true });   // no scrolling: on a phone the page stays on the map
     if (massingMode === "cmhc") onCmhc(true);
     status("Envelope placed: " + fmt(ev.env_width, 2) + " x " + fmt(ev.env_depth, 2) + " m, " + ev.height + " m high, up to " + ev.band.max_units + " units" +
-      (ui.chkHide.checked && S.existingIds.length ? "; existing building hidden" : "") + ". Pick a massing option in step 4, or open the 3D view or the section.", "ok");
+      (ui.chkHide.checked && S.existingIds.length ? "; existing building hidden" : "") + ". Pick a massing in step 4.", "ok");
   }
   function onHideToggle() { if (!S.placed) return; setExistingVisible(!ui.chkHide.checked); markDirty(); status("Existing building on the site " + (ui.chkHide.checked ? "hidden." : "shown again."), "ok"); }
 
@@ -1045,7 +1214,7 @@ var App = (function () {
     mixC.b3.update({ value: mix.b3, max: lim.max3, disabled: false, help: null, maxReason: lim.max3 ? "cells of 105 m² or more" : "no cell reaches 105 m²" });
     mixC.b2.update({ value: mix.b2, max: lim.max2, disabled: false, help: null, maxReason: lim.max2 ? "cells of 65 m² or more" : "no cell reaches 65 m²" });
     mixC.b0.update({ value: mix.b0, max: lim.max0, disabled: false, help: null, maxReason: lim.max0 ? "single-level units" : "no single-level unit" });
-    ui.mix1Out.textContent = mix.b1 + (mix.custom ? " (set by hand)" : " (by area)");
+    ui.mix1Out.textContent = mix.b1 + " (the rest" + (mix.custom ? ", after your choices above)" : ")");
     ui.btnMixAuto.disabled = !mix.custom;
   }
   function readMix() { return { b3: mixC.b3.value, b2: mixC.b2.value, b0: mixC.b0.value }; }
@@ -1091,7 +1260,7 @@ var App = (function () {
     fillForm(); drawForm(); drawSectionMarker(); markDirty(); setReady();
     if (S.unitsOption) { showUnits(o); report(R1Units.optionLines(o).concat([""])); }
     ui.formNote.textContent = S.unitsOption ? (o.ok ? "" : "Check: " + o.reason) : (o.reason || "");
-    status("Form '" + form.name + "' drawn" + (S.unitsOption ? ": " + o.units + " units (" + R1Cmhc.unitMix(o) + ")" : "") + ". The envelope is hidden while a form is shown.", S.unitsOption && !o.ok ? "error" : "ok");
+    status("Form '" + form.name + "' drawn" + (S.unitsOption ? ": " + o.units + " units (" + R1Cmhc.unitMix(o) + "). The floor plans, site section and summary are open in the tabs" : "") + ". The envelope is hidden while a form is shown.", S.unitsOption && !o.ok ? "error" : "ok");
   }
   function onFormClear() {
     var wasCmhc = S.form && S.form.scheme === "cmhc";
@@ -1103,7 +1272,7 @@ var App = (function () {
   // ------------------------------------------------------------------ step 6: CMHC catalogue fits
   function clearCmhcPick() {
     if (S.cmhcPick) { S.unitsOption = null; ui.unitsPanel.innerHTML = ""; }
-    S.cmhcPick = null; ui.btnCmhcPlans.disabled = true;
+    S.cmhcPick = null;
     cmhcC.update({ value: null });
   }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
@@ -1184,10 +1353,11 @@ var App = (function () {
   // ------------------------------------------------------------------ boot
   function bind() {
     ["address", "cutSide", "btnFetch", "parcelList", "zoning", "edgeSelect", "edgeNote", "edgeFallback", "btnPick", "rules", "assumptions", "chkHide",
-      "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "btnFormPlans", "unitParams", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
+      "results", "formSection", "courtyardParams", "courtyardSel", "rearDepthSel", "btnFormClear", "unitParams", "unitsPrompt", "addressError", "checksHost",
+      "sumSite", "sumRules", "sumEnvelope", "sumMassing", "sumChecks", "tbSite", "tbOption", "tbUnits", "tbFsr", "tbView", "tbStamp", "tbStampText", "tbStampSub", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
       "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "viewTabs", "plansHost", "sitePlanHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
-      "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnCmhcPlans", "btnFormSection", "btnCmhcSection", "btnPickSite", "massingMode", "schemeSeg", "panelForms", "panelCmhc", "rightPanel", "btnRightClose", "btnRightToggle", "btnLeftToggle", "sidePanel",
-      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto", "btnTour", "summaryHost", "btnFormSummary", "btnCmhcSummary", "btnPdf"].forEach(function (id) { ui[id] = $(id); });
+      "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnPickSite", "massingMode", "schemeSeg", "panelForms", "panelCmhc", "btnLeftToggle", "sidePanel",
+      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto", "btnTour", "summaryHost", "btnPdf"].forEach(function (id) { ui[id] = $(id); });
     ui.panes = { map: $("paneMap"), siteplan: $("paneSitePlan"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans"), summary: $("paneSummary") };
     // ---- the components: the status strip, the view tabs, the two segmented controls, the tables, the option list, the mix steppers, the toggles
     statusC = R1UI.status(ui.status, { text: "Ready.", level: "info" });
@@ -1204,29 +1374,23 @@ var App = (function () {
     mixC.b2 = R1UI.stepper(ui.mix2Host, { id: "mix2", label: "2-bedroom", value: 0, min: 0, max: 0, onChange: onMixChange });
     mixC.b0 = R1UI.stepper(ui.mix0Host, { id: "mix0", label: "Studios", value: 0, min: 0, max: 0, onChange: onMixChange });
     leftC = R1UI.toggleButton(ui.btnLeftToggle, { label: "Show or hide the steps", pressed: true, onToggle: function (on) { ui.sidePanel.hidden = !on; setTimeout(relayout, 30); } });
-    rightC = R1UI.toggleButton(ui.btnRightToggle, { title: "Show or hide the massing options", pressed: false, disabled: true, onToggle: function (on) { openRight(on); } });
     pickSiteC = R1UI.toggleButton(ui.btnPickSite, { title: "Drag the map to any lot and click inside it", pressed: false, onToggle: function (on) {
-      sitePickMode = on; if (on) { pickMode = false; pickC.update({ pressed: false }); }
+      sitePickMode = on; if (on) { pickMode = false; pickC.update({ pressed: false }); } else clearHover();
       map.getContainer().classList.toggle("leaflet-crosshair", on);
-      status(on ? "Drag the map to any lot and click inside it to make it the site." + (BUNDLED ? " This shared copy carries " + presets.length + " stored sites (the red pins)." : "") : "Site pick cancelled.", "info");
+      status(on ? "Point at a lot: it is outlined with its address. Click it to make it the site; Esc cancels." + (BUNDLED ? " This shared copy carries " + presets.length + " stored sites (the red pins)." : "") : "Site pick cancelled.", "info");
     } });
     pickC = R1UI.toggleButton(ui.btnPick, { pressed: false, disabled: true, onToggle: function (on) {
       if (!S.parcel) { pickC.update({ pressed: false }); return; }
       pickMode = on; if (on) { sitePickMode = false; pickSiteC.update({ pressed: false }); map.getContainer().classList.remove("leaflet-crosshair"); }
       status(on ? "Click on the map near the street-facing edge of the site." : "Pick cancelled.", "info");
     } });
-    // every step folds from its heading; the folds are remembered in this browser
-    var folded = {}; try { folded = JSON.parse(localStorage.getItem("r1.folded") || "{}") || {}; } catch (e) { folded = {}; }
-    Array.prototype.forEach.call(document.querySelectorAll(".step, .report"), function (sec) {
-      var key = sec.id || "report";
-      R1UI.collapsible(sec, { open: !folded[key], onToggle: function (open) { folded[key] = !open; try { localStorage.setItem("r1.folded", JSON.stringify(folded)); } catch (e2) { /* storage may be unavailable */ } } });
-    });
+    // every step folds from its heading; a finished step folds by itself (onGenerate) and shows its one-line summary
+    Array.prototype.forEach.call(document.querySelectorAll(".step, .report"), function (sec) { folds[sec.id] = R1UI.collapsible(sec, { open: true }); });
     tourC = R1UI.tour(document.body, { steps: tourSteps(), onDone: function (why) { if (why === "done") status("Walkthrough finished. Type your own address in step 1, or pick a lot on the map.", "info"); } });
     ui.btnTour.addEventListener("click", function () { tourC.start(); });
-    ui.btnRightClose.addEventListener("click", function () { openRight(false); });
-    ui.btnCmhcClear.addEventListener("click", onFormClear); ui.btnCmhcPlans.addEventListener("click", showFloorPlans); ui.btnFormPlans.addEventListener("click", showFloorPlans);
-    ui.btnFormSection.addEventListener("click", function () { showView("section"); }); ui.btnCmhcSection.addEventListener("click", function () { showView("section"); });
-    ui.btnFormSummary.addEventListener("click", showSummary); ui.btnCmhcSummary.addEventListener("click", showSummary);
+    ui.tbStamp.addEventListener("click", function () { openStep("stepChecks", true); });
+    ui.address.addEventListener("input", function () { if (ui.address.hasAttribute("aria-invalid")) addressError(null); });
+    ui.btnCmhcClear.addEventListener("click", onFormClear);
     ui.btnPdf.addEventListener("click", function () { if (!summaryReady()) { status("Draw a massing option first (step 4).", "error"); return; } showSummary(); exportSummaryPdf(ui.btnPdf); });   // the top-bar export: the summary opens and its report is written
     R1Units.TENURES.forEach(function (t) { var o = el("option", null, t.name); o.value = t.key; ui.tenureSel.appendChild(o); });
     R1Units.GROUND_USES.forEach(function (g) { var o = el("option", null, g.name); o.value = g.key; ui.groundSel.appendChild(o); });
@@ -1235,12 +1399,15 @@ var App = (function () {
     ui.btnMixAuto.addEventListener("click", function () { S.mix = null; if (S.scheme && S.form && S.form.scheme !== "cmhc") applyForm(S.scheme, true); });
     fillMixSelects(null);
     ui.parcelList.addEventListener("change", function () { if (S.res) onImport(); });
+    // pointing at a lot in the list outlines it on the map, so the choice can be seen before it is made
+    ui.parcelList.addEventListener("mouseover", function (e) { var o = e.target.closest("option"); if (o && S.choices[+o.value]) highlightParcel(S.choices[+o.value].parcel); });
+    ui.parcelList.addEventListener("mouseleave", function () { if (!sitePickMode) highlightParcel(null); });
     ui.cutSide.addEventListener("change", function () { if (S.res) onFetch(); });
     ui.btnSaveSite.hidden = BUNDLED;   // the shared copy cannot save files (and has nothing new to save)
     ui.btnSaveSite.addEventListener("click", onSaveSite);
     ui.siteFile.addEventListener("change", onOpenSiteFile);
-    ui.stepBadges = Array.prototype.slice.call(document.querySelectorAll(".step .badge, .rhead .badge"));
-    M.CUT_SIDES_M.forEach(function (s) { var o = el("option", null, s + " x " + s + " m"); o.value = String(s); if (s === M.CUT_DEFAULT_SIDE_M) o.selected = true; ui.cutSide.appendChild(o); });
+    ui.stepBadges = Array.prototype.slice.call(document.querySelectorAll(".step .badge"));
+    M.CUT_SIDES_M.forEach(function (s) { var o = el("option", null, s + " × " + s + " m"); o.value = String(s); if (s === M.CUT_DEFAULT_SIDE_M) o.selected = true; ui.cutSide.appendChild(o); });
     M.COURTYARDS_M.forEach(function (c) { var o = el("option", null, c + " m"); o.value = String(c); ui.courtyardSel.appendChild(o); });
     M.REAR_DEPTHS_M.forEach(function (d) { var o = el("option", null, d + " m"); o.value = String(d); if (d === M.REAR_DEPTH_DEFAULT_M) o.selected = true; ui.rearDepthSel.appendChild(o); });
     ui.assumptions.textContent = "Assumed, not checked: " + core.RULES.assumptions.join(" ") + " The multiple-building rows are used only by the massing options in step 4; " + M.FORM_RULES.source.note;
@@ -1255,12 +1422,13 @@ var App = (function () {
     ui.btnCopy.addEventListener("click", onCopy); ui.btnClear.addEventListener("click", onClear);
     ["chkRoads", "chkParcels", "chkBuildings"].forEach(function (id) { ui[id].addEventListener("change", function () { if (S.square) { drawContext(); if (S.placed) { drawEnvelope(); drawForm(); setExistingVisible(!ui.chkHide.checked); } markDirty(); } }); });
     window.addEventListener("resize", function () { if (!ui.panes.section.hidden) drawSection(); });
-    // shortcuts: Alt+1..6 views, Alt+M massing options, Alt+S steps
+    // shortcuts: Alt+1..6 views, Alt+M the massing step, Alt+S steps
     window.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && sitePickMode) { endSitePick(); status("Site pick cancelled.", "info"); return; }
       if (!e.altKey || e.ctrlKey || e.metaKey) return;
       var views = { "1": "map", "2": "siteplan", "3": "3d", "4": "section", "5": "plans", "6": "summary" };
       if (views[e.key]) { if (!tabsC.isDisabled(views[e.key])) showView(views[e.key]); e.preventDefault(); }
-      else if (e.key.toLowerCase() === "m") { if (!ui.btnRightToggle.disabled) openRight(ui.rightPanel.hidden); e.preventDefault(); }
+      else if (e.key.toLowerCase() === "m") { openStep("stepMassing", true); e.preventDefault(); }
       else if (e.key.toLowerCase() === "s") { leftC.toggle(); e.preventDefault(); }
     });
   }
@@ -1281,19 +1449,20 @@ var App = (function () {
       return new Promise(function (resolve) { var t0 = Date.now(); (function poll() { if (placed() || Date.now() - t0 > 20000) resolve(); else setTimeout(poll, 250); })(); });
     }
     function showSide() { if (ui.sidePanel.hidden) leftC.toggle(); }
-    function withForm() { if (!placed()) return; openRight(true); setMassingMode("forms"); if (!S.form || S.form.status !== "ok" || !S.unitsOption) applyForm("single", false); }
+    function withForm() { if (!placed()) return; folds.stepMassing.update({ open: true }); setMassingMode("forms"); if (!S.form || S.form.status !== "ok" || !S.unitsOption) applyForm("single", false); }
     return [
       { title: "Welcome to Lotwise", text: "A two-minute tour of the workflow: a lot is read from the City's open data, checked against the R1-1 schedule clause by clause, and drawn as an envelope, massing options, floor plans, a site plan and a section. Use Next or the arrow keys; Esc leaves the tour at any point." },
-      { title: "1. Site", target: "#stepSite", text: "Type a Vancouver address and press Enter, or pick a lot on the map. The example lot has loaded by itself: its parcel, neighbours, buildings and contours come from the City of Vancouver Open Data portal, and the street edge is detected from the parcel pattern.", run: function () { showSide(); showView("map"); return ensureSite(); } },
-      { title: "2. By-law table", target: "#stepRules", text: "Every rule of the R1-1 schedule with its clause and what this site does about it: a green check is applied and met, a red cross is not met, an amber dash does not apply to what is drawn. Fold a step by clicking its heading.", run: function () { showSide(); } },
-      { title: "3. Permitted envelope", target: "#paneMap", placement: "inside", text: "The yard lines and the envelope on the map, dimensioned in millimetres outside the lot; the results table on the left gives its size and what controls it. Changing the parcel, the site cut or the street edge redraws it.", run: function () { showView("map"); return wait(200); } },
-      { title: "4. Massing options", target: "#rightPanel", placement: "left", text: "Pick a by-law form (single building, courtyard, side by side) and set the dwellings, tenure, ground-floor use, access and the unit mix: the configurator trims the building to FSR 1.0, lays out the units and lists what each rule says. The unit table and stack diagram follow below.", run: function () { withForm(); return wait(400); } },
-      { title: "The CMHC catalogue", target: "#panelCmhc", placement: "left", text: "Or test CMHC's British Columbia catalogue designs against the envelope: the ones that fit are drawn with their units in colour; the others say which rule they fail.", run: function () { if (!placed()) return; openRight(true); setMassingMode("cmhc"); return wait(700); } },
+      { title: "1. Site", target: "#stepSite", text: "Type a Vancouver address and press Enter, or pick a lot on the map. The example lot has loaded by itself: its lot, neighbours, buildings and contours come from the City of Vancouver Open Data portal, and the street side is worked out from the lots around it. A finished step folds to one line; click its heading to open it again.", run: function () { showSide(); showView("map"); return ensureSite().then(function () { openStep("stepSite"); }); } },
+      { title: "2. By-law rules", target: "#stepRules", text: "Every rule of the R1-1 schedule with its clause and what this site does about it: a green check is applied and met, a red cross is not met, an amber dash does not apply to what is drawn.", run: function () { openStep("stepRules"); } },
+      { title: "3. Permitted envelope", target: "#paneMap", placement: "inside", text: "The yard lines and the envelope on the map, dimensioned in millimetres outside the lot; step 3 gives its size and what controls it. Changing the lot, the area shown or the street side redraws it.", run: function () { showView("map"); return wait(200); } },
+      { title: "4. Massing", target: "#stepMassing", text: "Pick a by-law form (single building, courtyard, side by side) and set the dwellings, tenure, ground-floor use, access and the bedroom mix: the configurator trims the building to FSR 1.0, lays out the units and lists what each rule says. The unit table and stack diagram follow below.", run: function () { withForm(); openStep("stepMassing"); return wait(400); } },
+      { title: "The CMHC catalogue", target: "#panelCmhc", text: "Or test CMHC's British Columbia catalogue designs against the envelope: the ones that fit are drawn with their units in colour; the others say which rule they fail.", run: function () { if (!placed()) return; folds.stepMassing.update({ open: true }); setMassingMode("cmhc"); openStep("stepMassing"); return wait(700); } },
+      { title: "The title block", target: ".titleblock", text: "Under every view, as on a drawing sheet: the site, the option, its units and FSR, and a stamp that answers whether what is drawn passes R1-1. Click the stamp for the checks, unmet first.", run: function () { withForm(); return wait(300); } },
       { title: "5. Floor plans", target: "#panePlans", placement: "inside", text: "Schematic plans of every unit on every floor, laid out from standard test fits and the adjacencies of the catalogue plans, with the exterior exit stair and walkway; the plan check under the sheet says what still fails. Floor, scale and the section beside the plans are options above the sheet.", run: function () { withForm(); showView("plans"); return wait(1500); } },
       { title: "Site plan", target: "#paneSitePlan", placement: "inside", text: "The lot with its yard lines, the ground-floor units and their entries, the exit stairs and walkways, a car-share stall off the lane and the shared outdoor space, dimensions in halftone.", run: function () { if (!placed()) return; showView("siteplan"); return wait(500); } },
       { title: "Site section", target: "#paneSection", placement: "inside", text: "The cut through the site and the first unit: one box per unit per floor, the walkway and stair, the yard lines and height limits with their clauses, the heights dimensioned outside the drawing.", run: function () { if (!placed()) return; showView("section"); return wait(400); } },
       { title: "3D", target: "#pane3d", placement: "inside", text: "The site as a terrain with the surrounding buildings and every unit as a labelled box, the walkways and stairs in place. Drag to orbit, scroll to zoom.", run: function () { if (!S.square) return; showView("3d"); return wait(500); } },
-      { title: "Report and shortcuts", target: ".report", text: "Everything the run did, with every number tied to its clause; Copy report puts it on the clipboard. Keyboard: Alt+1 to Alt+6 switch the views, Alt+M the massing options, Alt+S the steps.", run: function () { showSide(); showView("map"); return wait(200); } },
+      { title: "Checks and shortcuts", target: "#stepChecks", text: "Every rule that applies to what is drawn, unmet first, with its clause; the run log under it records every number the run produced and copies to the clipboard. Keyboard: Alt+1 to Alt+6 switch the views, Alt+M opens the massing step, Alt+S shows or hides the steps.", run: function () { showView("map"); openStep("stepChecks"); return wait(200); } },
       { title: "6. Summary", target: "#paneSummary", placement: "inside", text: "The end of the flow: the key development statistics of the option (site, envelope, coverage, gross floor area and FSR against the 1.0 cap, units and family units, access, car share, outdoor space), the by-law checks, the unit schedule, the 3D view and the drawings on one page. Export PDF writes them to an A4 report. That is the tour: try your own address.", run: function () { withForm(); if (summaryReady()) { summaryDirty = true; showView("summary"); } return wait(1500); } }
     ];
   }
@@ -1307,11 +1476,6 @@ var App = (function () {
       status("Example site loading: " + EXAMPLE_ADDRESS + " (an R1-1 lot in Dunbar). Type your own address or pick a site on the map to start over.", "busy");
       onFetch();   // a working state at rest: the fetch imports the site and draws the envelope by itself
     });
-  }
-  // the massing options live in the panel on the right; it opens when the site has its envelope
-  function openRight(show) {
-    ui.rightPanel.hidden = !show; rightC.update({ pressed: show, disabled: !S.placed && !show });
-    setTimeout(relayout, 30);
   }
   // step 4 has two sources of massing: the by-law form options and the CMHC catalogue
   var massingMode = "forms";

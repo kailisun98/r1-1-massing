@@ -16,31 +16,28 @@
 html, body { height: 100%; margin: 0; }
 body { background: var(--page); color: var(--ink); font: 13px/1.45 var(--sans); }
 * { box-sizing: border-box; }
-.app { display: grid; grid-template-columns: auto 1fr auto; grid-template-rows: auto auto 1fr; height: 100%; }
-/* explicit placement: a hidden side bar must not shift the stage into its column; min-width 0 so a long select option
+.app { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto 1fr; height: 100%; }
+/* explicit placement: a hidden step rail must not shift the stage into its column; min-width 0 so a long select option
    or a wide drawing scrolls inside its bar instead of widening the page (phones) */
-.side { grid-column: 1; grid-row: 3; } .stage { grid-column: 2; grid-row: 3; } .right { grid-column: 3; grid-row: 3; }
-.side, .right, .steps, .rbody { min-width: 0; }
+.side { grid-column: 1; grid-row: 3; } .stage { grid-column: 2; grid-row: 3; }
+.side, .steps { min-width: 0; }
 select, input[type="text"] { max-width: 100%; }
 #unitsPanel svg { max-width: 100%; height: auto; display: block; }
 /* the status strip (R1UI.status): one line of feedback for every action, always visible, colour-coded with a dot (a spinner while busy) */
 .status { grid-column: 1 / -1; }
 .topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--panel); border-bottom: 1px solid var(--line); }
-.topbar h1 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
+.topbar h1 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; }
 .topbar h1 .sub { font-weight: 400; font-size: 12.5px; color: var(--muted); margin-left: 8px; letter-spacing: 0; }
-.topbar .hint { margin: 0; flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.topbar .secondary.on { background: var(--ink); color: var(--panel); }
-.side { width: min(400px, 34vw); }
+.topbar .hint { margin: 0; flex: 1; min-width: 0; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the step rail: steps 1 to 4 in order, then the checks; a finished step folds to a one-line summary */
+.side { width: min(420px, 36vw); }
 .side[hidden] { display: none !important; }
-/* the massing options: a panel on the right that opens once a site has its envelope */
-.right { width: 390px; display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--line); background: var(--page); }
-.right[hidden] { display: none !important; }
-.rhead { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); background: var(--panel); }
-.rhead h2 { margin: 0; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex: 1; }
-.iconbtn { background: transparent; color: var(--muted); padding: 2px 8px; font-size: 18px; line-height: 1; border-radius: 4px; }
-.iconbtn:hover { background: var(--group); color: var(--ink); }
-.rbody { overflow: auto; padding: 12px 14px 18px; }
-.openright { margin-left: 8px; padding: 4px 10px; font-size: 12px; }
+.iconbtn { display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--muted); padding: 4px 8px; border-radius: 4px; }
+.iconbtn svg { width: 18px; height: 18px; display: block; }
+.iconbtn:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 12%, var(--group)); color: var(--ink); box-shadow: none; }
+.stepsum { margin: 4px 0 0 28px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.stepsum:empty, .step:not(.collapsed) > .stepsum, .report:not(.collapsed) > .stepsum { display: none; }
+.stepsum .st { vertical-align: -3px; }
 #threeHost { position: absolute; inset: 0; } #threeHost canvas { display: block; }
 .lbl3d { position: absolute; left: 0; top: 0; transform: translate(-50%, -50%); font: 600 10px/1.2 var(--sans); background: rgba(255,255,255,.88); color: var(--c-drawink); border-radius: 3px; padding: 2px 6px; white-space: nowrap; pointer-events: none; border-left: 3px solid #999; box-shadow: 0 1px 2px rgba(0,0,0,.15); }
 .lbl3d.head { font-size: 11px; background: var(--c-head); color: #ffffff; border-left: none; padding: 3px 8px; }
@@ -52,10 +49,9 @@ select, input[type="text"] { max-width: 100%; }
 .step .row { margin-top: 6px; }
 .step table { margin-top: 8px; }
 /* a step folds from its heading (R1UI.collapsible turns the heading into the button) */
-.step h2, .report h2 { margin: 0 0 10px; font-size: 13px; font-weight: 600; user-select: none; }
+.step h2, .report h2 { margin: 0 0 10px; font-size: 14px; font-weight: 600; user-select: none; }
 button, .filebtn { min-height: 30px; border-radius: 5px; }
 button.secondary, .filebtn { background: var(--panel); color: var(--ink); border: 1px solid var(--line); }
-button.secondary:hover:not(:disabled), .filebtn:hover { background: var(--group); }
 kbd { font: 11px var(--mono); background: var(--group); border-radius: 3px; padding: 1px 4px; color: var(--muted); }
 .badge { display: inline-flex; width: 20px; height: 20px; border-radius: 50%; align-items: center; justify-content: center; font-size: 11px; font-weight: 600;
   background: var(--group); color: var(--ink); flex: 0 0 20px; font-variant-numeric: tabular-nums; }
@@ -72,20 +68,54 @@ button.secondary { background: var(--group); color: var(--ink); }
 .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .muted { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
 .zoning { margin: 8px 0 0; font-weight: 600; font-size: 12.5px; } .zoning.warn { color: var(--red); }
-pre#report { margin: 0; height: 170px; overflow: auto; font: 11px/1.4 var(--mono); background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 8px; white-space: pre; }
+pre#report { margin: 6px 0 0; max-height: 240px; overflow: auto; font: 11px/1.45 var(--mono); background: var(--field); border: 1px solid var(--line); border-radius: 4px; padding: 8px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.field-error { color: var(--red); font-size: 12px; margin: -2px 0 6px 92px; }
+input[aria-invalid="true"] { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+
+/* the checks: every rule that applies to what is drawn, met or not, with its clause; the title-block stamp counts them */
+.checklist { list-style: none; margin: 0; padding: 0; }
+.checklist li { display: grid; grid-template-columns: 19px minmax(0, 1fr) auto; column-gap: 4px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+.checklist li:last-child { border-bottom: none; }
+.checklist .st { margin: 0; align-self: start; margin-top: 2px; }
+.checklist .ck-name { font-weight: 600; min-width: 0; }
+.checklist .ck-clause { font: 11px var(--mono); color: var(--muted); white-space: nowrap; padding-left: 8px; }
+.checklist .ck-detail { grid-column: 2 / 4; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.checklist li.fail .ck-name { color: var(--red); }
+.checks-empty { color: var(--muted); font-size: 12px; margin: 0; }
+details.log { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 6px; }
+details.log summary { cursor: pointer; font-size: 12px; color: var(--muted); user-select: none; }
+details.log summary:hover { color: var(--ink); }
 
 .stage { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 .tabs { display: flex; gap: 4px; padding: 8px 12px; border-bottom: 1px solid var(--line); background: var(--panel); align-items: center; }
 .tabs #viewTabs, .tabs .ui-tabs { flex: 0 1 auto; min-width: 0; }   /* the strip shrinks and scrolls sideways on a phone */
-.tabs .hint { margin-left: auto; color: var(--muted); font-size: 12px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pane { flex: 1; min-height: 0; position: relative; }
+
+/* the title block: the drawing sheet's own strip under every view; site, option, units, FSR, the view, and a stamp that
+   answers "does this pass R1-1?" for whatever is drawn (it opens the checks) */
+.titleblock { display: flex; align-items: stretch; flex-wrap: wrap; border-top: 2px solid var(--ink); background: var(--panel); font-variant-numeric: tabular-nums; }
+.tb-cell { display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 6px 14px; border-right: 1px solid var(--line); min-width: 0; }
+.tb-cell.tb-site { flex: 1 1 120px; }
+.tb-cell.tb-option { flex: 1 1 120px; }
+.tb-k { font-size: 11px; color: var(--muted); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; }
+.tb-v { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tb-v kbd { font-weight: 400; margin-left: 4px; }
+.tb-stamp { align-self: center; margin: 7px 14px 7px 12px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 132px; min-height: 0; padding: 4px 12px; background: transparent; color: var(--muted); border: 2px solid currentColor; border-radius: 2px; box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px currentColor; font: 600 12px/1.15 var(--mono); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
+.tb-stamp small { font: 400 11px/1.2 var(--sans); letter-spacing: 0; text-transform: none; }
+.tb-stamp.pass { color: var(--ok); } .tb-stamp.fail { color: var(--red); }
+.tb-stamp.pending { border-style: dashed; }
+/* the stamp keeps its double rule in every state; hover tints it in its own colour and thickens the outer rule */
+.tb-stamp:hover:not(:disabled) { background: color-mix(in srgb, currentColor 12%, transparent); box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px currentColor; }
+.tb-stamp:active:not(:disabled) { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3px currentColor; }
+.leaflet-bar a { transition: background-color .12s ease-out; }
+.leaflet-bar a:hover { background-color: #dde3ea; color: #1f2933; }
 #map { position: absolute; inset: 0; background: #f2f2f0; }
 /* the basemap in the manner of the "subtle grayscale" map style: the OpenStreetMap tiles with the colour taken out and
    the tones lifted, so blocks are light grey, roads white and labels faint */
 .leaflet-tile-pane { filter: grayscale(1) brightness(1.08) contrast(.78); }
 #threeHost { position: absolute; inset: 0; } #threeHost canvas { display: block; }
-#sectionHost { position: absolute; inset: 0; overflow: auto; padding: 16px; background: var(--panel); }
-#sectionHost .empty { color: var(--muted); }
+#sectionHost { position: absolute; inset: 0; overflow: auto; padding: 16px; background: var(--c-paper); }   /* the section is a drawing: on paper in either theme */
+#sectionHost .empty { color: var(--c-drawmuted); }
 /* the map legend: a disclosure, open on a desk, folded on a phone (app.js) where it would cover the lot */
 .legend { position: absolute; left: 12px; bottom: 24px; z-index: 900; background: color-mix(in srgb, var(--panel) 92%, transparent); border: 1px solid var(--line); border-radius: 4px; padding: 4px 10px 6px; font-size: 11px; max-width: calc(100% - 24px); }
 .legend summary { cursor: pointer; color: var(--muted); font-weight: 600; letter-spacing: .04em; text-transform: uppercase; font-size: 11px; padding: 2px 0; user-select: none; }
@@ -104,6 +134,11 @@ tr.pick { cursor: pointer; } tr.pick:hover td { background: var(--group); } tr.p
 /* a phone or tablet: one finger scrolls the page past the map; this says so when one finger tries to move it (app.js) */
 .maphint { position: absolute; inset: 0; z-index: 950; display: flex; align-items: center; justify-content: center; padding: 16px; text-align: center; font-weight: 600; font-size: 14px; color: #fff; background: rgba(20, 30, 40, .5); opacity: 0; pointer-events: none; transition: opacity .2s ease-out; }
 .maphint.on { opacity: 1; }
+/* choosing a site: the lot under the pointer is outlined on the map, and this label follows the pointer with its address */
+.picktip { position: absolute; left: 0; top: 0; z-index: 960; pointer-events: none; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-left: 1px solid var(--line); border-radius: 4px; padding: 5px 9px; font-size: 12.5px; line-height: 1.3; white-space: nowrap; box-shadow: 0 2px 8px rgba(20, 30, 40, .18); }
+.picktip b { display: block; font-weight: 600; }
+.picktip span { color: var(--muted); font-size: 12px; }
+.picktip[hidden] { display: none; }
 @media (prefers-reduced-motion: reduce) { .maphint { transition: none; } }
 
 /* ---- controls and helpers */
@@ -117,6 +152,8 @@ details.help { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 
 details.help summary { cursor: pointer; font-size: 12px; color: var(--muted); user-select: none; }
 details.help summary:hover { color: var(--ink); }
 details.help .actions { margin-top: 6px; }
+.units-prompt { margin: 10px 0 0; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 4px; color: var(--muted); font-size: 12px; }
+.fieldhelp { margin: 2px 0 8px; font-size: 12px; }
 fieldset.units { border: 1px solid var(--line); border-radius: 4px; padding: 6px 10px 2px; margin: 8px 0 0; }
 fieldset.units legend { font-size: 11px; color: var(--muted); padding: 0 4px; letter-spacing: .04em; text-transform: uppercase; }
 fieldset.units:disabled { opacity: .5; }
@@ -130,16 +167,17 @@ fieldset.units .ui-stepper { margin-bottom: 4px; }
 #panePlans { overflow: auto; background: var(--page); }
 .sheet { padding: 16px 20px 28px; max-width: 1400px; }
 .sheet .empty { color: var(--muted); }
-.sheet-head h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.sheet-head h2 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -.01em; text-wrap: balance; }
 .sheet-head p { margin: 4px 0 0; color: var(--muted); font-size: 12.5px; max-width: 70ch; }
 .sheet-body { background: var(--c-paper); border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; }
 .sheet-body svg { display: block; }
 .sheet-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 10px 0 0; font-size: 12px; }
+.sheet-legend .lg-abbr { flex-basis: 100%; color: var(--muted); max-width: 72ch; }
 .sheet-legend .lg i { display: inline-block; width: 11px; height: 11px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
-.sheet-notes { margin-top: 10px; color: var(--muted); font-size: 12px; max-width: 90ch; }
+.sheet-notes { margin-top: 10px; color: var(--muted); font-size: 12px; max-width: 72ch; }
 .sheet-notes a { color: var(--blue); }
 .sheet-section { background: var(--c-paper); border: 1px solid var(--line); border-radius: 6px; padding: 8px 12px 4px; margin: 0 0 10px; max-width: 924px; }
-.sheet-section h3 { margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+.sheet-section h3 { margin: 0 0 2px; font-size: 12px; font-weight: 600; color: var(--c-drawmuted); letter-spacing: .04em; text-transform: uppercase; }
 .sheet-section svg { display: block; }
 .sheet-table { max-width: 110ch; margin-top: 10px; }
 .sheet-table th { width: 150px; text-transform: none; letter-spacing: 0; font-size: 11.5px; color: var(--ink); vertical-align: top; }
@@ -149,14 +187,14 @@ fieldset.units .ui-stepper { margin-bottom: 4px; }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); gap: 8px 24px; align-items: start; margin-top: 4px; }   /* two columns when the stage is wide enough, else one */
 .summary-grid .ui-table { margin-top: 10px; }
 .summary-3d { display: block; width: 100%; max-width: 640px; border: 1px solid var(--line); border-radius: 6px; background: #f4f5f7; margin-top: 10px; }
-.summary-h { margin: 20px 0 6px; font-size: 13px; font-weight: 600; }
+.summary-h { margin: 24px 0 8px; font-size: 14px; font-weight: 600; }
 .summary-sheet { background: var(--c-paper); border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; max-width: 1400px; }
 .summary-sheet svg { max-width: 100%; height: auto; display: block; }
-.summary-notes { margin-top: 12px; color: var(--muted); font-size: 12px; max-width: 100ch; }
+.summary-notes { margin-top: 12px; color: var(--muted); font-size: 12px; max-width: 72ch; }
 #summaryHost .ui-table { width: 100%; }
 #summaryHost .ui-table td { white-space: normal; overflow-wrap: anywhere; }
 @media print {
-  .topbar, .status, .side, .right, .tabs, .legend, #paneSummary .sheet-tools { display: none !important; }
+  .topbar, .status, .side, .tabs, .legend, .titleblock, #paneSummary .sheet-tools { display: none !important; }
   .app { display: block; height: auto; }
   .stage { display: block; }
   .pane { display: none !important; }
@@ -175,18 +213,21 @@ fieldset.units .ui-stepper { margin-bottom: 4px; }
 
 /* map labels: drawing ink on the light basemap in either theme */
 .lblwrap { background: none !important; border: none !important; }
-.maplbl, .dimlbl, .streetlbl, .seclbl { position: absolute; white-space: nowrap; font: 10.5px/1.2 var(--mono); color: var(--c-drawink); }
+/* div.seclbl is the map's section marker; the section drawing's own svg .seclbl text keeps the sizes it is drawn with */
+.maplbl, .dimlbl, .streetlbl, div.seclbl { position: absolute; white-space: nowrap; font: 10.5px/1.2 var(--mono); color: var(--c-drawink); }
 .dimlbl { background: rgba(255,255,255,.88); padding: 0 3px; border-radius: 2px; }
 .streetlbl { font-family: var(--sans); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
-.seclbl { font-family: var(--sans); font-weight: 600; font-size: 12px; background: rgba(255,255,255,.9); border: 1px solid var(--c-head); border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
-.secdim { font-family: var(--mono); fill: var(--ink); } .sectitle { font-family: var(--sans); fill: var(--muted); } svg .seclbl { font-family: var(--sans); fill: var(--muted); letter-spacing: .04em; }
+div.seclbl { font-family: var(--sans); font-weight: 600; font-size: 12px; background: rgba(255,255,255,.9); border: 1px solid var(--c-head); border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
+/* the section's text is drawing ink on paper, never the interface's light-or-dark tokens */
+.secdim { font-family: var(--mono); fill: var(--c-drawink); } .sectitle { font-family: var(--sans); fill: var(--c-drawmuted); } svg .seclbl { font-family: var(--sans); fill: var(--c-drawmuted); letter-spacing: .04em; }
 svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; } svg .secunit { font-family: var(--sans); }
 
 @media (max-width: 1100px) {
-  .side { width: min(360px, 34vw); }
-  .right { width: 340px; }
-  .topbar h1 { font-size: 14px; white-space: normal; }
+  .side { width: min(380px, 40vw); }
+  .topbar h1 { font-size: 15px; white-space: normal; }
   .topbar h1 .sub { display: block; margin-left: 0; font-size: 11.5px; }
+  .tb-cell { padding: 6px 10px; }
+  .tb-view { display: none; }
 }
 @media (max-width: 820px) {
   /* the top bar in two rows: the menu and the name, then the three actions sharing the width */
@@ -196,19 +237,24 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
   .topbar > button:not(.iconbtn) { flex: 1 1 0; min-width: 0; padding-inline: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* stacked, the page scrolls as a whole: the app grows past the screen and the bars show their full height
      (held to the screen height they were squeezed into thin scroll boxes under the map) */
-  .app { grid-template-columns: 1fr; grid-template-rows: auto auto 55vh auto auto; height: auto; min-height: 100%; }
-  .steps, .rbody { overflow: visible; }
-  .stage { grid-column: 1; grid-row: 3; } .side { grid-column: 1; grid-row: 4; } .right { grid-column: 1; grid-row: 5; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto auto 62vh auto; height: auto; min-height: 100%; }
+  .steps { overflow: visible; }
+  .stage { grid-column: 1; grid-row: 3; } .side { grid-column: 1; grid-row: 4; }
   .stage { border-bottom: 1px solid var(--line); }
   .side { width: auto; border-right: none; }
-  .right { width: auto; border-left: none; border-top: 1px solid var(--line); }
-  .topbar .hint, .tabs .hint { display: none; }   /* no room for the source line or the keyboard hint on a phone */
+  .topbar .hint { display: none; }   /* no room for the source line on a phone */
+  /* the title block: site across the top, then option, units and FSR, the stamp on its own row */
+  .tb-cell.tb-site { flex: 1 1 100%; border-right: none; border-bottom: 1px solid var(--line); }
+  .tb-cell.tb-option { flex: 1 1 auto; }
+  .tb-stamp { flex: 1 1 100%; margin: 8px 12px 10px; }
 }
 @media (prefers-reduced-motion: reduce) { .leaflet-zoom-anim .leaflet-zoom-animated { transition: none; } }
 /* touch: 44 px targets (restated here, after the 30 px button height above, which would otherwise win over ui.css) */
 @media (pointer: coarse) {
   button, .filebtn { min-height: 44px; }
   .iconbtn { min-width: 44px; }
+  .tb-stamp { min-height: 48px; }
+  .legend summary, details.log summary { padding-block: 13px; line-height: 18px; }
   .leaflet-touch .leaflet-bar a { width: 44px; height: 44px; line-height: 44px; }
 }
 </style>
@@ -216,41 +262,42 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
 <body>
 <div class="app">
   <header class="topbar">
-    <button id="btnLeftToggle" class="iconbtn" title="Show or hide the steps" aria-label="Show or hide the steps" aria-pressed="true">&#9776;</button>
+    <button id="btnLeftToggle" class="iconbtn" title="Show or hide the steps (Alt+S)" aria-label="Show or hide the steps" aria-pressed="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M3 5h14M3 10h14M3 15h14"/></svg></button>
     <h1>Lotwise <span class="sub">City of Vancouver R1-1 schematic design tool</span></h1>
     <p id="sourceLine" class="hint"></p>
     <button id="btnTour" class="secondary" title="A guided demo of the workflow, step by step">Walkthrough</button>
-    <button id="btnRightToggle" class="secondary" title="Show or hide the massing options" aria-pressed="false" disabled>Massing options</button>
     <button id="btnPdf" class="primary" title="Open the Summary tab and write its A4 PDF report: statistics, FSR, checks, unit schedule, 3D view, site plan, section and floor plans (draw a massing option first)" disabled>Export PDF</button>
   </header>
   <div id="status" class="status info"></div>
-  <aside class="side" id="sidePanel">
+  <aside class="side" id="sidePanel" aria-label="Steps">
     <div class="steps">
       <section class="step" id="stepSite" aria-labelledby="h1s">
-        <h2 id="h1s" title="Click to collapse or expand"><span class="badge">1</span> Site</h2>
+        <h2 id="h1s"><span class="badge">1</span> Site</h2>
+        <p class="stepsum" id="sumSite"></p>
         <div class="stepbody">
-          <div class="row"><label for="address">Address</label><input type="text" id="address" placeholder="e.g. 3567 W 27th Ave" autocomplete="street-address" list="presetList"></div>
+          <div class="row"><label for="address">Address</label><input type="text" id="address" placeholder="e.g. 3567 W 27th Ave" autocomplete="street-address" list="presetList" aria-describedby="addressError"></div>
+          <p id="addressError" class="field-error" hidden></p>
           <datalist id="presetList"></datalist>
           <p id="sourceNote" class="muted" hidden></p>
           <div class="actions">
             <button id="btnFetch" class="primary">Fetch site</button>
             <button id="btnPickSite" class="secondary" title="Drag the map to any lot and click inside it">Pick a lot on the map</button>
           </div>
-          <div class="row"><label for="cutSide">Site cut</label><select id="cutSide" aria-label="Site cut size"></select></div>
+          <div class="row"><label for="cutSide">Area shown</label><select id="cutSide" title="How much of the neighbourhood is fetched and drawn around the lot (the site cut)"></select></div>
           <div class="row"><label>Show</label>
             <div class="checks">
               <label><input type="checkbox" id="chkRoads" checked> Roads</label>
-              <label><input type="checkbox" id="chkParcels" checked> Parcels</label>
+              <label><input type="checkbox" id="chkParcels" checked> Lot lines</label>
               <label><input type="checkbox" id="chkBuildings" checked> Buildings</label>
             </div>
           </div>
-          <label class="lbl" for="parcelList">Site parcel <span class="muted">nearest first; the envelope follows your choice</span></label>
-          <select id="parcelList" size="4" aria-label="Site parcel"></select>
+          <label class="lbl" for="parcelList">Lot <span class="muted">the nearest lots first; choose another to move the envelope there</span></label>
+          <select id="parcelList" size="4"></select>
           <p id="zoning" class="zoning"></p>
           <div id="edgeFallback" class="callout" hidden>
             <p id="edgeNote" class="muted"></p>
-            <div class="row"><label for="edgeSelect">Street edge</label><select id="edgeSelect" aria-label="Street edge"></select></div>
-            <div class="actions"><button id="btnPick" class="secondary">Pick a point on the map</button></div>
+            <div class="row"><label for="edgeSelect">Street side</label><select id="edgeSelect"></select></div>
+            <div class="actions"><button id="btnPick" class="secondary">Pick the street side on the map</button></div>
           </div>
           <details class="help">
             <summary>Site files</summary>
@@ -264,8 +311,10 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
       </section>
 
       <section class="step" id="stepRules" aria-labelledby="h2s">
-        <h2 id="h2s" title="Click to collapse or expand"><span class="badge">2</span> By-law: R1-1 District Schedule, s.3.1.2</h2>
+        <h2 id="h2s"><span class="badge">2</span> By-law rules</h2>
+        <p class="stepsum" id="sumRules"></p>
         <div class="stepbody">
+          <p class="muted" style="margin:-4px 0 0">R1-1 District Schedule, section 3.1.2: each rule, its clause, and what this site does about it.</p>
           <table id="rules"></table>
           <p class="muted keyline"><span class="st st-ok" aria-hidden="true">&#10003;</span> applied and met <span class="st st-fail" aria-hidden="true">&#10005;</span> not met <span class="st st-na" aria-hidden="true">&ndash;</span> not applicable to what is drawn</p>
           <details class="help"><summary>Assumptions and source</summary><p id="assumptions" class="muted"></p></details>
@@ -273,19 +322,67 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
       </section>
 
       <section class="step" id="stepEnvelope" aria-labelledby="h3s">
-        <h2 id="h3s" title="Click to collapse or expand"><span class="badge">3</span> Permitted envelope</h2>
+        <h2 id="h3s"><span class="badge">3</span> Permitted envelope</h2>
+        <p class="stepsum" id="sumEnvelope"></p>
         <div class="stepbody">
           <table id="results"></table>
           <label class="chk"><input type="checkbox" id="chkHide" checked> Hide the existing building on the site</label>
-          <details class="help"><summary>How it is drawn</summary><p class="muted">Drawn as soon as the site is in: the yard lines with dimension strings outside the lot (values in mm), the envelope outline and the envelope itself, from the detected street edge. Nothing crosses the massing.</p></details>
+          <details class="help"><summary>How it is drawn</summary><p class="muted">Drawn as soon as the site is in: the yard lines with dimension strings outside the lot (values in mm), the envelope outline and the envelope itself, from the street side. Nothing crosses the massing.</p></details>
         </div>
       </section>
 
-      <section class="report" aria-labelledby="hrep">
-        <h2 id="hrep" title="Click to collapse or expand">Report</h2>
+      <section class="step" id="stepMassing" aria-labelledby="h4s">
+        <h2 id="h4s"><span class="badge">4</span> Massing</h2>
+        <p class="stepsum" id="sumMassing"></p>
+        <div class="stepbody" id="formSection">
+          <div id="massingMode"></div>
+          <div id="panelForms">
+            <div id="schemeSeg"></div>
+            <p id="formDesc" class="muted"></p>
+            <div id="courtyardParams" hidden>
+              <div class="row"><label for="courtyardSel">Courtyard</label><select id="courtyardSel" title="The open space between the front and rear buildings (at least 6.1 m)"></select></div>
+              <div class="row"><label for="rearDepthSel">Rear depth</label><select id="rearDepthSel" title="How deep the rear building is"></select></div>
+            </div>
+            <p id="unitsPrompt" class="units-prompt">Pick a form above. Its units, tenure and bedroom mix appear here.</p>
+            <fieldset class="units" id="unitParams" disabled hidden>
+              <legend>Units</legend>
+              <p class="muted fieldhelp">Tenure sets the unit limit (6, or 8 when all rental) and the minimum of family units. The ground floor may hold a shared room, a grocery or a day care instead of a dwelling. Access is how the upper units are reached.</p>
+              <div class="row"><label for="unitsSel">Dwellings</label><select id="unitsSel"></select></div>
+              <div class="row"><label for="tenureSel">Tenure</label><select id="tenureSel"></select></div>
+              <div class="row"><label for="groundSel">Ground floor</label><select id="groundSel"></select></div>
+              <div class="row"><label for="accessSel">Access</label><select id="accessSel"></select></div>
+              <p class="sub">Bedroom mix <span class="muted">3-bed from 105 m², 2-bed from 65, studio on one level; the rest are 1-beds</span></p>
+              <div id="mix3Host"></div>
+              <div id="mix2Host"></div>
+              <div id="mix0Host"></div>
+              <div class="row"><label id="mix1Lbl">1-bedroom</label><span id="mix1Out" class="readout" aria-labelledby="mix1Lbl"></span></div>
+              <div class="actions"><button id="btnMixAuto" class="secondary" title="Bedrooms by each unit's area again">Reset mix to fit the areas</button></div>
+            </fieldset>
+            <div class="actions"><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
+            <table id="formTable"></table>
+            <p id="formNote" class="muted"></p>
+          </div>
+          <div id="panelCmhc" hidden>
+            <p class="muted" style="margin-top:0">The British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a>, tested against this envelope. Click a fitting option to draw it.</p>
+            <div id="cmhcList"></div>
+            <p id="cmhcNote" class="muted"></p>
+            <div class="actions"><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
+            <details class="help"><summary>What is checked</summary><p class="muted">Width, depth, storeys and height against the envelope; the unit count this site's band allows; floor area against FSR 1.00; and, for a design with an accessory dwelling unit behind it, the courtyard rules (3.1.2.4(a), 3.1.2.8(a), 3.1.2.11(c), 3.1.2.5(a)). Options that do not fit say which rule they fail.</p></details>
+          </div>
+          <div id="unitsPanel"></div>
+        </div>
+      </section>
+
+      <section class="report" id="stepChecks" aria-labelledby="hrep">
+        <h2 id="hrep">Checks</h2>
+        <p class="stepsum" id="sumChecks"></p>
         <div class="stepbody">
-          <pre id="report"></pre>
-          <div class="actions"><button id="btnCopy" class="secondary">Copy report</button><button id="btnClear" class="secondary">Clear massing</button></div>
+          <div id="checksHost"><p class="checks-empty">Fetch a site: its checks appear here.</p></div>
+          <details class="log">
+            <summary>Run log</summary>
+            <pre id="report"></pre>
+            <div class="actions"><button id="btnCopy" class="secondary">Copy the log</button><button id="btnClear" class="secondary">Clear massing</button></div>
+          </details>
         </div>
       </section>
     </div>
@@ -294,7 +391,6 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
   <main class="stage">
     <div class="tabs">
       <div id="viewTabs"></div>
-      <span class="hint" title="Keyboard: Alt+1 to Alt+6 switch views; Alt+M massing options; Alt+S steps">City of Vancouver Open Data · dimensions in mm · <kbd>Alt</kbd>+<kbd>1</kbd>–<kbd>6</kbd> views</span>
     </div>
     <div id="paneMap" class="pane">
       <div id="map" role="application" aria-label="Site plan on a map"></div>
@@ -306,7 +402,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
           <span class="l-cmhc">Catalogue massing</span><span class="l-unit">Units (ground floor)</span>
           <span class="l-stair">Exit stair / walkway</span><span class="l-section">Section A-A</span>
           <span class="l-street">Street</span><span class="l-lane">Lane</span>
-          <span class="l-topo">Site cut</span><span class="l-bldg">Buildings</span>
+          <span class="l-topo">Area shown</span><span class="l-bldg">Buildings</span>
         </div>
       </details>
     </div>
@@ -315,49 +411,15 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
     <div id="paneSection" class="pane" hidden><div id="sectionHost"></div></div>
     <div id="panePlans" class="pane" hidden><div id="plansHost" class="sheet"><p class="empty">Draw a massing option in step 4, then open its floor plans.</p></div></div>
     <div id="paneSummary" class="pane" hidden><div id="summaryHost" class="sheet"><p class="empty">Draw a massing option in step 4: the summary gathers its statistics, checks, unit schedule and drawings.</p></div></div>
+    <footer class="titleblock" aria-label="Title block">
+      <div class="tb-cell tb-site"><span class="tb-k">Site</span><span class="tb-v" id="tbSite">No site yet</span></div>
+      <div class="tb-cell tb-option"><span class="tb-k">Option</span><span class="tb-v" id="tbOption">&ndash;</span></div>
+      <div class="tb-cell"><span class="tb-k">Units</span><span class="tb-v" id="tbUnits">&ndash;</span></div>
+      <div class="tb-cell"><span class="tb-k">FSR</span><span class="tb-v" id="tbFsr">&ndash;</span></div>
+      <div class="tb-cell tb-view"><span class="tb-k">View</span><span class="tb-v" id="tbView">Map</span></div>
+      <button type="button" class="tb-stamp pending" id="tbStamp" aria-controls="stepChecks" title="Open the checks"><span id="tbStampText">No site</span><small id="tbStampSub">fetch a lot</small></button>
+    </footer>
   </main>
-
-  <aside class="right" id="rightPanel" hidden aria-labelledby="h4s">
-    <div class="rhead">
-      <h2 id="h4s"><span class="badge">4</span> Massing options</h2>
-      <button id="btnRightClose" class="iconbtn" aria-label="Hide the massing options" title="Hide">&times;</button>
-    </div>
-    <div class="rbody" id="formSection">
-          <div id="massingMode"></div>
-          <div id="panelForms">
-            <div id="schemeSeg"></div>
-            <p id="formDesc" class="muted"></p>
-            <div id="courtyardParams" hidden>
-              <div class="row"><label for="courtyardSel">Courtyard</label><select id="courtyardSel"></select></div>
-              <div class="row"><label for="rearDepthSel">Rear depth</label><select id="rearDepthSel"></select></div>
-            </div>
-            <fieldset class="units" id="unitParams" disabled>
-              <legend>Units</legend>
-              <div class="row"><label for="unitsSel">Dwellings</label><select id="unitsSel"></select></div>
-              <div class="row"><label for="tenureSel">Tenure</label><select id="tenureSel"></select></div>
-              <div class="row"><label for="groundSel">Ground floor</label><select id="groundSel"></select></div>
-              <div class="row"><label for="accessSel">Access</label><select id="accessSel"></select></div>
-              <p class="sub">Unit mix <span class="muted">3-bed from 105 m², 2-bed from 65, studio on one level; 1-beds are the rest</span></p>
-              <div id="mix3Host"></div>
-              <div id="mix2Host"></div>
-              <div id="mix0Host"></div>
-              <div class="row"><label id="mix1Lbl">1-bedroom</label><span id="mix1Out" class="readout" aria-labelledby="mix1Lbl"></span></div>
-              <div class="actions"><button id="btnMixAuto" class="secondary" title="Bedrooms by each unit's area again">Mix by area</button></div>
-            </fieldset>
-            <div class="actions"><button id="btnFormPlans" class="primary" disabled>Floor plans</button><button id="btnFormSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnFormSummary" class="secondary" disabled title="Open the Summary tab: statistics, FSR, checks, the unit schedule and a PDF export">Summary</button><button id="btnFormClear" class="secondary" disabled>Remove form</button></div>
-            <table id="formTable"></table>
-            <p id="formNote" class="muted"></p>
-          </div>
-          <div id="panelCmhc" hidden>
-            <p class="muted" style="margin-top:0">The British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a>, tested against this envelope. Click a fitting option to draw it.</p>
-            <div id="cmhcList"></div>
-            <p id="cmhcNote" class="muted"></p>
-            <div class="actions"><button id="btnCmhcPlans" class="primary" disabled>Floor plans</button><button id="btnCmhcSection" class="secondary" disabled title="Open the Site section tab">Site section</button><button id="btnCmhcSummary" class="secondary" disabled title="Open the Summary tab: statistics, FSR, checks, the unit schedule and a PDF export">Summary</button><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
-            <details class="help"><summary>What is checked</summary><p class="muted">Width, depth, storeys and height against the envelope; the unit count this site's band allows; floor area against FSR 1.00; and, for a design with an accessory dwelling unit behind it, the courtyard rules (3.1.2.4(a), 3.1.2.8(a), 3.1.2.11(c), 3.1.2.5(a)). Options that do not fit say which rule they fail.</p></details>
-          </div>
-          <div id="unitsPanel"></div>
-    </div>
-  </aside>
 </div>
 
 <script>window.R1_BUNDLED = window.R1_BUNDLED || /[?&]bundled\b/.test(location.search);</script>

@@ -294,7 +294,7 @@ var R1Cmhc = (function () {
   // ------------------------------------------------------------------ tables, report, diagrams
   function fitRows(res) {
     return res.options.map(function (o) {
-      var size = o.blocks.map(function (b) { return fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m / " + b.storeys + " st"; }).join(" + ");
+      var size = o.blocks.map(function (b) { return fmt(b.width_m, 1) + " x " + fmt(b.depth_m, 1) + " m, " + b.storeys + " storeys"; }).join(" + ");
       return { option: o, cells: [o.name, String(o.units), size, o.ok ? "fits" : o.reason], ok: o.ok };
     });
   }

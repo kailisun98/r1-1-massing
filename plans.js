@@ -30,8 +30,9 @@ var R1Plans = (function () {
   // rooms that may open off the room they serve rather than a hall: a walk-in closet off a bedroom, a pantry off the kitchen
   var OFF_ANY = ["Ensuite", "Closet", "Linen", "Mechanical", "Storage", "Laundry"], NEVER_FROM = /Bath|WC|Ensuite|Stair|Laundry|Mechanical|Storage|Linen|Closet|Patio|Terrace/;
   // every door swings into the room it serves and lands against that room's nearest wall (the hinge sits at the end of
-  // the opening closest to a corner); only a reach-in closet, too shallow to stand in, takes its door swinging out
-  var REACH_IN = /^(Closet|Linen|Storage|Mechanical|Pantry|Laundry|Bike room)$/, TURN = [0.9, 1.2];   // the clear floor a person needs to step in and turn around
+  // the opening closest to a corner); a reach-in closet, too shallow to stand in, gets closet doors instead: bifold
+  // panels across its width, or sliding bypass panels when the opening is over 1.8 m
+  var REACH_IN = /^(Closet|Linen|Storage|Mechanical|Pantry|Laundry)$/, TURN = [0.9, 1.2];   // the clear floor a person needs to step in and turn around (a bike room is walked into)
   function reachIn(r) { return REACH_IN.test(r.name) && Math.min(r.w, r.h) < 1.5; }
   function swingsOut(room, side, w) { return reachIn(room) || (side === "h" ? room.h : room.w) < w + 0.05; }
   function hingeFor(room, side, a, b) {   // "from" when the opening's low end is nearer the room's corner than its high end is
@@ -70,6 +71,11 @@ var R1Plans = (function () {
     var rooms = ur.rooms, out = [], doorsInto = {};
     function pushDoor(from, to, e, kind) {
       var len = e.to - e.from, w = Math.min(DOOR, Math.max(len - 0.05, Math.min(0.86, len))), mid = (e.from + e.to) / 2;   // a 0.86 m leaf may fill a 0.9 m hall end
+      if (kind === "door" && reachIn(to)) {   // a reach-in closet: bifold panels across its width, sliding bypass panels when the opening is over 1.8 m
+        var cw = Math.min(Math.max(0.86, len - 0.2), len - 0.05, 3.6), c0 = mid - cw / 2;
+        out.push({ kind: kind, side: e.side, at: e.at, from: c0, to: c0 + cw, room: to, other: from, out: true, closet: cw > 1.8 ? "bypass" : "bifold", hinge: "from" });
+        doorsInto[to.name] = true; return;
+      }
       // hinge the door near the end of the wall closest to the room's corner, not mid-wall, when the wall is long
       var at0 = len > 1.6 ? e.from + 0.15 : mid - w / 2, outward = swingsOut(to, e.side, w);
       out.push({ kind: kind, side: e.side, at: e.at, from: at0, to: at0 + w, room: to, other: from, out: outward, hinge: hingeFor(outward ? from : to, e.side, at0, at0 + w) });
@@ -158,7 +164,7 @@ var R1Plans = (function () {
       if (op.kind !== "door" && op.kind !== "entry") return;
       var mine = op.room === r, other = op.other === r;
       if (!mine && !other) return;
-      var w = op.to - op.from, swings = op.out ? other : mine, approach = !(op.out && mine);   // the leaf lands in the served room, or out in the other room; a closet reached from its doorway needs no approach inside
+      var w = op.to - op.from, swings = op.closet ? false : (op.out ? other : mine), approach = !(op.out && mine);   // the leaf lands in the served room, or out in the other room; closet panels fold or slide in the opening; a closet reached from its doorway needs no approach inside
       if (op.side === "h") {
         var top = Math.abs(op.at - r.y) < 0.03, bot = Math.abs(op.at - (r.y + r.h)) < 0.03; if (!top && !bot) return;
         var x0 = op.from - r.x, x1 = op.to - r.x;
@@ -466,7 +472,28 @@ var R1Plans = (function () {
               parts.push(lineSvg(a, b2, 'stroke="' + INK + '" stroke-width="0.8"'));
             } else if (op.kind === "open" || op.kind === "join") {
               // a cased opening, or the join between the two parts of one room: nothing but the gap
-            } else {   // door: the leaf swings into the room it serves (out of a reach-in closet) and lands against the nearest wall
+            } else if (op.closet) {
+              // closet doors, as plans draw them: bifold pairs half open (a chevron per pair, apex into the room, the head
+              // track dashed across the opening), or bypass sliding panels on two tracks overlapping 60 mm at the centre; no swing arc
+              var rm = op.other || op.room, intoC, span = op.to - op.from;
+              if (op.side === "h") intoC = (rm.y + rm.h / 2 > op.at) ? 1 : -1; else intoC = (rm.x + rm.w / 2 > op.at) ? 1 : -1;
+              var Q = function (along, outd) { return op.side === "h" ? P(along, op.at + intoC * outd) : P(op.at + intoC * outd, along); };
+              if (op.closet === "bifold") {
+                var pairs = span > 1.0 ? 2 : 1, pw = span / pairs;
+                for (var pi = 0; pi < pairs; pi++) {
+                  var a0 = op.from + pi * pw, apex = Q(a0 + pw / 2, pw * 0.42);
+                  parts.push(lineSvg(Q(a0, 0), apex, 'stroke="' + INK + '" stroke-width="1.1" stroke-linejoin="round"'));
+                  parts.push(lineSvg(apex, Q(a0 + pw, 0), 'stroke="' + INK + '" stroke-width="1.1" stroke-linejoin="round"'));
+                }
+                parts.push(lineSvg(Q(op.from, 0), Q(op.to, 0), 'stroke="' + LIGHT + '" stroke-width="0.6" stroke-dasharray="2 2"'));
+              } else {
+                var half = span / 2 + 0.03, th = 0.045;
+                [[op.from, -th - 0.005], [op.to - half, 0.005]].forEach(function (pn) {
+                  var c1 = Q(pn[0], pn[1]), c2 = Q(pn[0] + half, pn[1]), c3 = Q(pn[0] + half, pn[1] + th), c4 = Q(pn[0], pn[1] + th);
+                  parts.push('<path d="M ' + c1[0].toFixed(2) + " " + c1[1].toFixed(2) + " L " + c2[0].toFixed(2) + " " + c2[1].toFixed(2) + " L " + c3[0].toFixed(2) + " " + c3[1].toFixed(2) + " L " + c4[0].toFixed(2) + " " + c4[1].toFixed(2) + ' Z" fill="' + FLOOR + '" stroke="' + INK + '" stroke-width="0.9"/>');
+                });
+              }
+            } else {   // door: the leaf swings into the room it serves and lands against the nearest wall
               var r = op.room, w = op.to - op.from, into;
               if (op.side === "h") into = (r.y + r.h / 2 > op.at) ? 1 : -1; else into = (r.x + r.w / 2 > op.at) ? 1 : -1;
               if (op.out && op.other) into = -into;
@@ -579,7 +606,7 @@ var R1Plans = (function () {
     var legend = o.blocks.map(function (b) { return b.unit_list.map(function (u) { return '<span class="lg"><i style="background:' + C.unitColor(o, u.key, b.key) + '"></i>' + esc(u.key) + " " + (u.kind ? esc(u.name) : (u.beds ? u.beds + " bed" : "studio") + " / " + u.baths + " bath") + ", ~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2</span>"; }).join(""); }).join("") +
       '<span class="lg"><i style="background:#c81e1e"></i>entry</span><span class="lg"><i style="background:' + GLASS + '"></i>window</span>' +
       (R1Access && R1Access.hasStairs(access) ? '<span class="lg"><i style="background:' + WALK + ';border:1px solid ' + INK + '"></i>open walkway</span><span class="lg"><i style="background:' + STAIR + ';border:1px solid ' + INK + '"></i>exterior exit stair</span>' : "") +
-      '<span class="lg lg-abbr">' + (furniture ? "Fixtures: F fridge, M mechanical unit. " : "") + "Short room names where a room is small: E entry, H hall, C closet, S storage, Ldy laundry, Ln linen, M mechanical, K kitchen, D dining, L living, St study, Ens ensuite, B1 to B3 bedrooms.</span>";
+      '<span class="lg lg-abbr">Closets have bifold doors (drawn half open), sliding bypass doors when wider than 1.8 m. ' + (furniture ? "Fixtures: F fridge, M mechanical unit. " : "") + "Short room names where a room is small: E entry, H hall, C closet, S storage, Ldy laundry, Ln linen, M mechanical, K kitchen, D dining, L living, St study, Ens ensuite, B1 to B3 bedrooms.</span>";
     var defs = '<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="' + FIX + '"/></marker></defs>';
     return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + " " + totalH + '" role="img" aria-label="Floor plans" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">' + defs + parts.join("") + "</svg>", legend: legend, width: totalW, height: totalH, access: access };
   }
@@ -623,11 +650,11 @@ var R1Plans = (function () {
           (stairs[ur.block + "|" + ur.unit] || (stairs[ur.block + "|" + ur.unit] = [])).push([r.x, r.y, r.w, r.h]);
         }
       });
-      ops.forEach(function (op) { if ((op.kind === "door" || op.kind === "entry") && op.to - op.from < MIN.door - 0.01) issues.push(where + ": the door to " + op.room.name.toLowerCase() + " is " + fmt(op.to - op.from, 2) + " m (doors need " + MIN.door + " m)"); });
+      ops.forEach(function (op) { if ((op.kind === "door" || op.kind === "entry") && !op.closet && op.to - op.from < MIN.door - 0.01) issues.push(where + ": the door to " + op.room.name.toLowerCase() + " is " + fmt(op.to - op.from, 2) + " m (doors need " + MIN.door + " m)"); });   // closet panels span the closet; a person reaches in
       // a person steps in and turns around: the leaf opens fully into the room it lands in, and every room a person
       // enters (not a reach-in closet, the stair or its landing) holds 0.9 x 1.2 m of clear floor
       ops.forEach(function (op) {
-        if ((op.kind !== "door" && op.kind !== "entry") || !op.room) return;
+        if ((op.kind !== "door" && op.kind !== "entry") || !op.room || op.closet) return;   // closet panels fold or slide within their opening
         var lands = op.out && op.other ? op.other : op.room, w = op.to - op.from, depth = op.side === "h" ? lands.h : lands.w;
         if (depth < w - 0.01) issues.push(where + ": the door to " + op.room.name.toLowerCase() + " cannot open fully (a " + fmt(w, 2) + " m leaf in the " + fmt(depth, 2) + " m deep " + lands.name.toLowerCase() + ")");
       });

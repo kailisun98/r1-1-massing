@@ -338,7 +338,10 @@ which loads 3567 W 27th Ave) to start.
   pantry off the kitchen) and cased openings between entry, living, dining, hall and kitchen;
   windows on the exterior walls of habitable rooms. Every door swings into the room it serves and
   lands against that room's nearest wall (the hinge sits at the end of the opening closest to a
-  corner); only a reach-in closet too shallow to stand in takes its door swinging out. Every room
+  corner); a reach-in closet too shallow to stand in gets closet doors instead, drawn the way plans
+  draw them: bifold panels across its width shown half open (a chevron per pair, apex into the
+  room, the head track dashed), or sliding bypass panels overlapping at the centre when the opening
+  is wider than 1.8 m, with no swing arc either way. Every room
   carries its name and area. Furniture is off by default (a *Furniture* switch above the sheet
   turns it on): the sheet reads as rooms, doors, windows and stairs, which is what a schematic
   plan needs. With Furniture on it is drawn at catalogue size from the

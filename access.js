@@ -19,16 +19,20 @@ var R1Access = (function () {
   function r2(v) { return Math.round(v * 100) / 100; }
   // length of the switchback along the face for one floor-to-floor height
   function stairLength(fh) { var risers = Math.ceil(fh / RISE_MAX), goings = Math.ceil(risers / 2) - 1; return r2(goings * GOING + 2 * LANDING); }
-  function entryFace(c, fi, isRear) {
-    var front = c.b0 < EPS, rear = c.b1 > 1 - EPS, left = c.a0 < EPS, right = c.a1 > 1 - EPS;
+  function entryFace(c, fi, isRear, AO) {
+    var front = c.b0 < EPS, rear = c.b1 > 1 - EPS, left = c.a0 < EPS, right = c.a1 > 1 - EPS, want = AO ? AO.face : null;
     if (fi === 0) return front ? "front" : (left ? "left" : (right ? "right" : "rear"));
     if (isRear) return front ? "front" : null;          // a rear building is reached from the courtyard, never across its 0.9 m rear yard
+    if (want === "front" && front) return "front";      // the walkway face the designer asked for, when the cell touches it
+    if (want === "rear" && rear) return "rear";
     return rear ? "rear" : (front ? "front" : null);
   }
 
-  /* plan(option): { blocks: {key: {walkways, stairs, ...}}, entries: {"U3@single": {face, floor_index, walkway}}, notes } */
+  /* plan(option): { blocks: {key: {walkways, stairs, ...}}, entries: {"U3@single": {face, floor_index, walkway}}, notes }.
+     option.access_opts, when set, steers the exterior stairs: {face: "front"|"rear"|null} puts the walkway on that face
+     of a street building where its upper cells touch it; {end: 1|2|null} stands every stair at that end of its face. */
   function plan(o) {
-    var out = { blocks: {}, entries: {}, notes: [] }, any = false;
+    var out = { blocks: {}, entries: {}, notes: [] }, any = false, AO = o.access_opts || {}, endWanted = AO.end === 1 || AO.end === "1" ? 1 : (AO.end === 2 || AO.end === "2" ? 2 : null);
     o.blocks.forEach(function (b) {
       var W = b.width_m, D = b.depth_m, nf = b.floors.length, fh = b.height_m / nf, isRear = b.key === "rear", L = Math.min(stairLength(fh), W);
       var levelsOf = {};
@@ -51,7 +55,7 @@ var R1Access = (function () {
       b.floors.forEach(function (f, fi) {
         R1Cmhc.unitCells(f.units, f.split, f.cols, f.core).forEach(function (c) {
           if (levelsOf[c.key][0] !== fi) return;   // not the level this unit is entered on
-          var face = entryFace(c, fi, isRear);
+          var face = entryFace(c, fi, isRear, AO);
           out.entries[c.key + "@" + b.key] = { unit: c.key, block: b.key, floor_index: fi, face: face, cell: c, walkway: fi > 0 && (face === "front" || face === "rear") };
           if (fi > 0 && !face) out.notes.push(c.key + " in the " + b.name.toLowerCase() + " is entered on the " + f.name.toLowerCase() + " floor but touches no face a walkway can run along.");
           if (fi > 0 && face) {
@@ -62,7 +66,7 @@ var R1Access = (function () {
       });
       var stairs = {};
       Object.keys(groups).sort().forEach(function (key) {
-        var g = groups[key], atS1 = g.face === "rear", y0 = g.face === "rear" ? D : -WALK_W;
+        var g = groups[key], atS1 = endWanted ? endWanted === 1 : g.face === "rear", y0 = g.face === "rear" ? D : -WALK_W;
         var x0 = atS1 ? 0 : Math.min(g.a0 * W, W - LANDING), x1 = atS1 ? Math.max(g.a1 * W, LANDING) : W;
         B.walkways.push({ face: g.face, floor_index: g.floor_index, z: r2(g.floor_index * fh), x0: r2(x0), x1: r2(x1), y0: r2(y0), y1: r2(y0 + WALK_W), units: g.units });
         var st = stairs[g.face];
@@ -81,6 +85,7 @@ var R1Access = (function () {
     });
     var cores = Object.keys(out.blocks).filter(function (k) { return out.blocks[k].core; }), ext = Object.keys(out.blocks).filter(function (k) { return out.blocks[k].stairs.length; });
     if (ext.length) out.notes.push(NOTE);
+    if (ext.length && (AO.face || endWanted)) out.notes.push("Exit stairs as set by the designer: " + (AO.face ? "the walkway on the " + (AO.face === "front" ? "street" : "lane or courtyard") + " face of the street building where its upper units touch it" : "the walkway on its usual face") + (endWanted ? ", every stair at the side-" + endWanted + " end" : "") + ".");
     if (cores.length) out.notes.push("A shared single exit stair in a " + out.blocks[cores[0]].core.width_m.toFixed(1) + " m core across the depth of the building, with a vestibule on the street and a corridor on every floor that the units open onto; permitted for a building of this size under the BC Building Code 2024 and the Vancouver Building By-law (sprinklered; to be confirmed with the code consultant).");
     return out;
   }

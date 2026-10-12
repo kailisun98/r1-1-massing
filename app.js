@@ -166,6 +166,7 @@ var App = (function () {
     ui.unitsPrompt.textContent = haveEnv ? "Pick a form above. Its units, tenure and bedroom mix appear here." : "Once the envelope is drawn (step 3), pick a form here: its units, tenure and bedroom mix follow.";
     ui.btnCmhcClear.disabled = !(S.form && S.form.scheme === "cmhc");
     ui.btnPdf.disabled = !summaryReady();
+    ui.stairParams.disabled = !S.unitsOption;
     tabsC.update({ items: tabItems({ "3d": !haveModel, section: !haveSite, plans: !S.unitsOption, siteplan: !haveEnv, summary: !S.unitsOption }) });
     ui.stepBadges.forEach(function (b, i) {
       var done = [haveModel, !!S.ev, haveEnv, !!(S.form && S.form.status === "ok")][i];
@@ -197,7 +198,8 @@ var App = (function () {
     if (window.matchMedia("(max-width: 820px)").matches) document.getElementById("mapLegend").open = false;
   }
   function initMap() {
-    map = L.map("map", { zoomControl: true, attributionControl: true, maxBoundsViscosity: 1.0 }).setView([49.2483, -123.1841], 17);
+    // the whole city at rest, no lot chosen; the shared copy moves to its stored sites once their list is read
+    map = L.map("map", { zoomControl: true, attributionControl: true, maxBoundsViscosity: 1.0 }).setView([49.2500, -123.1200], 12);
     phoneMap();
     // the shared copy only has tiles around its stored sites: anywhere else the layer shows a blank tile without asking the server
     var StoredTiles = L.TileLayer.extend({ getTileUrl: function (coords) {
@@ -530,17 +532,20 @@ var App = (function () {
     THREE.Object3D.DefaultUp = new THREE.Vector3(0, 0, 1);
     var renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;   // soft cast shadows: the massing reads as a model, not a diagram
     host.appendChild(renderer.domElement);
-    var scene = new THREE.Scene(); scene.background = new THREE.Color(0xf4f5f7);
+    var scene = new THREE.Scene(); scene.background = new THREE.Color(0xeef1f5);
     var camera = new THREE.PerspectiveCamera(40, 1, 1, 5000);
     var controls = new THREE.OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    scene.add(new THREE.AmbientLight(0xffffff, 0.35));
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa886, 0.45));
-    var sun = new THREE.DirectionalLight(0xfff4e0, 0.75); sun.position.set(-120, -160, 220); scene.add(sun);
+    controls.enableDamping = true; controls.maxPolarAngle = Math.PI / 2 - 0.02;   // never under the ground
+    scene.add(new THREE.AmbientLight(0xffffff, 0.3));
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x9aa886, 0.4));
+    var sun = new THREE.DirectionalLight(0xfff4e0, 0.85); sun.position.set(-120, -160, 220); scene.add(sun); scene.add(sun.target);
+    sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.05;
+    sun.shadow.camera.near = 50; sun.shadow.camera.far = 700;
     var group = new THREE.Group(); scene.add(group);
     var labelHost = el("div", "lbl3dhost"); host.appendChild(labelHost);
-    three = { renderer: renderer, scene: scene, camera: camera, controls: controls, group: group, labelHost: labelHost, labels: [] };
+    three = { renderer: renderer, scene: scene, camera: camera, controls: controls, group: group, labelHost: labelHost, labels: [], sun: sun };
     function resize() { var w = host.clientWidth || 800, h = host.clientHeight || 500; renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix(); }
     window.addEventListener("resize", resize); resize();
     // labels: HTML tags projected from a 3D point every frame (unit keys on the blocks, a heading per building)
@@ -583,9 +588,10 @@ var App = (function () {
     var ux = pts[3][0] - pts[0][0], uy = pts[3][1] - pts[0][1], vx = pts[1][0] - pts[0][0], vy = pts[1][1] - pts[0][1];
     var W = Math.hypot(ux, uy), D = Math.hypot(vx, vy), ang = Math.atan2(uy, ux), c = site.centroid(pts);
     var geo = new THREE.BoxGeometry(W, h, D); geo.rotateX(Math.PI / 2);   // local x across, z up, -y toward the street
-    var tex = faceTexture(lines, color), side = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.95 });
-    var plain = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 0.6 });
+    var tex = faceTexture(lines, color), side = new THREE.MeshLambertMaterial({ map: tex, transparent: true, opacity: 0.96 });   // lit, so the faces turn with the sun
+    var plain = new THREE.MeshLambertMaterial({ color: color, transparent: true, opacity: 0.7 });
     var mesh = new THREE.Mesh(geo, [side, side, plain, plain, side, side]);
+    mesh.castShadow = true; mesh.receiveShadow = true;
     mesh.position.set(c[0], c[1], z0 + h / 2); mesh.rotation.z = ang;
     var edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x1f2933, transparent: true, opacity: 0.8 }));
     edges.position.copy(mesh.position); edges.rotation.z = ang;
@@ -595,7 +601,7 @@ var App = (function () {
     var shape = new THREE.Shape(ring.map(function (p) { return new THREE.Vector2(p[0], p[1]); }));
     var geo = new THREE.ExtrudeGeometry(shape, { depth: h, bevelEnabled: false });
     var mat = new THREE.MeshLambertMaterial({ color: color, transparent: opacity < 1, opacity: opacity });
-    var mesh = new THREE.Mesh(geo, mat); mesh.position.z = z0;
+    var mesh = new THREE.Mesh(geo, mat); mesh.position.z = z0; mesh.castShadow = opacity >= 1; mesh.receiveShadow = true;
     var edges = new THREE.LineSegments(new THREE.EdgesGeometry(geo), new THREE.LineBasicMaterial({ color: 0x3b3b3b, transparent: true, opacity: 0.5 }));
     edges.position.z = z0;
     var g = new THREE.Group(); g.add(mesh); g.add(edges); return g;
@@ -620,7 +626,11 @@ var App = (function () {
     // texture instead of separate draped meshes, so nothing fights with the terrain surface on a slope
     if (three.groundTex) three.groundTex.dispose();
     three.groundTex = groundTexture(sq, res);
-    G.add(new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: three.groundTex, side: THREE.DoubleSide })));
+    var ground = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: three.groundTex, side: THREE.DoubleSide })); ground.receiveShadow = true; G.add(ground);
+    // the sun's shadow camera covers the cut square from above the site; the sun stands to the south-west of its centre
+    var sc0 = sq.c, zc = M.groundZ(res, sc0[0], sc0[1]), sh = three.sun.shadow.camera;
+    three.sun.position.set(sc0[0] - 120, sc0[1] - 160, zc + 220); three.sun.target.position.set(sc0[0], sc0[1], zc); three.sun.target.updateMatrixWorld();
+    sh.left = -h * 1.3; sh.right = h * 1.3; sh.top = h * 1.3; sh.bottom = -h * 1.3; sh.updateProjectionMatrix();
     var ring = M.squareRing(sq), skirt = [], sidx = [];
     ring.forEach(function (p, k) {
       var q = ring[(k + 1) % 4], n = 40;
@@ -761,14 +771,14 @@ var App = (function () {
   }
 
   // ------------------------------------------------------------------ the floor-plan sheet
-  var plansDirty = true, plansFloor = null, plansScale = 20, plansSection = true, plansTimer = null;
-  // the sheet takes a moment (rooms, doors, furniture placed clear of the doors, the check): say so, then draw
+  var plansDirty = true, plansFloor = null, plansScale = 20, plansSection = true, plansFurniture = false, plansTimer = null;
+  // the sheet takes a moment (rooms, doors, the check; the furniture when it is shown): say so, then draw
   function drawPlans() {
     var host = ui.plansHost, o = S.unitsOption;
     plansDirty = false;
     if (plansBusy) { plansBusy.destroy(); plansBusy = null; }
     if (!o || !S.form || S.form.status !== "ok") { host.innerHTML = ""; host.appendChild(el("p", "empty", "Draw a massing option in step 4, then open its floor plans.")); return; }
-    host.innerHTML = ""; plansBusy = R1UI.busy(host, { text: "Laying out the rooms, placing the furniture clear of the doors and checking the clearances…" });
+    host.innerHTML = ""; plansBusy = R1UI.busy(host, { text: plansFurniture ? "Laying out the rooms, placing the furniture clear of the doors and checking the clearances…" : "Laying out the rooms and their doors and checking them…" });
     status("Drawing the floor plans of " + o.name + " and checking them…", "busy");
     if (plansTimer) clearTimeout(plansTimer);
     plansTimer = setTimeout(function () { plansTimer = null; drawPlansNow(); }, 30);
@@ -791,18 +801,19 @@ var App = (function () {
     R1UI.toolbar(tools, { ariaLabel: "Floor plan options", groups: [
       { id: "floor", label: "Floor", items: [{ id: "all", label: "All" }].concat(floorNames.map(function (fn) { return { id: fn, label: fn }; })), value: plansFloor || "all", onChange: function (id) { plansFloor = id === "all" ? null : id; drawPlans(); } },
       { id: "scale", label: "Scale", items: [{ id: "14", label: "Small" }, { id: "20", label: "Medium" }, { id: "28", label: "Large" }], value: String(plansScale), onChange: function (id) { plansScale = parseInt(id, 10); drawPlans(); } },
+      { id: "furniture", label: "Furniture", items: [{ id: "hide", label: "Hide" }, { id: "show", label: "Show" }], value: plansFurniture ? "show" : "hide", onChange: function (id) { plansFurniture = id === "show"; drawPlans(); } },
       { id: "section", label: "Site section", items: [{ id: "show", label: "Show" }, { id: "hide", label: "Hide" }], value: plansSection ? "show" : "hide", onChange: function (id) { plansSection = id === "show"; drawPlans(); } }] });
     if (plansSection) {   // the site section beside the plan options, so plans and section read together
       var secWrap = el("div", "sheet-section"), secSvg = sectionSvg(Math.min(900, (host.clientWidth || 900) - 44));
       if (typeof secSvg !== "string") { secWrap.appendChild(el("h3", null, "Site section A-A")); secWrap.appendChild(secSvg); host.appendChild(secWrap); }
     }
-    var plans = R1Plans.sheet(o, { k: plansScale, floors: plansFloor ? [plansFloor] : null, mirror: plansMirror() });
+    var plans = R1Plans.sheet(o, { k: plansScale, floors: plansFloor ? [plansFloor] : null, mirror: plansMirror(), furniture: plansFurniture });
     var body = el("div", "sheet-body"); body.innerHTML = plans.svg; host.appendChild(body);
     var lg = el("div", "sheet-legend"); lg.innerHTML = plans.legend; host.appendChild(lg);
-    var issues = R1Plans.check(o), chk = el("div"); host.appendChild(chk);
+    var issues = R1Plans.check(o, { furniture: plansFurniture }), chk = el("div"); host.appendChild(chk);
     R1UI.notice(chk, issues.length
       ? { tone: "warn", title: "Plan check: " + issues.length + " item" + (issues.length > 1 ? "s" : "") + " to resolve.", items: issues }
-      : { tone: "ok", title: "Plan check passed.", text: "Every room has its door (860 mm or wider), the furniture stands clear of every door swing and its 0.76 m approach, halls, baths, bedrooms, living rooms, kitchens and stairs meet the test fits, stairs stack, every unit holds the bedrooms of its type, and every unit has its way in." });
+      : { tone: "ok", title: "Plan check passed.", text: "Every room has its door (860 mm or wider) swinging fully into it against the nearest wall, a person can step into every room and turn around (0.9 x 1.2 m clear), " + (plansFurniture ? "the furniture stands clear of every door swing and its 0.76 m approach, " : "") + "halls, baths, bedrooms, living rooms, kitchens and stairs meet the test fits, stairs stack, every unit holds the bedrooms of its type, and every unit has its way in." });
     status("Floor plans of " + o.name + " drawn" + (issues.length ? "; the plan check lists " + issues.length + " item" + (issues.length > 1 ? "s" : "") + " to resolve." : "; the plan check passed."), issues.length ? "error" : "ok");
     var notes = el("div", "sheet-notes");
     var accessHtml = access.notes.length ? "<p>" + esc(R1Access.lines(access).join(" ")) + " " + esc(access.notes.join(" ")) + "</p>" : "";
@@ -885,7 +896,7 @@ var App = (function () {
     if (typeof secSvg === "string") sc.appendChild(el("p", "empty", secSvg)); else sc.appendChild(secSvg);
     host.appendChild(sc);
     host.appendChild(el("h3", "summary-h", "Schematic floor plans"));
-    var fp = el("div", "summary-sheet"), plans = R1Plans.sheet(o, { k: 14, mirror: plansMirror() }); fp.innerHTML = plans.svg; host.appendChild(fp);
+    var fp = el("div", "summary-sheet"), plans = R1Plans.sheet(o, { k: 16, mirror: plansMirror() }); fp.innerHTML = plans.svg; host.appendChild(fp);
     var lg = el("div", "sheet-legend"); lg.innerHTML = plans.legend; host.appendChild(lg);
     var notes = el("div", "summary-notes");
     notes.innerHTML = "<p>" + esc(data.source.document + ", " + data.source.version + " (accessed " + data.source.accessed + "). City of Vancouver Open Data. Gross floor area counts every storey full (a catalogue design: its gross building area); the by-law's FSR exclusions are not modelled. Unit areas are each unit's share of the footprint. A schematic design aid, not a permit submission.") + "</p>";
@@ -954,7 +965,7 @@ var App = (function () {
     status("Writing the summary PDF (drawings rendered, library loaded the first time)…", "busy");
     var ctx = summaryCtx(), data = R1Summary.stats(ctx), o = ctx.option;
     var name = "lotwise-summary-" + ((data.address || "site").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "site") + ".pdf";
-    var secSvg = sectionSvg(1100), plans = R1Plans.sheet(o, { k: 14, mirror: plansMirror() });
+    var secSvg = sectionSvg(1100), plans = R1Plans.sheet(o, { k: 20, mirror: plansMirror() });   // rooms, doors and windows without furniture: legible on an A4 page
     return Promise.all([loadPdfLibs(), loadThree().then(null, function () {})]).then(function () {
       return Promise.all([svgToPng(ctx.sheet.svg, 2), typeof secSvg === "string" ? null : svgToPng(secSvg, 2), svgToPng(plans.svg, 1.5)]);
     }).then(function (imgs) {
@@ -1000,7 +1011,7 @@ var App = (function () {
     else if (p && !addr) line2 = "no civic address: not a site";
     else if (p && BUNDLED && !storedSite(addr)) line2 = "not stored in this shared copy";
     else if (p) line2 = "click to make it the site";
-    else line2 = BUNDLED ? "click a red pin, or open a site file" : "outside the fetched area: click to look it up";
+    else line2 = BUNDLED ? "click a red pin, or open a site file" : (S.res ? "outside the fetched area: click to look it up" : "zoom in to the lot and click inside it");
     pickTip.innerHTML = (p ? "<b>" + esc(addr || "Unnamed lot") + "</b>" : "") + "<span>" + esc(line2) + "</span>";
     var size = map.getSize(), right = cp.x > size.x - 220, below = cp.y < 60;
     pickTip.style.transform = "translate(" + (right ? cp.x - 14 : cp.x + 14) + "px, " + (below ? cp.y + 16 : cp.y - 16) + "px) translate(" + (right ? "-100%" : "0") + ", " + (below ? "0" : "-100%") + ")";
@@ -1253,6 +1264,7 @@ var App = (function () {
     if (!keepUnits) S.mix = null;
     var opts = unitOpts(); if (!keepUnits) opts.units = undefined;
     var o = R1Units.configure(form, S.ev, opts);
+    o.access_opts = accessOpts();   // where the exterior exit stairs and walkways go (the Exit stairs fields)
     S.unitsOption = o.blocks.length ? o : null;
     if (S.unitsOption) trimForm(form, o);   // buildings trimmed to FSR by the configurator are redrawn at that depth
     fillUnitsSelect(o); fillMixSelects(S.unitsOption);
@@ -1299,8 +1311,11 @@ var App = (function () {
     }) });
   }
   function cmhcOption(key) { return S.cmhc ? S.cmhc.options.filter(function (o) { return o.key === key; })[0] || null : null; }
+  // the Exit stairs fields: null means the automatic placement
+  function accessOpts() { return { face: ui.walkFaceSel.value === "auto" ? null : ui.walkFaceSel.value, end: ui.stairEndSel.value === "auto" ? null : parseInt(ui.stairEndSel.value, 10) }; }
   function applyCmhc(o) {
     var form = R1Cmhc.form(S.ev, o);
+    o.access_opts = accessOpts();
     clearCmhcPick(); cmhcC.update({ value: o.key });
     S.form = form; S.cmhcPick = o; o.source = "cmhc"; setScheme(null); fillForm(); fillRules();
     if (form.status !== "ok") { S.formBases = null; S.unitsOption = null; drawForm(); drawSectionMarker(); markDirty(); setReady(); status(form.reason, "error"); return; }
@@ -1357,7 +1372,7 @@ var App = (function () {
       "sumSite", "sumRules", "sumEnvelope", "sumMassing", "sumChecks", "tbSite", "tbOption", "tbUnits", "tbFsr", "tbView", "tbStamp", "tbStampText", "tbStampSub", "unitsSel", "tenureSel", "groundSel", "formTable", "formNote", "formDesc", "report", "btnCopy",
       "btnClear", "status", "chkRoads", "chkParcels", "chkBuildings", "sectionHost", "threeHost", "viewTabs", "plansHost", "sitePlanHost", "btnSaveSite", "siteFile", "presetList", "sourceNote",
       "btnCmhcClear", "cmhcList", "cmhcNote", "unitsPanel", "btnPickSite", "massingMode", "schemeSeg", "panelForms", "panelCmhc", "btnLeftToggle", "sidePanel",
-      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto", "btnTour", "summaryHost", "btnPdf"].forEach(function (id) { ui[id] = $(id); });
+      "accessSel", "mix3Host", "mix2Host", "mix0Host", "mix1Out", "btnMixAuto", "btnTour", "summaryHost", "btnPdf", "stairParams", "walkFaceSel", "stairEndSel"].forEach(function (id) { ui[id] = $(id); });
     ui.panes = { map: $("paneMap"), siteplan: $("paneSitePlan"), "3d": $("pane3d"), section: $("paneSection"), plans: $("panePlans"), summary: $("paneSummary") };
     // ---- the components: the status strip, the view tabs, the two segmented controls, the tables, the option list, the mix steppers, the toggles
     statusC = R1UI.status(ui.status, { text: "Ready.", level: "info" });
@@ -1397,6 +1412,7 @@ var App = (function () {
     R1Units.ACCESS.forEach(function (a) { var o = el("option", null, a.name); o.value = a.key; o.title = a.note; ui.accessSel.appendChild(o); });
     ["unitsSel", "tenureSel", "groundSel", "accessSel"].forEach(function (id) { ui[id].addEventListener("change", function () { S.mix = null; if (S.scheme && S.form && S.form.scheme !== "cmhc") applyForm(S.scheme, true); }); });
     ui.btnMixAuto.addEventListener("click", function () { S.mix = null; if (S.scheme && S.form && S.form.scheme !== "cmhc") applyForm(S.scheme, true); });
+    ["walkFaceSel", "stairEndSel"].forEach(function (id) { ui[id].addEventListener("change", function () { if (S.cmhcPick) applyCmhc(S.cmhcPick); else if (S.scheme && S.form && S.form.scheme !== "cmhc") applyForm(S.scheme, true); }); });   // the stairs move on every drawing
     fillMixSelects(null);
     ui.parcelList.addEventListener("change", function () { if (S.res) onImport(); });
     // pointing at a lot in the list outlines it on the map, so the choice can be seen before it is made
@@ -1452,10 +1468,10 @@ var App = (function () {
     function withForm() { if (!placed()) return; folds.stepMassing.update({ open: true }); setMassingMode("forms"); if (!S.form || S.form.status !== "ok" || !S.unitsOption) applyForm("single", false); }
     return [
       { title: "Welcome to Lotwise", text: "A two-minute tour of the workflow: a lot is read from the City's open data, checked against the R1-1 schedule clause by clause, and drawn as an envelope, massing options, floor plans, a site plan and a section. Use Next or the arrow keys; Esc leaves the tour at any point." },
-      { title: "1. Site", target: "#stepSite", text: "Type a Vancouver address and press Enter, or pick a lot on the map. The example lot has loaded by itself: its lot, neighbours, buildings and contours come from the City of Vancouver Open Data portal, and the street side is worked out from the lots around it. A finished step folds to one line; click its heading to open it again.", run: function () { showSide(); showView("map"); return ensureSite().then(function () { openStep("stepSite"); }); } },
+      { title: "1. Site", target: "#stepSite", text: "Type a Vancouver address and press Enter, or pick a lot on the map. For the tour the example lot, 3567 W 27th Ave, has been loaded: its lot, neighbours, buildings and contours come from the City of Vancouver Open Data portal, and the street side is worked out from the lots around it. A finished step folds to one line; click its heading to open it again.", run: function () { showSide(); showView("map"); return ensureSite().then(function () { openStep("stepSite"); }); } },
       { title: "2. By-law rules", target: "#stepRules", text: "Every rule of the R1-1 schedule with its clause and what this site does about it: a green check is applied and met, a red cross is not met, an amber dash does not apply to what is drawn.", run: function () { openStep("stepRules"); } },
       { title: "3. Permitted envelope", target: "#paneMap", placement: "inside", text: "The yard lines and the envelope on the map, dimensioned in millimetres outside the lot; step 3 gives its size and what controls it. Changing the lot, the area shown or the street side redraws it.", run: function () { showView("map"); return wait(200); } },
-      { title: "4. Massing", target: "#stepMassing", text: "Pick a by-law form (single building, courtyard, side by side) and set the dwellings, tenure, ground-floor use, access and the bedroom mix: the configurator trims the building to FSR 1.0, lays out the units and lists what each rule says. The unit table and stack diagram follow below.", run: function () { withForm(); openStep("stepMassing"); return wait(400); } },
+      { title: "4. Massing", target: "#stepMassing", text: "Pick a by-law form (single building, courtyard, side by side) and set the dwellings, tenure, ground-floor use, access and the bedroom mix: the configurator trims the building to FSR 1.0, lays out the units and lists what each rule says. Exit stairs sets which face the walkway runs on and which end the stair stands at. The unit table and stack diagram follow below.", run: function () { withForm(); openStep("stepMassing"); return wait(400); } },
       { title: "The CMHC catalogue", target: "#panelCmhc", text: "Or test CMHC's British Columbia catalogue designs against the envelope: the ones that fit are drawn with their units in colour; the others say which rule they fail.", run: function () { if (!placed()) return; folds.stepMassing.update({ open: true }); setMassingMode("cmhc"); openStep("stepMassing"); return wait(700); } },
       { title: "The title block", target: ".titleblock", text: "Under every view, as on a drawing sheet: the site, the option, its units and FSR, and a stamp that answers whether what is drawn passes R1-1. Click the stamp for the checks, unmet first.", run: function () { withForm(); return wait(300); } },
       { title: "5. Floor plans", target: "#panePlans", placement: "inside", text: "Schematic plans of every unit on every floor, laid out from standard test fits and the adjacencies of the catalogue plans, with the exterior exit stair and walkway; the plan check under the sheet says what still fails. Floor, scale and the section beside the plans are options above the sheet.", run: function () { withForm(); showView("plans"); return wait(1500); } },
@@ -1468,13 +1484,13 @@ var App = (function () {
   }
   function start() {
     resetState(); bind(); initMap(); reportReset(); fillRules(); fillResults(); fillForm(); setScheme(null); setReady(); showView("map");
+    // the page opens in step 1 with nothing loaded: no site is chosen for the user; the later steps stay folded
+    // until a site brings them to life (the walkthrough loads the example lot itself)
+    ["stepRules", "stepEnvelope", "stepMassing", "stepChecks"].forEach(function (id) { folds[id].update({ open: false }); });
     loadPresets().then(function () {
-      if (BUNDLED && !presets.some(function (p) { return p.address === EXAMPLE_ADDRESS; })) {
-        status(presets.length ? "Pick a preloaded site from the address list and fetch it." : "Open a site file to start.", "info"); return;
-      }
-      ui.address.value = EXAMPLE_ADDRESS;
-      status("Example site loading: " + EXAMPLE_ADDRESS + " (an R1-1 lot in Dunbar). Type your own address or pick a site on the map to start over.", "busy");
-      onFetch();   // a working state at rest: the fetch imports the site and draws the envelope by itself
+      if (BUNDLED) status(presets.length ? "Step 1: pick one of the " + presets.length + " stored sites from the address list, or click a red pin on the map." : "Step 1: open a site file to start.", "info");
+      else status("Step 1: type a Vancouver address and press Enter, or pick a lot on the map.", "info");
+      if (!window.matchMedia("(pointer: coarse)").matches) ui.address.focus({ preventScroll: true });   // at a desk the cursor waits in the address field (a phone would raise its keyboard)
     });
   }
   // step 4 has two sources of massing: the by-law form options and the CMHC catalogue
@@ -1491,7 +1507,7 @@ var App = (function () {
     summary: function () { return summaryReady() ? R1Summary.stats(summaryCtx()) : null; },
     summaryPdf: function () {   // the report as a jsPDF document without saving it (for checks)
       if (!summaryReady()) return Promise.reject(new Error("no option drawn"));
-      var ctx = summaryCtx(), data = R1Summary.stats(ctx), secSvg = sectionSvg(1100), plans = R1Plans.sheet(ctx.option, { k: 14, mirror: plansMirror() });
+      var ctx = summaryCtx(), data = R1Summary.stats(ctx), secSvg = sectionSvg(1100), plans = R1Plans.sheet(ctx.option, { k: 20, mirror: plansMirror() });
       return Promise.all([loadPdfLibs(), loadThree().then(null, function () {})]).then(function () { return Promise.all([svgToPng(ctx.sheet.svg, 2), typeof secSvg === "string" ? null : svgToPng(secSvg, 2), svgToPng(plans.svg, 1.5)]); })
         .then(function (imgs) { return R1Summary.pdf(data, { three: capture3D(1400, 900), siteplan: imgs[0], section: imgs[1], plans: imgs[2] }); });
     } };

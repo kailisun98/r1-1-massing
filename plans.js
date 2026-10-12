@@ -29,8 +29,15 @@ var R1Plans = (function () {
   var OUTDOOR = ["Terrace", "Patio"], SMALL_WINDOW = ["Bath", "Ensuite", "WC", "Laundry", "Corridor", "Vestibule", "Landing"];
   // rooms that may open off the room they serve rather than a hall: a walk-in closet off a bedroom, a pantry off the kitchen
   var OFF_ANY = ["Ensuite", "Closet", "Linen", "Mechanical", "Storage", "Laundry"], NEVER_FROM = /Bath|WC|Ensuite|Stair|Laundry|Mechanical|Storage|Linen|Closet|Patio|Terrace/;
-  // small service rooms whose door swings out into the room it is entered from, so the fixtures inside stay clear of it
-  var OUT_SWING = ["WC", "Laundry", "Closet", "Linen", "Storage", "Mechanical", "Bike room", "Pantry"];
+  // every door swings into the room it serves and lands against that room's nearest wall (the hinge sits at the end of
+  // the opening closest to a corner); only a reach-in closet, too shallow to stand in, takes its door swinging out
+  var REACH_IN = /^(Closet|Linen|Storage|Mechanical|Pantry|Laundry|Bike room)$/, TURN = [0.9, 1.2];   // the clear floor a person needs to step in and turn around
+  function reachIn(r) { return REACH_IN.test(r.name) && Math.min(r.w, r.h) < 1.5; }
+  function swingsOut(room, side, w) { return reachIn(room) || (side === "h" ? room.h : room.w) < w + 0.05; }
+  function hingeFor(room, side, a, b) {   // "from" when the opening's low end is nearer the room's corner than its high end is
+    var lo = side === "h" ? room.x : room.y, hi = side === "h" ? room.x + room.w : room.y + room.h;
+    return (a - lo) <= (hi - b) + 0.005 ? "from" : "to";   // a tie (a centred door) hinges at the low end
+  }
   var SHORT = { "Primary bedroom": "Primary bed", "Bedroom 1": "Bed 1", "Bedroom 2": "Bed 2", "Bedroom 3": "Bed 3", "Ensuite": "Ens.", "Mechanical": "Mech.", "Lobby, mail": "Lobby", "Back of house": "Back", "Kitchenette": "Kit'ette", "Storage": "Stor.", "Laundry": "Ldry", "Kitchen": "Kit.", "Dining": "Din.", "Living": "Liv.", "Living / dining": "Liv / din", "Hall": "H", "Shop floor": "Shop", "Common room": "Common", "Play room": "Play", "Nap room": "Nap", "Flex room": "Flex", "Terrace": "Terr.", "Bedroom": "Bed", "Closet": "Clo.", "Linen": "Lin." };
   var SHORTER = { "Primary bedroom": "P.bed", "Ensuite": "Ens", "Bath": "Bath", "WC": "WC", "Laundry": "Ldy", "Storage": "S", "Kitchen": "K", "Dining": "D", "Living": "L", "Living / dining": "L/D", "Entry": "E", "Hall": "H", "Study": "St", "Den": "Den", "Office": "Off", "Bedroom": "Bed", "Bedroom 1": "B1", "Bedroom 2": "B2", "Bedroom 3": "B3", "Closet": "C", "Linen": "Ln", "Mechanical": "M" };
   var DOOR_PRIORITY = ["Hall", "Landing", "Corridor", "Entry", "Vestibule", "Living", "Living / dining", "Studio", "Dining", "Kitchen", "Den", "Flex room", "Lobby, mail", "Common room", "Play room", "Shop floor", "Primary bedroom", "Stair"];
@@ -64,8 +71,8 @@ var R1Plans = (function () {
     function pushDoor(from, to, e, kind) {
       var len = e.to - e.from, w = Math.min(DOOR, Math.max(len - 0.05, Math.min(0.86, len))), mid = (e.from + e.to) / 2;   // a 0.86 m leaf may fill a 0.9 m hall end
       // hinge the door near the end of the wall closest to the room's corner, not mid-wall, when the wall is long
-      var at0 = len > 1.6 ? e.from + 0.15 : mid - w / 2;
-      out.push({ kind: kind, side: e.side, at: e.at, from: at0, to: at0 + w, room: to, other: from, out: OUT_SWING.indexOf(to.name) >= 0 });
+      var at0 = len > 1.6 ? e.from + 0.15 : mid - w / 2, outward = swingsOut(to, e.side, w);
+      out.push({ kind: kind, side: e.side, at: e.at, from: at0, to: at0 + w, room: to, other: from, out: outward, hinge: hingeFor(outward ? from : to, e.side, at0, at0 + w) });
       if (kind === "door") doorsInto[to.name] = true;
     }
     // interior: open connections (including the parts of one L-shaped room) and doors from circulation into served rooms
@@ -87,7 +94,7 @@ var R1Plans = (function () {
         var circ = isCirc(s.name), offAny = OFF_ANY.indexOf(r.name) >= 0 && !NEVER_FROM.test(s.name);
         if (r.name !== "Ensuite" && !circ && !offAny) return;
         var rank = circ ? DOOR_PRIORITY.indexOf(s.name) : 70; if (circ && rank < 0) rank = 50;
-        if (r.name === "Closet" && isBed(s.name)) rank = 0;        // a walk-in closet off its bedroom, before the hall
+        if (r.name === "Closet" && isBed(s.name)) rank = -1;       // a walk-in closet off its bedroom, before the hall it may also touch
         if (r.name === "Laundry" && s.name === "Kitchen") rank = 1; // a laundry closet off the kitchen
         if (rank < bestRank || (rank === bestRank && best && (e.to - e.from) > (best.e.to - best.e.from))) { bestRank = rank; best = { s: s, e: e }; }   // the longer wall of two equal choices
       });
@@ -111,12 +118,12 @@ var R1Plans = (function () {
       var order = [ur.entry_face, "front", "left", "right", "rear"].filter(function (f, i, a) { return f && a.indexOf(f) === i; }), face = order.filter(function (f) { return cand[f]; })[0];
       if (face) {
         var f = cand[face], mid = (f.from + f.to) / 2, w = Math.min(DOOR, Math.max(0.86, f.to - f.from - 0.1));
-        out.push({ kind: "entry", side: f.side, at: f.at, from: mid - w / 2, to: mid + w / 2, room: entry, other: null, face: face });
+        out.push({ kind: "entry", side: f.side, at: f.at, from: mid - w / 2, to: mid + w / 2, room: entry, other: null, face: face, hinge: hingeFor(entry, f.side, mid - w / 2, mid + w / 2) });
       }
       // the stair core's corridor also leaves to the rear yard
       if (ur.role === "core" && ext.rear) {
         var corr = rooms.filter(function (r) { return r.name === "Corridor" && Math.abs(r.y + r.h - ur.depth_m) < EPS; })[0];
-        if (corr && corr.w >= 1.0) { var cm = corr.x + corr.w / 2, cw2 = Math.min(DOOR, corr.w - 0.1); out.push({ kind: "entry", side: "h", at: ur.depth_m, from: cm - cw2 / 2, to: cm + cw2 / 2, room: corr, other: null, face: "rear", exit: true }); }
+        if (corr && corr.w >= 1.0) { var cm = corr.x + corr.w / 2, cw2 = Math.min(DOOR, corr.w - 0.1); out.push({ kind: "entry", side: "h", at: ur.depth_m, from: cm - cw2 / 2, to: cm + cw2 / 2, room: corr, other: null, face: "rear", exit: true, hinge: hingeFor(corr, "h", cm - cw2 / 2, cm + cw2 / 2) }); }
       }
     }
     // windows on exterior walls
@@ -362,10 +369,11 @@ var R1Plans = (function () {
   }
   function extOf(c) { return { front: c.b0 < EPS, rear: c.b1 > 1 - EPS, left: c.a0 < EPS, right: c.a1 > 1 - EPS, core_left: !!c.core_left, core_right: !!c.core_right }; }
 
-  /* sheet(option, opts): the drawing. opts.k px/m (default 20), opts.floors names, opts.block key, opts.mirror. */
+  /* sheet(option, opts): the drawing. opts.k px/m (default 20), opts.floors names, opts.block key, opts.mirror,
+     opts.furniture (default false: rooms, doors, windows and stairs only; true adds the test-fit furniture and fixtures). */
   function sheet(o, opts) {
     opts = opts || {};
-    var k = opts.k || 20, pad = 26, gapX = Math.round(k * 2.2), parts = [], y = pad, width = 0, areas = C.unitAreas(o), mirror = !!opts.mirror;
+    var k = opts.k || 20, pad = 26, gapX = Math.round(k * 2.2), parts = [], y = pad, width = 0, areas = C.unitAreas(o), mirror = !!opts.mirror, furniture = !!opts.furniture;
     var fs = Math.max(7, k * 0.42), fs2 = Math.max(6, k * 0.34), byCell = {}, access = (typeof R1Access !== "undefined") ? R1Access.plan(o) : { blocks: {}, entries: {}, notes: [] };
     C.unitRooms(o).forEach(function (r) { byCell[r.block + "|" + r.floor_index + "|" + r.unit] = r; });
     function rectSvg(x, y0, w, h, style) { return '<rect x="' + x.toFixed(2) + '" y="' + y0.toFixed(2) + '" width="' + w.toFixed(2) + '" height="' + h.toFixed(2) + '" ' + style + "/>"; }
@@ -411,10 +419,11 @@ var R1Plans = (function () {
             walls.push({ x1: r.x, y1: r.y, x2: r.x, y2: r.y + r.h, th: WALL.int, outdoor: isOutdoor(r.name) });
             walls.push({ x1: r.x + r.w, y1: r.y, x2: r.x + r.w, y2: r.y + r.h, th: WALL.int, outdoor: isOutdoor(r.name) });
           });
-          // fixtures, placed clear of the doors (text haloed in the floor tint, never white); on a mirrored sheet they are
-          // laid out in the unit's own frame and mirrored with it, so both sheets show the same furniture
+          // the stairs always; the furniture and fixtures only when asked for, placed clear of the doors (text haloed in the
+          // floor tint, never white); on a mirrored sheet they are laid out in the unit's own frame and mirrored with it
           var halo = ' paint-order="stroke" stroke="' + tint(col2) + '" stroke-width="3" stroke-linejoin="round"', ops = openings(ur, ext), ops0 = mirror ? openings(ur0, extOf(ur0.cell)) : ops;
           ur0.rooms.forEach(function (r0, ri) {
+            if (!furniture && r0.name !== "Stair") return;
             var r = ur.rooms[ri], fx = fixtures(r0, ur0, extOf(ur0.cell), keepClear(r0, ops0));
             if (mirror) fx.forEach(function (p) { if (p.t === "rect") p.x = r0.w - p.x - p.w; else if (p.t === "line") { p.x1 = r0.w - p.x1; p.x2 = r0.w - p.x2; } else p.x = r0.w - p.x; });
             fx.forEach(function (g) {
@@ -457,14 +466,15 @@ var R1Plans = (function () {
               parts.push(lineSvg(a, b2, 'stroke="' + INK + '" stroke-width="0.8"'));
             } else if (op.kind === "open" || op.kind === "join") {
               // a cased opening, or the join between the two parts of one room: nothing but the gap
-            } else {   // door: hinge at `from`, leaf swings into the room it serves (out of a small service room)
+            } else {   // door: the leaf swings into the room it serves (out of a reach-in closet) and lands against the nearest wall
               var r = op.room, w = op.to - op.from, into;
               if (op.side === "h") into = (r.y + r.h / 2 > op.at) ? 1 : -1; else into = (r.x + r.w / 2 > op.at) ? 1 : -1;
               if (op.out && op.other) into = -into;
-              var hinge = op.side === "h" ? P(op.from, op.at) : P(op.at, op.from);
-              var leafEnd = op.side === "h" ? P(op.from, op.at + into * w) : P(op.at + into * w, op.from);
-              var arcEnd = op.side === "h" ? P(op.to, op.at) : P(op.at, op.to);
-              var sweep = (op.side === "h" ? (into > 0 ? 0 : 1) : (into > 0 ? 1 : 0));
+              var atHinge = op.hinge === "to" ? op.to : op.from, atFree = op.hinge === "to" ? op.from : op.to;
+              var hinge = op.side === "h" ? P(atHinge, op.at) : P(op.at, atHinge);
+              var leafEnd = op.side === "h" ? P(atHinge, op.at + into * w) : P(op.at + into * w, atHinge);
+              var arcEnd = op.side === "h" ? P(atFree, op.at) : P(op.at, atFree);
+              var sweep = (op.side === "h" ? (into > 0 ? 0 : 1) : (into > 0 ? 1 : 0)); if (op.hinge === "to") sweep = 1 - sweep;
               parts.push(lineSvg(hinge, leafEnd, 'stroke="' + INK + '" stroke-width="1.1"'));
               parts.push('<path d="M ' + leafEnd[0].toFixed(2) + " " + leafEnd[1].toFixed(2) + " A " + (w * k).toFixed(2) + " " + (w * k).toFixed(2) + " 0 0 " + sweep + " " + arcEnd[0].toFixed(2) + " " + arcEnd[1].toFixed(2) + '" fill="none" stroke="' + LIGHT + '" stroke-width="0.7"/>');
               if (op.kind === "entry") {   // a red arrow outside the door, pointing in
@@ -530,7 +540,8 @@ var R1Plans = (function () {
             if (est(nm) > avail) nm = SHORTER[r.name] || (nm.length > 3 ? nm.slice(0, 3) + "." : nm);
             if (est(nm) > avail) return;
             parts.push(textSvg(tx, ty, nm, 'font-size="' + size + '" font-weight="600" fill="' + INK + '"'));
-            if (!small && nm === r.name && r.h >= 2.3 && r.h * k > size * 3.4 && est(fmt(r.area_m2, 1) + " m2") <= avail) parts.push(textSvg(tx, ty + size * 1.15, fmt(r.area_m2, 1) + " m2", 'font-size="' + fs2 + '" fill="' + TEXT2 + '"'));
+            // the area under the name of every room that has the height for a second line (a hall is named only)
+            if (!small && r.h * k > size * 2.6 + (r.y < EPS ? fs * 1.7 : 0) && est(fmt(r.area_m2, 1) + " m2") <= avail) parts.push(textSvg(tx, ty + size * 1.15, fmt(r.area_m2, 1) + " m2", 'font-size="' + fs2 + '" fill="' + TEXT2 + '"'));
           });
         });
         // 6. captions (what lies beyond the top and bottom edges), floor name, dimensions
@@ -568,16 +579,19 @@ var R1Plans = (function () {
     var legend = o.blocks.map(function (b) { return b.unit_list.map(function (u) { return '<span class="lg"><i style="background:' + C.unitColor(o, u.key, b.key) + '"></i>' + esc(u.key) + " " + (u.kind ? esc(u.name) : (u.beds ? u.beds + " bed" : "studio") + " / " + u.baths + " bath") + ", ~" + Math.round(areas[u.key + "@" + b.key] || 0) + " m2</span>"; }).join(""); }).join("") +
       '<span class="lg"><i style="background:#c81e1e"></i>entry</span><span class="lg"><i style="background:' + GLASS + '"></i>window</span>' +
       (R1Access && R1Access.hasStairs(access) ? '<span class="lg"><i style="background:' + WALK + ';border:1px solid ' + INK + '"></i>open walkway</span><span class="lg"><i style="background:' + STAIR + ';border:1px solid ' + INK + '"></i>exterior exit stair</span>' : "") +
-      '<span class="lg lg-abbr">Fixtures: F fridge, M mechanical unit. Short room names where a room is small: E entry, H hall, C closet, S storage, Ldy laundry, Ln linen, M mechanical, K kitchen, D dining, L living, St study, Ens ensuite, B1 to B3 bedrooms.</span>';
+      '<span class="lg lg-abbr">' + (furniture ? "Fixtures: F fridge, M mechanical unit. " : "") + "Short room names where a room is small: E entry, H hall, C closet, S storage, Ldy laundry, Ln linen, M mechanical, K kitchen, D dining, L living, St study, Ens ensuite, B1 to B3 bedrooms.</span>";
     var defs = '<defs><marker id="arr" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" fill="' + FIX + '"/></marker></defs>';
     return { svg: '<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW + '" height="' + totalH + '" viewBox="0 0 ' + totalW + " " + totalH + '" role="img" aria-label="Floor plans" font-family="Helvetica Neue, Helvetica, Arial, sans-serif">' + defs + parts.join("") + "</svg>", legend: legend, width: totalW, height: totalH, access: access };
   }
 
-  /* check(option): what the drawn plans still fail to provide: a room without a door from a circulation room,
-     a door narrower than 0.85 m, a bedroom, bath, WC, hall, kitchen or stair below its minimum, a stair that
-     does not stack between the levels of a unit, or a unit with no way in (no entry door on the face it is
-     reached from, or an upper entry level with no walkway and exit stair). Empty when the plans meet all of them. */
-  function check(o) {
+  /* check(option, opts): what the drawn plans still fail to provide: a room without a door from a circulation room,
+     a door narrower than 0.85 m or one that cannot open fully into the room it serves, a room a person cannot step
+     into and turn around in (0.9 x 1.2 m clear), a bedroom, bath, WC, hall, kitchen or stair below its minimum, a
+     stair that does not stack between the levels of a unit, or a unit with no way in (no entry door on the face it is
+     reached from, or an upper entry level with no walkway and exit stair). With opts.furniture the test-fit furniture
+     is placed too and a piece that cannot stand clear of a door is reported. Empty when the plans meet all of them. */
+  function check(o, opts) {
+    opts = opts || {};
     var issues = [], MIN = (typeof R1Rooms !== "undefined") ? R1Rooms.MIN : { hall: 0.9, bath_w: 1.5, wc_w: 1.35, bed_w: 2.5, bed_area: 7.5, kitchen: 1.7, kitchen_run: 2.1, living_w: 3.2, dining_w: 2.6, stair_w: 0.86, stair_l: 3.0, door: 0.86, service_m2: 4.5, bed_max_m2: 22 };
     var HALLS = ["Hall", "Landing", "Entry", "Vestibule", "Corridor"], LIVINGS = ["Living", "Living / dining", "Dining", "Studio"];
     var stairs = {}, access = (typeof R1Access !== "undefined") ? R1Access.plan(o) : null, bedsDrawn = {}, unitOf = {};
@@ -610,8 +624,19 @@ var R1Plans = (function () {
         }
       });
       ops.forEach(function (op) { if ((op.kind === "door" || op.kind === "entry") && op.to - op.from < MIN.door - 0.01) issues.push(where + ": the door to " + op.room.name.toLowerCase() + " is " + fmt(op.to - op.from, 2) + " m (doors need " + MIN.door + " m)"); });
-      // the furniture: every essential piece placed clear of the door swings and approaches (what could not be placed is reported)
+      // a person steps in and turns around: the leaf opens fully into the room it lands in, and every room a person
+      // enters (not a reach-in closet, the stair or its landing) holds 0.9 x 1.2 m of clear floor
+      ops.forEach(function (op) {
+        if ((op.kind !== "door" && op.kind !== "entry") || !op.room) return;
+        var lands = op.out && op.other ? op.other : op.room, w = op.to - op.from, depth = op.side === "h" ? lands.h : lands.w;
+        if (depth < w - 0.01) issues.push(where + ": the door to " + op.room.name.toLowerCase() + " cannot open fully (a " + fmt(w, 2) + " m leaf in the " + fmt(depth, 2) + " m deep " + lands.name.toLowerCase() + ")");
+      });
       ur.rooms.forEach(function (r) {
+        if (r.part || isOutdoor(r.name) || r.name === "Stair" || r.name === "Landing" || reachIn(r)) return;
+        if (Math.min(r.w, r.h) < TURN[0] - 0.01 || Math.max(r.w, r.h) < TURN[1] - 0.01) issues.push(where + ": " + r.name.toLowerCase() + " is " + fmt(r.w, 2) + " x " + fmt(r.h, 2) + " m: a person cannot step in and turn around (" + TURN[0] + " x " + TURN[1] + " m clear)");
+      });
+      // the furniture, when it is drawn: every essential piece placed clear of the door swings and approaches (what could not be placed is reported)
+      if (opts.furniture) ur.rooms.forEach(function (r) {
         var zones = keepClear(r, ops), fx = fixtures(r, ur, ext, zones);
         fx.dropped.forEach(function (name) { issues.push(where + ": " + r.name.toLowerCase() + ": the " + name + " cannot stand clear of the door swing and its " + APPROACH + " m approach"); });
         fx.forEach(function (p) {
@@ -681,5 +706,5 @@ var R1Plans = (function () {
     return issues;
   }
 
-  return { sheet: sheet, openings: openings, fixtures: fixtures, keepClear: keepClear, wallPieces: wallPieces, check: check, WALL: WALL };
+  return { sheet: sheet, openings: openings, fixtures: fixtures, keepClear: keepClear, wallPieces: wallPieces, check: check, reachIn: reachIn, WALL: WALL, TURN: TURN };
 })();

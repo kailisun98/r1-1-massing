@@ -346,7 +346,7 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
             <p id="unitsPrompt" class="units-prompt">Pick a form above. Its units, tenure and bedroom mix appear here.</p>
             <fieldset class="units" id="unitParams" disabled hidden>
               <legend>Units</legend>
-              <p class="muted fieldhelp">Tenure sets the unit limit (6, or 8 when all rental) and the minimum of family units. The ground floor may hold a shared room, a grocery or a day care instead of a dwelling. Access is how the upper units are reached.</p>
+              <details class="help"><summary>About these settings</summary><p class="muted">Tenure sets the unit limit (6, or 8 when all rental) and the minimum of family units. The ground floor may hold a shared room, a grocery or a day care instead of a dwelling. Access is how the upper units are reached.</p></details>
               <div class="row"><label for="unitsSel">Dwellings</label><select id="unitsSel"></select></div>
               <div class="row"><label for="tenureSel">Tenure</label><select id="tenureSel"></select></div>
               <div class="row"><label for="groundSel">Ground floor</label><select id="groundSel"></select></div>
@@ -363,12 +363,18 @@ svg .secmark { font-family: var(--sans); fill: #b42828; letter-spacing: .04em; }
             <p id="formNote" class="muted"></p>
           </div>
           <div id="panelCmhc" hidden>
-            <p class="muted" style="margin-top:0">The British Columbia designs of CMHC's <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">Housing Design Catalogue</a>, tested against this envelope. Click a fitting option to draw it.</p>
+            <p class="muted" style="margin-top:0">CMHC's British Columbia <a href="https://www.housingcatalogue.cmhc-schl.gc.ca/designs?region=a5628ce4-6a13-4f6b-9a27-cdb6b8b6892b" target="_blank" rel="noopener">catalogue designs</a> tested against this envelope. Click one that fits to draw it.</p>
             <div id="cmhcList"></div>
             <p id="cmhcNote" class="muted"></p>
             <div class="actions"><button id="btnCmhcClear" class="secondary" disabled>Remove massing</button></div>
             <details class="help"><summary>What is checked</summary><p class="muted">Width, depth, storeys and height against the envelope; the unit count this site's band allows; floor area against FSR 1.00; and, for a design with an accessory dwelling unit behind it, the courtyard rules (3.1.2.4(a), 3.1.2.8(a), 3.1.2.11(c), 3.1.2.5(a)). Options that do not fit say which rule they fail.</p></details>
           </div>
+          <fieldset class="units" id="stairParams" disabled>
+            <legend>Exit stairs</legend>
+            <div class="row"><label for="walkFaceSel">Walkway</label><select id="walkFaceSel" title="The face the open walkway to the upper units runs along"><option value="auto">Auto: lane or courtyard face</option><option value="rear">Lane or courtyard face</option><option value="front">Street face</option></select></div>
+            <div class="row"><label for="stairEndSel">Stair end</label><select id="stairEndSel" title="The end of the building the exterior exit stair stands at"><option value="auto">Auto</option><option value="1">Side 1 end</option><option value="2">Side 2 end</option></select></div>
+            <details class="help"><summary>About the exit stairs</summary><p class="muted">For units entered above grade by an exterior single exit stair and open walkway (a shared internal core has neither). Auto runs the walkway on the lane or courtyard face where the upper units touch it, with the stair at the side-1 end of a rear walkway and the side-2 end of a street walkway, so the stairs of a front and a rear building never meet. The plans, site plan, section and 3D view follow the setting.</p></details>
+          </fieldset>
           <div id="unitsPanel"></div>
         </div>
       </section>

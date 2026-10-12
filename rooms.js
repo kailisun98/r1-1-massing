@@ -316,7 +316,13 @@ var R1Rooms = (function () {
     extra.forEach(function (e) { out.push(R(e[0], x, 0, e[1], dp)); x += e[1]; });
     var lw = w - x, lastRoom = extra.length ? out[out.length - 1] : out.filter(function (r) { return r.name === primary; })[0];
     if (lw >= 0.9) { var cw2 = Math.min(lw, Math.max(0.9, SERVICE_M2 / dp)); out.push(R("Linen", x, 0, cw2, dp)); lw -= cw2; }   // one linen closet off the cross hall; the rest widens the last room
-    if (lw > 0.02) { grow(lastRoom, lw, 0); out.forEach(function (r) { if (r.y === 0 && r.x > lastRoom.x + 0.01 && r !== lastRoom) r.x = r2(r.x + lw); }); }
+    if (lw > 0.02) {
+      // the sliver widens the last room of the front row (every room of the row to its right moves over); the primary
+      // bedroom never past its cap: its suite column (ensuite over the walk-in closet) takes the sliver instead
+      var target = lastRoom, suite = target.name === primary && (target.w + lw) * dp > MIN.bed_max_m2 + 0.01 && sc;
+      if (suite) out.forEach(function (r) { if (r.y >= dp - 0.01 || r === target) return; if (Math.abs(r.x - (bx + pw)) < 0.01) grow(r, lw, 0); else if (r.x > bx + pw + 0.01) r.x = r2(r.x + lw); });
+      else { grow(target, lw, 0); out.forEach(function (r) { if (r.y < dp - 0.01 && r.x > target.x + 0.01 && r !== target) r.x = r2(r.x + lw); }); }
+    }
     // the rows behind: depths of up to 4.4 m between cross halls
     var rows = [], rem = d - dp - HALL;
     while (rem > 0.05) { if (rem <= 5.8) { rows.push(rem); rem = 0; } else { rows.push(4.4); rem -= 5.4; } }
@@ -424,8 +430,73 @@ var R1Rooms = (function () {
     var ew = 1.5, ed = Math.min(1.8, 0.25 * d), pd = Math.max(3.0, 0.55 * d) - ed;
     var out = [R("Entry", 0, 0, ew, ed), R("Play room", ew, 0, w - ew, ed), R("Play room", 0, ed, w, pd)];
     var y = ed + pd, rd = d - y, nw = Math.max(2.4, 0.38 * w), kw = Math.max(2.4, 0.24 * w), ow = w - nw - kw - WC_W;
-    out.push(R("Nap room", 0, y, nw, rd), R("Kitchen", nw, y, kw, rd), R("WC", nw + kw, y, WC_W, rd), R("Office", nw + kw + WC_W, y, ow, rd));
+    if (ow < 1.8) { nw += ow; ow = 0; }   // no sliver office: a narrow cell gives its width to the nap room
+    out.push(R("Nap room", 0, y, nw, rd), R("Kitchen", nw, y, kw, rd), R("WC", nw + kw, y, WC_W, rd));
+    if (ow > 0) out.push(R("Office", nw + kw + WC_W, y, ow, rd));
     return mergeParts(out, "Play room");
+  }
+
+  // ------------------------------------------------------------------ passes over a finished level
+  var CLOSETS = /^(Laundry|Mechanical|Closet|Linen|Storage)$/, NO_DOOR_FROM = /Bath|WC|Ensuite|Stair|Laundry|Mechanical|Storage|Linen|Closet|Patio|Terrace/;
+  function edgeOverlap(r, s) {   // the length of the edge two rectangles share (0 when they only touch at a corner or stand apart)
+    var t = 0.03;
+    if (Math.abs(r.x + r.w - s.x) < t || Math.abs(s.x + s.w - r.x) < t) return Math.max(0, Math.min(r.y + r.h, s.y + s.h) - Math.max(r.y, s.y));
+    if (Math.abs(r.y + r.h - s.y) < t || Math.abs(s.y + s.h - r.y) < t) return Math.max(0, Math.min(r.x + r.w, s.x + s.w) - Math.max(r.x, s.x));
+    return 0;
+  }
+  function doorable(r, rooms) { return rooms.some(function (s) { return s !== r && !NO_DOOR_FROM.test(s.name) && edgeOverlap(r, s) >= 0.9; }); }
+  // a closet in a column or row that straddles the boundary between two rooms (no single neighbour long enough for
+  // its door) trades places with the closet next to it when that gives both of them a door
+  function fixStraddles(rooms) {
+    rooms.forEach(function (r) {
+      if (!CLOSETS.test(r.name) || doorable(r, rooms)) return;
+      var mates = rooms.filter(function (s) {
+        if (s === r || !CLOSETS.test(s.name)) return false;
+        var col = Math.abs(s.x - r.x) < 0.01 && Math.abs(s.w - r.w) < 0.01 && (Math.abs(s.y + s.h - r.y) < 0.03 || Math.abs(r.y + r.h - s.y) < 0.03);
+        var row = Math.abs(s.y - r.y) < 0.01 && Math.abs(s.h - r.h) < 0.01 && (Math.abs(s.x + s.w - r.x) < 0.03 || Math.abs(r.x + r.w - s.x) < 0.03);
+        return col || row;
+      });
+      for (var i = 0; i < mates.length; i++) {
+        var s = mates[i], col = Math.abs(s.x - r.x) < 0.01 && Math.abs(s.w - r.w) < 0.01;
+        var a = col ? (r.y < s.y ? r : s) : (r.x < s.x ? r : s), b = a === r ? s : r, a0 = col ? a.y : a.x, save = [a.x, a.y, b.x, b.y];
+        if (col) { b.y = a0; a.y = r2(a0 + b.h); } else { b.x = a0; a.x = r2(a0 + b.w); }   // the second takes the first's start, the first follows it
+        if (doorable(r, rooms) && doorable(s, rooms)) return;
+        a.x = save[0]; a.y = save[1]; b.x = save[2]; b.y = save[3];
+      }
+    });
+    return rooms;
+  }
+  // a bedroom over the cap (22 m2: space the living rooms should have) gives a strip off one end to a walk-in closet
+  // of its own (6.5 m2 at most), or to a study when the strip would be bigger than a closet. The strip is taken off an
+  // end that touches nothing the bedroom must keep beside it: the hall its door comes from, its ensuite and closet
+  var KEEP_BESIDE = /^(Hall|Landing|Entry|Vestibule|Corridor|Ensuite|Closet|Stair|Living|Living \/ dining|Dining|Kitchen|Studio)$/;
+  function endBlocked(r, rooms, end) {
+    var t = 0.03;
+    return rooms.some(function (s) {
+      if (s === r || !KEEP_BESIDE.test(s.name)) return false;
+      var ov = end[0] === "x" ? Math.min(r.y + r.h, s.y + s.h) - Math.max(r.y, s.y) : Math.min(r.x + r.w, s.x + s.w) - Math.max(r.x, s.x);
+      if (ov <= 0.3) return false;
+      if (end === "x1") return Math.abs(s.x - (r.x + r.w)) < t;
+      if (end === "x0") return Math.abs(s.x + s.w - r.x) < t;
+      if (end === "y1") return Math.abs(s.y - (r.y + r.h)) < t;
+      return Math.abs(s.y + s.h - r.y) < t;
+    });
+  }
+  function capBedrooms(rooms) {
+    rooms.slice().forEach(function (r) {
+      if (!/bedroom/i.test(r.name) || r.part || r.area_m2 <= MIN.bed_max_m2 + 0.01) return;
+      var ends = r.w >= r.h ? ["x1", "x0", "y1", "y0"] : ["y1", "y0", "x1", "x0"], end = ends.filter(function (e) { return !endBlocked(r, rooms, e); })[0];
+      if (!end) return;   // every end is spoken for: the check reports the room
+      var alongX = end[0] === "x", len = alongX ? r.h : r.w, span = alongX ? r.w : r.h;
+      var cw = clamp(span - MIN.bed_max_m2 / len + 0.1, 1.2, Math.max(1.2, 6.5 / len)), name = "Closet";
+      if (cw * len > 6.5 + 0.01 || (span - cw) * len > MIN.bed_max_m2 + 0.01) { cw = Math.max(2.4, span - MIN.bed_max_m2 / len + 0.1); name = "Study"; }
+      if (span - cw < MIN.bed_w + 0.3) return;   // nothing to spare: the check reports the room
+      if (end === "x1") { rooms.push(R(name, r.x + r.w - cw, r.y, cw, r.h)); grow(r, -cw, 0); }
+      else if (end === "x0") { rooms.push(R(name, r.x, r.y, cw, r.h)); r.x = r2(r.x + cw); grow(r, -cw, 0); }
+      else if (end === "y1") { rooms.push(R(name, r.x, r.y + r.h - cw, r.w, cw)); grow(r, 0, -cw); }
+      else { rooms.push(R(name, r.x, r.y, r.w, cw)); r.y = r2(r.y + cw); grow(r, 0, -cw); }
+    });
+    return rooms;
   }
 
   /* layout(role, unit, w, d, ctx): rooms for one level. ctx from unitCtx (the stair shared by all the levels of a unit,
@@ -444,7 +515,8 @@ var R1Rooms = (function () {
     else if (role === "shop") rooms = shop(u, w, d);
     else if (role === "daycare") rooms = daycare(u, w, d);
     else rooms = [R("Unit", 0, 0, w, d)];
-    return rooms.filter(function (r) { return r.w > 0.05 && r.h > 0.05; });
+    rooms = fixStraddles(capBedrooms(rooms.filter(function (r) { return r.w > 0.05 && r.h > 0.05; })));
+    return rooms;
   }
-  return { MIN: MIN, layout: layout, unitCtx: unitCtx, stairModule: stairModule, LANDING: ENTRY_D, HALL: HALL, WET: WET, BATH_W: BATH_W, BATH_D: BATH_D, WC_W: WC_W, WC_D: WC_D, FH_MAX: FH_MAX };
+  return { MIN: MIN, layout: layout, unitCtx: unitCtx, stairModule: stairModule, fixStraddles: fixStraddles, capBedrooms: capBedrooms, LANDING: ENTRY_D, HALL: HALL, WET: WET, BATH_W: BATH_W, BATH_D: BATH_D, WC_W: WC_W, WC_D: WC_D, FH_MAX: FH_MAX };
 })();

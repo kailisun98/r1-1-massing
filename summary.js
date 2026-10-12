@@ -47,7 +47,7 @@ var R1Summary = (function () {
         units.push(["Shared outdoor space", Math.round(ctx.site.shared_m2) + " m²" + (ctx.site.patios ? " + " + ctx.site.patios + " private patios" : "")]);
       }
       (o.checks || []).forEach(function (c) { checks.push([cap1(c.name), c.detail, c.clause, c.ok ? "ok" : "fail"]); });
-      if (ctx.planIssues) checks.push(["Plan check", ctx.planIssues.length ? ctx.planIssues.length + " item" + (ctx.planIssues.length > 1 ? "s" : "") + " to resolve: " + ctx.planIssues.slice(0, 3).join("; ") + (ctx.planIssues.length > 3 ? "; …" : "") : "passed: doors, clearances, furniture, stairs, circulation and access", "", ctx.planIssues.length ? "fail" : "ok"]);
+      if (ctx.planIssues) checks.push(["Plan check", ctx.planIssues.length ? ctx.planIssues.length + " item" + (ctx.planIssues.length > 1 ? "s" : "") + " to resolve: " + ctx.planIssues.slice(0, 3).join("; ") + (ctx.planIssues.length > 3 ? "; …" : "") : "passed: door swings, step-in clearance, room sizes, stairs, circulation and access", "", ctx.planIssues.length ? "fail" : "ok"]);
     }
     return { address: address, date: new Date().toISOString().slice(0, 10), option: cap1(optionName), fsr: fsr, gfa_m2: gfa, coverage: fp / ev.area,
       groups: [{ title: "Site", rows: site }, { title: "Permitted envelope", rows: env }, { title: "Proposal", rows: prop }].concat(units.length ? [{ title: "Units", rows: units }] : []),
@@ -55,7 +55,8 @@ var R1Summary = (function () {
   }
 
   /* pdf(data, images): an A4 landscape report. images = { three, siteplan, section, plans }, each { data (PNG data URL), w, h } or null.
-     Page 1: the statistics and the checks; page 2: the 3D view; page 3: site plan, section and the unit schedule; page 4: the floor plans. */
+     Page 1: the statistics and the checks (a long check list takes a page of its own with the unit schedule); then the
+     3D view; the site plan, section and unit schedule; the floor plans. */
   function pdf(data, images) {
     var J = window.jspdf && window.jspdf.jsPDF;
     if (!J || !J.API || !J.API.autoTable) throw new Error("jsPDF with AutoTable is not loaded");
@@ -92,7 +93,16 @@ var R1Summary = (function () {
       var left = g.title !== "Units", yy = table(left ? yl : yr, [g.title, "", "Clause"], g.rows.map(function (r) { return [r[0], r[1], r[2] || ""]; }), left ? M : rx, cw, col) + 3;
       if (left) yl = yy; else yr = yy;
     });
-    if (data.checks.length) table(yr, ["Check", "Result", "Clause"], data.checks.map(function (c) { return [(c[3] === "ok" ? "OK  " : "FAIL  ") + c[0], c[1], c[2]]; }), rx, cw, { 0: { cellWidth: 30, fontStyle: "bold" }, 2: { cellWidth: 24, textColor: MUTED, fontSize: 6.5 } });
+    // the checks: in the right column under the units when they fit there (a by-law form has a few); a long list (a
+    // catalogue design checks every building) gets a page of its own with the unit schedule, so no row is orphaned
+    var checkRows = data.checks.map(function (c) { return [(c[3] === "ok" ? "OK  " : "FAIL  ") + c[0], c[1], c[2]]; }), unitRows = data.units.map(function (u) { return u.cells; }), unitsDone = false;
+    var checksFit = data.checks.length && yr + 8 + data.checks.length * 6.5 <= H - 14;
+    if (checksFit) table(yr, ["Check", "Result", "Clause"], checkRows, rx, cw, { 0: { cellWidth: 30, fontStyle: "bold" }, 2: { cellWidth: 24, textColor: MUTED, fontSize: 6.5 } });
+    else if (data.checks.length) {
+      doc.addPage(); y = header("Checks and unit schedule");
+      var yk = table(y, ["Check", "Result", "Clause"], checkRows, M, W - 2 * M, { 0: { cellWidth: 48, fontStyle: "bold" }, 2: { cellWidth: 44, textColor: MUTED, fontSize: 6.5 } }) + 6;
+      if (unitRows.length) { table(yk, ["Unit", "Bedrooms", "Baths", "Floors", "Area", "Note"], unitRows, M, W - 2 * M, { 0: { cellWidth: 30, fontStyle: "bold" }, 1: { cellWidth: 30 }, 2: { cellWidth: 24 }, 3: { cellWidth: 40 }, 4: { cellWidth: 24 } }); unitsDone = true; }
+    }
     // page 2: the 3D view of the development, full width
     if (images.three) {
       doc.addPage(); y = header("3D view");
@@ -101,11 +111,11 @@ var R1Summary = (function () {
       doc.text(data.option + " on " + data.address + ": FSR " + fmt(data.fsr, 2) + ", site coverage " + Math.round(100 * data.coverage) + "%. The units as labelled boxes on the site, with the neighbouring buildings and the ground from the City's open data.", M, y + h3 + 6, { maxWidth: W - 2 * M });
     }
     // page 3: the site plan on the left, the section and the unit schedule on the right
-    if (images.siteplan || images.section || data.units.length) {
-      doc.addPage(); y = header("Site plan, section and unit schedule");
+    if (images.siteplan || images.section || (unitRows.length && !unitsDone)) {
+      doc.addPage(); y = header(unitsDone ? "Site plan and section" : "Site plan, section and unit schedule");
       var sw = 118; image(images.siteplan, M, y, sw, H - y - 14);
-      var sx = M + sw + 8, srw = W - M - sx, hs = image(images.section, sx, y, srw, 72), y2 = y + (hs ? hs + 4 : 0);
-      if (data.units.length) table(y2, ["Unit", "Bedrooms", "Baths", "Floors", "Area", "Note"], data.units.map(function (u) { return u.cells; }), sx, srw, { 0: { cellWidth: 12, fontStyle: "bold" }, 1: { cellWidth: 18 }, 2: { cellWidth: 14 }, 3: { cellWidth: 14 }, 4: { cellWidth: 20 } });
+      var sx = M + sw + 8, srw = W - M - sx, hs = image(images.section, sx, y, srw, unitsDone ? 110 : 72), y2 = y + (hs ? hs + 4 : 0);
+      if (unitRows.length && !unitsDone) table(y2, ["Unit", "Bedrooms", "Baths", "Floors", "Area", "Note"], unitRows, sx, srw, { 0: { cellWidth: 12, fontStyle: "bold" }, 1: { cellWidth: 18 }, 2: { cellWidth: 14 }, 3: { cellWidth: 14 }, 4: { cellWidth: 20 } });
     }
     // page 4: the floor plans
     if (images.plans) { doc.addPage(); y = header("Schematic floor plans"); image(images.plans, M, y, W - 2 * M, H - y - 14, true); }

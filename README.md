@@ -22,9 +22,10 @@ Pages at the link above. It talks to the City of Vancouver Open Data portal dire
 browser.
 
 1. Open https://kailisun98.github.io/r1-1-massing/ in a desktop browser (Chrome, Edge, Firefox or
-   Safari). The example lot, 3567 W 27th Ave, loads by itself: the site is fetched, the street edge
-   detected and the permitted envelope drawn, so the page opens in a working state. Click
-   **Walkthrough** in the top bar for a guided two-minute demo: it steps through everything below
+   Safari). The page opens in step 1 with nothing chosen: type a Vancouver address and press
+   Enter, or pick a lot on the map, and the site is fetched, the street edge detected and the
+   permitted envelope drawn. Click **Walkthrough** in the top bar for a guided two-minute demo on
+   the example lot, 3567 W 27th Ave: it steps through everything below
    on the live page, with a spotlight and a short note at each stop (Next, Back, Skip; arrow keys
    and Esc).
 2. In **Site** (step 1) type another Vancouver address and press Enter or **Fetch site**, or click
@@ -112,7 +113,7 @@ before they are relied on.
 ## 4. Example
 
 **Input:** the address *3567 W 27th Ave* (an R1-1 lot in Dunbar-Southlands, 15.2 × 39.8 m, the
-example that loads with the page), the 200 m site cut, then the **Single building** form with the
+lot the walkthrough uses), the 200 m site cut, then the **Single building** form with the
 default 6 strata units.
 
 **Result:** the site is fetched from the City's open data and the street edge found on W 27th Ave.
@@ -169,8 +170,10 @@ What Lotwise does not do, and where a person must check the result:
 - The ground comes from the City's 1 m contours and building heights, interpolated; street-edge
   detection is automatic and must be overridden when it is wrong (a corner lot, an odd parcel).
 - The floor plans are test fits: rooms are sized to standard furniture and clearances and checked
-  for circulation, but structure, services, egress distances, window areas, accessibility and
-  energy are not. Stairs are sized on a 3.1 m storey; the real floor-to-floor is a design decision.
+  for circulation (every door swings fully into its room, every room takes a person stepping in
+  and turning around, 0.9 × 1.2 m clear), but structure, services, egress distances, window
+  areas, accessibility and energy are not. Stairs are sized on a 3.1 m storey; the real
+  floor-to-floor is a design decision.
 - The single exit stair arrangements assume the BC Building Code 2024 and Vancouver Building
   By-law single-exit provisions apply; confirm with a code consultant.
 - Catalogue designs are fitted by their published footprints and unit lists; CMHC's own drawings
@@ -204,8 +207,8 @@ python -m http.server 8765 --directory web
 ```
 
 then open http://localhost:8765. Opening `index.html` straight from disk also works in most
-browsers. On load it runs the example site (3567 W 27th Ave) through to the envelope so the page
-opens in a working state; type another address to start over.
+browsers. The page opens in step 1 with no site chosen; type an address (or run the walkthrough,
+which loads 3567 W 27th Ave) to start.
 
 - `web/core.js`, `web/site.js`, `web/massing.js` are line-for-line ports of `lib/r1_1_core.py`,
   `lib/r1_1_site.py` and `lib/r1_1_massing.py` (the same RULES and FORM_RULES values, clipping,
@@ -311,7 +314,11 @@ opens in a working state; type another address to start over.
   serves every floor with a walkway on it; it is a switchback of two 1.2 m flights along the face
   (0.27 m goings, risers under 0.18 m, a floor landing at the walkway end and a mid landing at the
   far end, 5.1 m long for 3.83 m floors), at the side-1 end of a rear walkway and the side-2 end of
-  a front walkway so the stairs of a front and a rear building never meet across the courtyard. A
+  a front walkway so the stairs of a front and a rear building never meet across the courtyard.
+  The **Exit stairs** fields under the massing options override that placement: the walkway on
+  the street face instead of the lane or courtyard face (where the upper units touch it), and
+  the stair at the side-1 or side-2 end; the plans, site plan, section, 3D view and report follow
+  the setting, and the notes say it was set by the designer. A
   unit entered from the rear (or the right) is flipped so its entry sits on that face. The plans
   draw the walkway and the stair on every floor (dashed where they pass overhead, UP/DN on the
   flights), the map and the site plan their footprints, 3D the slabs, guards and stair, the section
@@ -329,7 +336,12 @@ opens in a working state; type another address to start over.
   unit on the face it is reached from (street, walkway or side path), interior doors with swings
   from the circulation rooms into the served rooms (a walk-in closet off its bedroom, a laundry or
   pantry off the kitchen) and cased openings between entry, living, dining, hall and kitchen;
-  windows on the exterior walls of habitable rooms. Furniture is drawn at catalogue size from the
+  windows on the exterior walls of habitable rooms. Every door swings into the room it serves and
+  lands against that room's nearest wall (the hinge sits at the end of the opening closest to a
+  corner); only a reach-in closet too shallow to stand in takes its door swinging out. Every room
+  carries its name and area. Furniture is off by default (a *Furniture* switch above the sheet
+  turns it on): the sheet reads as rooms, doors, windows and stairs, which is what a schematic
+  plan needs. With Furniture on it is drawn at catalogue size from the
   fits: the largest bed the room holds with its clearances (queen, double or twin) with nightstands
   and closet; toilet, vanity and tub or shower on one wall; a single-row kitchen with fridge,
   sink, dishwasher and range (a second row across a 1.2 m aisle when deep enough); a table for 4 or
@@ -359,7 +371,9 @@ opens in a working state; type another address to start over.
   building stands 0.9 m off the lane.
 - **3D annotation**: each unit box has its programme painted on its faces in large letters in a
   darker shade of its colour (U3 · 3 BED, GROCERY STORE), the way a programme diagram is drawn;
-  the by-law blocks and the bare envelope are labelled the same way.
+  the by-law blocks and the bare envelope are labelled the same way. The scene is lit by a sun
+  from the south-west with soft cast shadows on the ground and the neighbours, and the unit boxes
+  are shaded, so the massing reads as a model rather than flat colour.
 - **Summary tab and PDF** (`web/summary.js`, `drawSummary` and `exportSummaryPdf` in `app.js`):
   the last tab of the flow. `R1Summary.stats` gathers the statistics of the drawn option from the
   envelope, the form and the unit configuration: site area, frontage, depth and unit band; the
@@ -372,7 +386,8 @@ opens in a working state; type another address to start over.
   a capture of the 3D view, with the site plan, the section and all the floor plans below.
   **Export PDF** loads jsPDF 2.5.1 and its AutoTable plugin from cdnjs on first use and writes a
   four-page A4 landscape report (statistics and checks; the 3D view; site plan, section and
-  unit schedule; floor plans), the SVG sheets rasterised through a canvas; the Pages copy saves
+  unit schedule; floor plans; a catalogue design's longer check list takes a page of its own with
+  the unit schedule), the SVG sheets rasterised through a canvas; the Pages copy saves
   the file directly and the artifact copy hands it to the viewer through the host's download
   prompt. **Print** (Pages copy) prints the summary alone through a print stylesheet.
 - **UI**: following the usual principles (hierarchy, progressive disclosure, consistency, contrast,
